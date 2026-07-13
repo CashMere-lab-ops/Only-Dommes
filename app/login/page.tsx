@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Crown } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -33,12 +34,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        {/* Pink icon */}
+        {/* Crown icon */}
         <div className="flex justify-center mb-6">
           <div className="w-14 h-14 bg-pink-500 rounded-2xl flex items-center justify-center">
-            <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-            </svg>
+            <Crown className="w-7 h-7 text-white" />
           </div>
         </div>
 
@@ -46,7 +45,6 @@ export default function LoginPage() {
         <p className="text-zinc-400 text-center mb-8">Log in to your account</p>
 
         <div className="bg-zinc-900 p-8 rounded-3xl">
-          {/* Email */}
           <label className="block text-sm font-medium mb-2">Email</label>
           <input
             type="email"
@@ -56,7 +54,6 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
 
-          {/* Password */}
           <div className="flex justify-between items-center mb-2">
             <label className="block text-sm font-medium">Password</label>
             <Link href="/forgot-password" className="text-sm text-pink-500 hover:underline">
