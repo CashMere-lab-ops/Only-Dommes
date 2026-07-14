@@ -9,11 +9,12 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
 
   const handleReset = async () => {
     setLoading(true);
     setMessage('');
+
+    const supabase = createClient();
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: 'https://only-dommes.vercel.app/reset-password',

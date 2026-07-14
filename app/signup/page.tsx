@@ -10,11 +10,12 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
 
   const handleSignup = async () => {
     setLoading(true);
     setMessage('');
+
+    const supabase = createClient();
 
     try {
       const { error } = await supabase.auth.signUp({

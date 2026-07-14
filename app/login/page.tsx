@@ -12,11 +12,12 @@ export default function LoginPage() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
 
   const handleLogin = async () => {
     setLoading(true);
     setMessage('');
+
+    const supabase = createClient();
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
