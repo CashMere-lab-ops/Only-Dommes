@@ -137,4 +137,25 @@ export default function LeaderboardPage() {
                 key={item.rank}
                 className="bg-zinc-900 rounded-2xl px-5 py-4 flex items-center justify-between"
               >
-                <
+                <div className="flex items-center gap-4">
+                  <span className="text-zinc-500 font-medium w-6">{item.rank}</span>
+                  <div className="w-10 h-10 rounded-full bg-zinc-700 flex items-center justify-center font-bold">
+                    {item.name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="font-medium">{item.name}</p>
+                    <p className="text-sm text-zinc-500">
+                      {item.category} · {item.followers} followers
+                    </p>
+                  </div>
+                </div>
+                <p className="text-pink-500 font-bold">{formatMoney(item.amount)}</p>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </main>
+    </div>
+  );
+}      
