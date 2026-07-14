@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Sidebar from '../../../components/Sidebar';
 import { Radio, Heart, Gift, Users } from 'lucide-react';
 
@@ -24,6 +24,15 @@ export default function LiveRoomPage() {
   const [chatInput, setChatInput] = useState('');
   const [totalTips, setTotalTips] = useState(1240);
 
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new message is added
+  useEffect(() => {
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [messages]);
+
   const sendMessage = () => {
     if (!chatInput.trim()) return;
     setMessages([...messages, { user: 'You', text: chatInput }]);
@@ -31,9 +40,14 @@ export default function LiveRoomPage() {
   };
 
   const sendTip = (amount: number) => {
-    setTotalTips(totalTips + amount);
+    const newTotal = totalTips + amount;
+    setTotalTips(newTotal);
     alert(`Thank you! You sent £${amount}`);
   };
+
+  // Tip Goal settings
+  const tipGoal = 2000;
+  const progress = Math.min((totalTips / tipGoal) * 100, 100);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -104,15 +118,23 @@ export default function LiveRoomPage() {
                 </div>
               </div>
 
-              {/* Tip Section */}
+              {/* Tip Section with Goal */}
               <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3">
                   <h2 className="font-semibold flex items-center gap-2">
                     <Gift className="text-pink-500" /> Send a Tip
                   </h2>
                   <div className="text-sm text-zinc-400">
-                    Total tips received: <span className="text-pink-400 font-bold">£{totalTips}</span>
+                    £{totalTips} / £{tipGoal}
                   </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full bg-zinc-800 rounded-full h-3 mb-4 overflow-hidden">
+                  <div 
+                    className="bg-pink-500 h-3 rounded-full transition-all duration-500" 
+                    style={{ width: `${progress}%` }}
+                  ></div>
                 </div>
 
                 <div className="flex flex-wrap gap-3">
@@ -134,7 +156,7 @@ export default function LiveRoomPage() {
 
             </div>
 
-            {/* Live Chat Sidebar - FIXED */}
+            {/* Live Chat Sidebar */}
             <div className="bg-zinc-900 rounded-2xl border border-zinc-800 flex flex-col h-[600px]">
               <div className="p-4 border-b border-zinc-800 flex items-center gap-2">
                 <span className="font-semibold">Live Chat</span>
@@ -143,8 +165,8 @@ export default function LiveRoomPage() {
                 </span>
               </div>
 
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
+              {/* Messages (with ref for auto-scroll) */}
+              <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
                 {messages.map((msg, index) => (
                   <div key={index} className="flex gap-2">
                     <span className="font-medium text-pink-400 min-w-[70px]">{msg.user}:</span>
@@ -153,7 +175,7 @@ export default function LiveRoomPage() {
                 ))}
               </div>
 
-              {/* Chat Input - FIXED */}
+              {/* Chat Input */}
               <div className="p-4 border-t border-zinc-800">
                 <div className="flex gap-2 w-full">
                   <input
