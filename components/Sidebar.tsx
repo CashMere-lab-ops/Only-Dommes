@@ -1,14 +1,44 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { createClient } from '../lib/supabase';
 import { 
   Home, Radio, Film, Trophy, MessageCircle, LayoutDashboard,
-  TrendingUp, Search, ShoppingBag, Users, Heart, Library, Bell, Ban, Settings, LifeBuoy, Crown
+  TrendingUp, Search, ShoppingBag, Users, Heart, Library, 
+  Bell, Ban, Settings, LifeBuoy, Crown, LogOut, LogIn
 } from 'lucide-react';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const supabase = createClient();
+
+  useEffect(() => {
+    // Get current user on load
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      setLoading(false);
+    };
+    getUser();
+
+    // Listen for login/logout changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/');
+  };
 
   const isActive = (path: string) => pathname === path;
 
@@ -87,6 +117,35 @@ export default function Sidebar() {
           <LifeBuoy size={20} /> Support
         </Link>
       </nav>
+
+      {/* User section at the bottom */}
+      <div className="p-4 border-t border-zinc-800">
+        {loading ? (
+          <div className="text-zinc-500 text-sm">Loading...</div>
+        ) : user ? (
+          <div className="space-y-3">
+            <div className="text-sm">
+              <p className="text-zinc-400">Logged in as</p>
+              <p className="font-medium truncate">{user.email}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm transition"
+            >
+              <LogOut size={18} />
+              Log out
+            </button>
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-sm font-medium transition"
+          >
+            <LogIn size={18} />
+            Log in
+          </Link>
+        )}
+      </div>
     </aside>
   );
 }
