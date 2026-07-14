@@ -41,7 +41,9 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-center mb-2">Welcome back</h1>
+        <h1 className="text-3xl font-bold text-center mb-2">
+  Only <span className="gradient-text">Dommes</span>
+</h1>
         <p className="text-zinc-400 text-center mb-8">Log in to your account</p>
 
         <div className="bg-zinc-900 p-8 rounded-3xl">
