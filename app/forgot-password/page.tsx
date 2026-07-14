@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { createClient } from '../../lib/supabase';
 import Link from 'next/link';
 import { Crown } from 'lucide-react';
 
@@ -9,6 +9,7 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const supabase = createClient();
 
   const handleReset = async () => {
     setLoading(true);

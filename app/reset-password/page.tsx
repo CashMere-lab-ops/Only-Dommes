@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { createClient } from '../../lib/supabase';
 import Link from 'next/link';
 import { Crown } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const supabase = createClient();
 
   const handleUpdate = async () => {
     setLoading(true);
