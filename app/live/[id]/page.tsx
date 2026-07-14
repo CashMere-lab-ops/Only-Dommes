@@ -19,7 +19,8 @@ export default function LiveRoomPage() {
   const [tipGoal, setTipGoal] = useState(2000);
   const [totalTips, setTotalTips] = useState(1240);
 
-  const [topTipper] = useState({
+  // Dynamic Top Tipper
+  const [topTipper, setTopTipper] = useState({
     name: 'TommyB',
     amount: 680,
   });
@@ -50,9 +51,19 @@ export default function LiveRoomPage() {
     setChatInput('');
   };
 
+  // Updated sendTip with dynamic top tipper
   const sendTip = (amount: number) => {
     const newTotal = totalTips + amount;
     setTotalTips(newTotal);
+
+    // Update top tipper if this tip is higher
+    if (amount > topTipper.amount) {
+      setTopTipper({
+        name: 'You',
+        amount: amount,
+      });
+    }
+
     alert(`Thank you! You sent £${amount}`);
   };
 
@@ -67,7 +78,7 @@ export default function LiveRoomPage() {
     if (privateRequest) {
       setIsPrivateActive(true);
       setPrivateRequest({ ...privateRequest, status: 'active' });
-      alert('Private session started!');
+      alert('Private session started! Only you and the sub can watch.');
     }
   };
 
@@ -123,8 +134,6 @@ export default function LiveRoomPage() {
               {/* Creator Info + Showcased Sub */}
               <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
                 <div className="flex flex-col md:flex-row md:items-center gap-4">
-                  
-                  {/* Avatar + Name */}
                   <div className="flex items-center gap-4 flex-1">
                     <div className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-2xl font-bold flex-shrink-0">
                       {stream.creator[0]}
@@ -135,7 +144,6 @@ export default function LiveRoomPage() {
                     </div>
                   </div>
 
-                  {/* Buttons */}
                   <div className="flex gap-3 md:ml-auto">
                     <button className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition">
                       <Heart size={18} /> Follow
