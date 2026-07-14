@@ -9,7 +9,6 @@ export default function LiveRoomPage() {
   const params = useParams();
   const id = params.id as string;
 
-  // Fake stream data (we'll connect real data later)
   const stream = {
     title: 'Private Domme Session',
     creator: 'Mistress Vex',
@@ -17,15 +16,12 @@ export default function LiveRoomPage() {
     bio: 'Professional Dominatrix • Findom & Femdom specialist',
   };
 
-  // Chat state
   const [messages, setMessages] = useState([
     { user: 'Slave42', text: 'Good evening Goddess' },
     { user: 'PayPig88', text: 'Sent tribute 💸' },
     { user: 'SubbyBoy', text: 'You look incredible today' },
   ]);
   const [chatInput, setChatInput] = useState('');
-
-  // Tip state
   const [totalTips, setTotalTips] = useState(1240);
 
   const sendMessage = () => {
@@ -36,7 +32,6 @@ export default function LiveRoomPage() {
 
   const sendTip = (amount: number) => {
     setTotalTips(totalTips + amount);
-    // You can add a toast later if you want
     alert(`Thank you! You sent £${amount}`);
   };
 
@@ -64,7 +59,7 @@ export default function LiveRoomPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* Main Content (Video + Info) */}
+            {/* Main Content */}
             <div className="lg:col-span-2 space-y-6">
               
               {/* Video Player Area */}
@@ -75,7 +70,6 @@ export default function LiveRoomPage() {
                   <p className="text-zinc-400 text-sm">Real stream will appear here (Cloudflare Stream)</p>
                 </div>
                 
-                {/* LIVE overlay badge */}
                 <div className="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
                   <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                   LIVE
@@ -140,7 +134,7 @@ export default function LiveRoomPage() {
 
             </div>
 
-            {/* Live Chat Sidebar */}
+            {/* Live Chat Sidebar - FIXED */}
             <div className="bg-zinc-900 rounded-2xl border border-zinc-800 flex flex-col h-[600px]">
               <div className="p-4 border-b border-zinc-800 flex items-center gap-2">
                 <span className="font-semibold">Live Chat</span>
@@ -159,20 +153,20 @@ export default function LiveRoomPage() {
                 ))}
               </div>
 
-              {/* Chat Input */}
+              {/* Chat Input - FIXED */}
               <div className="p-4 border-t border-zinc-800">
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full">
                   <input
                     type="text"
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                     placeholder="Send a message..."
-                    className="flex-1 bg-zinc-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-pink-500"
+                    className="flex-1 min-w-0 bg-zinc-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-pink-500"
                   />
                   <button
                     onClick={sendMessage}
-                    className="bg-pink-600 hover:bg-pink-500 px-5 rounded-xl text-sm font-medium transition"
+                    className="bg-pink-600 hover:bg-pink-500 px-5 py-2.5 rounded-xl text-sm font-medium transition shrink-0"
                   >
                     Send
                   </button>
