@@ -29,4 +29,4 @@ export default function SubscriptionsPage() {
       </main>
     </div>
   );
-}s
+}
