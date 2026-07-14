@@ -3,7 +3,7 @@
 import { useParams } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import Sidebar from '../../../components/Sidebar';
-import { Radio, Heart, Gift, Users, Crown, Lock } from 'lucide-react';
+import { Radio, Heart, Gift, Users, Crown, Lock, Star } from 'lucide-react';
 
 export default function LiveRoomPage() {
   const params = useParams();
@@ -16,28 +16,20 @@ export default function LiveRoomPage() {
     bio: 'Fitness Domme • Tease & Denial specialist',
   };
 
-  // === Tip Goal (editable) ===
   const [tipGoal, setTipGoal] = useState(2000);
   const [totalTips, setTotalTips] = useState(1240);
 
-  // === Showcased Sub (Top Tipper) ===
   const [topTipper] = useState({
     name: 'TommyB',
     amount: 680,
   });
 
-  // === Private Session State ===
   const [isPrivateActive, setIsPrivateActive] = useState(false);
   const [privateRequest, setPrivateRequest] = useState<any>(null);
-
-  // Creator can set their price per minute
   const [pricePerMinute, setPricePerMinute] = useState(15);
-
-  // Private session request form
   const [requestedMinutes, setRequestedMinutes] = useState(15);
   const [showPrivateForm, setShowPrivateForm] = useState(false);
 
-  // Chat
   const [messages, setMessages] = useState([
     { user: 'Slave42', text: 'Good evening Goddess' },
     { user: 'PayPig88', text: 'Sent tribute 💸' },
@@ -46,7 +38,6 @@ export default function LiveRoomPage() {
   const [chatInput, setChatInput] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll chat
   useEffect(() => {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
@@ -65,24 +56,18 @@ export default function LiveRoomPage() {
     alert(`Thank you! You sent £${amount}`);
   };
 
-  // Request Private Session
   const requestPrivateSession = () => {
     const totalCost = requestedMinutes * pricePerMinute;
-    setPrivateRequest({
-      minutes: requestedMinutes,
-      cost: totalCost,
-      status: 'pending',
-    });
+    setPrivateRequest({ minutes: requestedMinutes, cost: totalCost, status: 'pending' });
     setShowPrivateForm(false);
-    alert(`Private session request sent for ${requestedMinutes} minutes (£${totalCost}). Waiting for creator to accept...`);
+    alert(`Private session request sent for ${requestedMinutes} minutes (£${totalCost})`);
   };
 
-  // Creator accepts private (demo only)
   const acceptPrivateSession = () => {
     if (privateRequest) {
       setIsPrivateActive(true);
       setPrivateRequest({ ...privateRequest, status: 'active' });
-      alert('Private session started! Only you and the sub can see the stream now.');
+      alert('Private session started!');
     }
   };
 
@@ -119,7 +104,7 @@ export default function LiveRoomPage() {
                   <div className="text-center">
                     <Lock className="mx-auto mb-3 text-pink-500" size={48} />
                     <p className="text-xl font-semibold">Private Session Active</p>
-                    <p className="text-zinc-400 mt-1">Only you and the paying sub can see this stream</p>
+                    <p className="text-zinc-400 mt-1">Only creator + paying sub can watch</p>
                   </div>
                 ) : (
                   <div className="text-center">
@@ -135,49 +120,56 @@ export default function LiveRoomPage() {
                 </div>
               </div>
 
-              {/* Creator Info + Showcased Sub */}
+              {/* Creator Info Section - Better Aligned */}
               <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
-                <div className="flex items-start gap-4">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-2xl font-bold">
-                    {stream.creator[0]}
+                <div className="flex flex-col md:flex-row md:items-center gap-4">
+                  
+                  {/* Avatar + Name */}
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-2xl font-bold flex-shrink-0">
+                      {stream.creator[0]}
+                    </div>
+                    <div>
+                      <h1 className="text-2xl font-bold">{stream.creator}</h1>
+                      <p className="text-pink-400 text-sm">{stream.bio}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h1 className="text-2xl font-bold">{stream.creator}</h1>
-                    <p className="text-pink-400 text-sm mb-3">{stream.bio}</p>
 
-                    {/* Showcased Sub */}
-                    <div className="bg-zinc-800 rounded-xl p-3 mb-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
-                          <Crown className="text-black" size={18} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">Showcased Sub</span>
-                            <span className="text-xs bg-yellow-500 text-black px-2 py-0.5 rounded-full font-bold">TOP TIPPER</span>
-                          </div>
-                          <span className="text-pink-400 font-medium">{topTipper.name}</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-zinc-400">Tipped</div>
-                        <div className="font-bold text-pink-400">£{topTipper.amount}</div>
-                      </div>
-                    </div>
+                  {/* Buttons - Centered on mobile, right on desktop */}
+                  <div className="flex gap-3 md:ml-auto">
+                    <button className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition">
+                      <Heart size={18} /> Follow
+                    </button>
+                    <button className="flex items-center gap-2 bg-pink-600 hover:bg-pink-500 px-6 py-2.5 rounded-xl text-sm font-medium transition">
+                      Subscribe
+                    </button>
+                  </div>
+                </div>
 
-                    <div className="flex gap-3">
-                      <button className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition">
-                        <Heart size={18} /> Follow
-                      </button>
-                      <button className="flex items-center gap-2 bg-pink-600 hover:bg-pink-500 px-5 py-2.5 rounded-xl text-sm font-medium transition">
-                        Subscribe
-                      </button>
+                {/* Showcased Sub - Improved styling */}
+                <div className="mt-5 bg-zinc-800 rounded-2xl p-4 flex items-center justify-between border border-zinc-700">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center flex-shrink-0">
+                      <Crown className="text-black" size={20} />
                     </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-zinc-400 flex items-center gap-1">
+                          <Star size={14} /> Showcased Sub
+                        </span>
+                        <span className="text-[10px] bg-yellow-400 text-black font-bold px-2 py-0.5 rounded-full">TOP TIPPER</span>
+                      </div>
+                      <span className="font-semibold text-lg">{topTipper.name}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-zinc-400">Tipped</div>
+                    <div className="font-bold text-pink-400">£{topTipper.amount}</div>
                   </div>
                 </div>
               </div>
 
-              {/* Tip Section with Editable Goal */}
+              {/* Tip Section */}
               <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-semibold flex items-center gap-2">
@@ -219,7 +211,7 @@ export default function LiveRoomPage() {
                 </div>
               </div>
 
-              {/* Request Private Session */}
+              {/* Request Private Session - Improved styling */}
               <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
                 <h2 className="font-semibold flex items-center gap-2 mb-4">
                   <Lock className="text-pink-500" /> Request Private Session
@@ -228,16 +220,16 @@ export default function LiveRoomPage() {
                 {!showPrivateForm && !privateRequest && (
                   <button
                     onClick={() => setShowPrivateForm(true)}
-                    className="w-full bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-500 hover:to-rose-400 py-3 rounded-xl font-medium transition"
+                    className="w-full flex items-center justify-center gap-2 border border-pink-500 hover:bg-pink-950 text-pink-400 py-3 rounded-2xl font-medium transition"
                   >
-                    Request Private Session
+                    <span>🎥</span> Request Private Session <span className="text-xs opacity-70">(from £{pricePerMinute}/min)</span>
                   </button>
                 )}
 
                 {showPrivateForm && (
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm text-zinc-400">How many minutes?</label>
+                      <label className="text-sm text-zinc-400 mb-1 block">How many minutes?</label>
                       <input
                         type="range"
                         min="5"
@@ -247,55 +239,34 @@ export default function LiveRoomPage() {
                         onChange={(e) => setRequestedMinutes(Number(e.target.value))}
                         className="w-full accent-pink-500"
                       />
-                      <div className="flex justify-between text-sm">
-                        <span>5 min</span>
-                        <span className="font-bold text-pink-400">{requestedMinutes} minutes</span>
-                        <span>60 min</span>
-                      </div>
+                      <div className="text-center text-pink-400 font-medium mt-1">{requestedMinutes} minutes</div>
                     </div>
 
-                    <div className="flex items-center justify-between bg-zinc-800 p-3 rounded-xl">
+                    <div className="flex justify-between items-center bg-zinc-800 p-3 rounded-xl">
                       <div>
-                        <div className="text-sm text-zinc-400">Your rate</div>
-                        <div className="font-bold">£{pricePerMinute}/min</div>
+                        <div className="text-sm text-zinc-400">Rate</div>
+                        <div className="font-semibold">£{pricePerMinute}/min</div>
                       </div>
                       <div className="text-right">
                         <div className="text-sm text-zinc-400">Total</div>
-                        <div className="text-xl font-bold text-pink-400">
-                          £{requestedMinutes * pricePerMinute}
-                        </div>
+                        <div className="text-2xl font-bold text-pink-400">£{requestedMinutes * pricePerMinute}</div>
                       </div>
                     </div>
 
                     <div className="flex gap-3">
-                      <button
-                        onClick={() => setShowPrivateForm(false)}
-                        className="flex-1 bg-zinc-800 py-3 rounded-xl"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={requestPrivateSession}
-                        className="flex-1 bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-medium"
-                      >
-                        Request Private
-                      </button>
+                      <button onClick={() => setShowPrivateForm(false)} className="flex-1 bg-zinc-800 py-3 rounded-xl">Cancel</button>
+                      <button onClick={requestPrivateSession} className="flex-1 bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-medium">Request Private</button>
                     </div>
                   </div>
                 )}
 
                 {privateRequest && (
                   <div className="bg-zinc-800 p-4 rounded-xl text-center">
-                    <p className="text-pink-400 font-medium">Private request sent!</p>
-                    <p className="text-sm text-zinc-400 mt-1">
-                      {privateRequest.minutes} minutes • £{privateRequest.cost}
-                    </p>
+                    <p className="text-pink-400">Private request sent for {privateRequest.minutes} mins</p>
+                    <p className="text-sm text-zinc-400">£{privateRequest.cost}</p>
                     {privateRequest.status === 'pending' && (
-                      <button 
-                        onClick={acceptPrivateSession}
-                        className="mt-3 text-xs bg-zinc-700 hover:bg-zinc-600 px-4 py-1.5 rounded-full"
-                      >
-                        (Creator Demo) Accept Private
+                      <button onClick={acceptPrivateSession} className="mt-3 text-xs bg-zinc-700 px-4 py-1.5 rounded-full hover:bg-zinc-600">
+                        (Creator) Accept Private Session
                       </button>
                     )}
                   </div>
