@@ -3,11 +3,14 @@
 import { useParams } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import Sidebar from '../../../components/Sidebar';
+import { createClient } from '../../../lib/supabase';
 import { Radio, Heart, Gift, Users, Crown, Lock, Star } from 'lucide-react';
+
+const supabase = createClient();
 
 export default function LiveRoomPage() {
   const params = useParams();
-  const id = params.id as string;
+  const streamId = params.id as string;
 
   const stream = {
     title: 'Morning Workout Routine',
@@ -18,12 +21,7 @@ export default function LiveRoomPage() {
 
   const [tipGoal, setTipGoal] = useState(2000);
   const [totalTips, setTotalTips] = useState(1240);
-
-  // Dynamic Top Tipper
-  const [topTipper, setTopTipper] = useState({
-    name: 'TommyB',
-    amount: 680,
-  });
+  const [topTipper, setTopTipper] = useState({ name: 'TommyB', amount: 680 });
 
   const [isPrivateActive, setIsPrivateActive] = useState(false);
   const [privateRequest, setPrivateRequest] = useState<any>(null);
@@ -31,39 +29,74 @@ export default function LiveRoomPage() {
   const [requestedMinutes, setRequestedMinutes] = useState(15);
   const [showPrivateForm, setShowPrivateForm] = useState(false);
 
-  const [messages, setMessages] = useState([
-    { user: 'Slave42', text: 'Good evening Goddess' },
-    { user: 'PayPig88', text: 'Sent tribute 💸' },
-    { user: 'SubbyBoy', text: 'You look incredible today' },
-  ]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
 
+  // Load existing messages + listen for new ones in real-time
+  useEffect(() => {
+    const fetchMessages = async () => {
+      const { data, error } = await supabase
+        .from('live_messages')
+        .select('*')
+        .eq('stream_id', streamId)
+        .order('created_at', { ascending: true });
+
+      if (data) setMessages(data);
+    };
+
+    fetchMessages();
+
+    // Real-time subscription
+    const channel = supabase
+      .channel(`live-chat-${streamId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'live_messages',
+          filter: `stream_id=eq.${streamId}`,
+        },
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [streamId]);
+
+  // Auto-scroll chat to bottom
   useEffect(() => {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
     }
   }, [messages]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!chatInput.trim()) return;
-    setMessages([...messages, { user: 'You', text: chatInput }]);
-    setChatInput('');
+
+    const { error } = await supabase.from('live_messages').insert({
+      stream_id: streamId,
+      user_name: 'You',
+      message: chatInput,
+    });
+
+    if (!error) {
+      setChatInput('');
+    }
   };
 
-  // Updated sendTip with dynamic top tipper
   const sendTip = (amount: number) => {
     const newTotal = totalTips + amount;
     setTotalTips(newTotal);
 
-    // Update top tipper if this tip is higher
     if (amount > topTipper.amount) {
-      setTopTipper({
-        name: 'You',
-        amount: amount,
-      });
+      setTopTipper({ name: 'You', amount });
     }
-
     alert(`Thank you! You sent £${amount}`);
   };
 
@@ -78,7 +111,7 @@ export default function LiveRoomPage() {
     if (privateRequest) {
       setIsPrivateActive(true);
       setPrivateRequest({ ...privateRequest, status: 'active' });
-      alert('Private session started! Only you and the sub can watch.');
+      alert('Private session started!');
     }
   };
 
@@ -101,12 +134,12 @@ export default function LiveRoomPage() {
                 <Users size={16} /> {stream.viewers} watching
               </div>
             </div>
-            <div className="text-sm text-zinc-400">Stream ID: {id}</div>
+            <div className="text-sm text-zinc-400">Stream ID: {streamId}</div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* === MAIN CONTENT === */}
+            {/* Main Content */}
             <div className="lg:col-span-2 space-y-6">
               
               {/* Video Area */}
@@ -154,7 +187,7 @@ export default function LiveRoomPage() {
                   </div>
                 </div>
 
-                {/* Showcased Sub - Purple Gradient */}
+                {/* Showcased Sub */}
                 <div className="mt-5 bg-gradient-to-br from-[#2a1f3d] via-[#241b35] to-[#1f162e] rounded-2xl p-4 flex items-center justify-between border border-purple-900/50">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center flex-shrink-0">
@@ -280,10 +313,9 @@ export default function LiveRoomPage() {
                   </div>
                 )}
               </div>
-
             </div>
 
-            {/* Chat Sidebar */}
+            {/* Real-time Chat Sidebar */}
             <div className="bg-zinc-900 rounded-2xl border border-zinc-800 flex flex-col h-[600px]">
               <div className="p-4 border-b border-zinc-800 flex items-center gap-2">
                 <span className="font-semibold">Live Chat</span>
@@ -295,8 +327,8 @@ export default function LiveRoomPage() {
               <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
                 {messages.map((msg, index) => (
                   <div key={index} className="flex gap-2">
-                    <span className="font-medium text-pink-400 min-w-[70px]">{msg.user}:</span>
-                    <span className="text-zinc-300">{msg.text}</span>
+                    <span className="font-medium text-pink-400 min-w-[70px]">{msg.user_name}:</span>
+                    <span className="text-zinc-300">{msg.message}</span>
                   </div>
                 ))}
               </div>
@@ -322,7 +354,6 @@ export default function LiveRoomPage() {
             </div>
 
           </div>
-
         </div>
       </main>
     </div>
