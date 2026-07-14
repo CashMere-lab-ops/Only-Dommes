@@ -120,7 +120,7 @@ export default function LiveRoomPage() {
                 </div>
               </div>
 
-              {/* Creator Info Section - Better Aligned */}
+              {/* Creator Info + Showcased Sub */}
               <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
                 <div className="flex flex-col md:flex-row md:items-center gap-4">
                   
@@ -135,7 +135,7 @@ export default function LiveRoomPage() {
                     </div>
                   </div>
 
-                  {/* Buttons - Centered on mobile, right on desktop */}
+                  {/* Buttons */}
                   <div className="flex gap-3 md:ml-auto">
                     <button className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition">
                       <Heart size={18} /> Follow
@@ -146,20 +146,20 @@ export default function LiveRoomPage() {
                   </div>
                 </div>
 
-                {/* Showcased Sub - Improved styling */}
-                <div className="mt-5 bg-zinc-800 rounded-2xl p-4 flex items-center justify-between border border-zinc-700">
+                {/* Showcased Sub - Purple Gradient */}
+                <div className="mt-5 bg-gradient-to-br from-[#2a1f3d] via-[#241b35] to-[#1f162e] rounded-2xl p-4 flex items-center justify-between border border-purple-900/50">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center flex-shrink-0">
                       <Crown className="text-black" size={20} />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-zinc-400 flex items-center gap-1">
+                        <span className="text-sm text-zinc-300 flex items-center gap-1">
                           <Star size={14} /> Showcased Sub
                         </span>
                         <span className="text-[10px] bg-yellow-400 text-black font-bold px-2 py-0.5 rounded-full">TOP TIPPER</span>
                       </div>
-                      <span className="font-semibold text-lg">{topTipper.name}</span>
+                      <span className="font-semibold text-lg text-white">{topTipper.name}</span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -211,7 +211,7 @@ export default function LiveRoomPage() {
                 </div>
               </div>
 
-              {/* Request Private Session - Improved styling */}
+              {/* Request Private Session */}
               <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
                 <h2 className="font-semibold flex items-center gap-2 mb-4">
                   <Lock className="text-pink-500" /> Request Private Session
@@ -222,7 +222,7 @@ export default function LiveRoomPage() {
                     onClick={() => setShowPrivateForm(true)}
                     className="w-full flex items-center justify-center gap-2 border border-pink-500 hover:bg-pink-950 text-pink-400 py-3 rounded-2xl font-medium transition"
                   >
-                    <span>🎥</span> Request Private Session <span className="text-xs opacity-70">(from £{pricePerMinute}/min)</span>
+                    🎥 Request Private Session <span className="text-xs opacity-70">(from £{pricePerMinute}/min)</span>
                   </button>
                 )}
 
