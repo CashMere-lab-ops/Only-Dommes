@@ -119,53 +119,47 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* ==================== MOBILE "MORE" GRID MENU (Exact Match) ==================== */}
-{showMoreMenu && (
-  <div className="lg:hidden fixed inset-0 z-[60] bg-black/70 flex items-end" onClick={() => setShowMoreMenu(false)}>
-    <div 
-      className="w-full bg-zinc-900 rounded-t-3xl p-5" 
-      onClick={(e) => e.stopPropagation()}
-    >
-      {/* Header */}
-      <div className="flex justify-between items-center px-2 mb-5">
-        <h2 className="text-2xl font-semibold text-white">More</h2>
-        <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400">
-          <X size={26} />
-        </button>
-      </div>
+      {/* Mobile More Grid Menu */}
+      {showMoreMenu && (
+        <div className="lg:hidden fixed inset-0 z-[60] bg-black/70 flex items-end" onClick={() => setShowMoreMenu(false)}>
+          <div className="w-full bg-zinc-900 rounded-t-3xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center px-2 mb-5">
+              <h2 className="text-2xl font-semibold text-white">More</h2>
+              <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400">
+                <X size={26} />
+              </button>
+            </div>
 
-      {/* Grid - Matching your reference */}
-      <div className="grid grid-cols-4 gap-3">
-        {moreGridItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setShowMoreMenu(false)}
-              className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
-            >
-              <Icon size={26} className="text-white mb-2" />
-              <span className="text-[13px] text-white text-center font-medium leading-tight">
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
+            <div className="grid grid-cols-4 gap-3">
+              {moreGridItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setShowMoreMenu(false)}
+                    className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
+                  >
+                    <Icon size={26} className="text-white mb-2" />
+                    <span className="text-[13px] text-white text-center font-medium leading-tight">
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
 
-      {/* Logout Button */}
-      <div className="mt-6 pt-5 border-t border-zinc-700">
-        <button 
-          onClick={() => { 
-            setShowMoreMenu(false); 
-            alert('Logout coming soon'); 
-          }}
-          className="w-full flex items-center justify-center gap-2 py-4 text-red-400 active:bg-zinc-800 rounded-2xl transition text-base font-medium"
-        >
-          <span className="text-lg">↪</span> Logout
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+            <div className="mt-6 pt-5 border-t border-zinc-700">
+              <button 
+                onClick={() => { setShowMoreMenu(false); alert('Logout coming soon'); }}
+                className="w-full flex items-center justify-center gap-2 py-4 text-red-400 active:bg-zinc-800 rounded-2xl transition text-base font-medium"
+              >
+                <span className="text-lg">↪</span> Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
