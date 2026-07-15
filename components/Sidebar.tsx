@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Home, Radio, Video, Trophy, MessageCircle, LayoutDashboard,
   TrendingUp, Search, ShoppingBag, Users, Heart, Settings,
-  LogOut, Menu, X, Bell, BookOpen, UserCheck, Ban, HelpCircle
+  LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -22,7 +22,6 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Grid items for mobile "More" menu (matching your screenshot)
   const moreGridItems = [
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -40,7 +39,7 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* ==================== DESKTOP + TABLET SIDEBAR ==================== */}
+      {/* Desktop + Tablet Sidebar */}
       <div className="hidden lg:flex w-64 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0">
         <div className="flex items-center gap-3 px-6 py-6 border-b border-zinc-800">
           <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
@@ -99,76 +98,68 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* ==================== MOBILE BOTTOM NAV ==================== */}
+      {/* Mobile Bottom Nav */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
         <div className="flex justify-around items-center h-16 px-2 pb-safe">
           <Link href="/" className={`flex flex-col items-center justify-center flex-1 ${isActive('/') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Home size={22} />
-            <span className="text-[10px] mt-1">Home</span>
+            <Home size={22} /><span className="text-[10px] mt-1">Home</span>
           </Link>
           <Link href="/live" className={`flex flex-col items-center justify-center flex-1 ${isActive('/live') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Radio size={22} />
-            <span className="text-[10px] mt-1">Live</span>
+            <Radio size={22} /><span className="text-[10px] mt-1">Live</span>
           </Link>
           <Link href="/clips" className={`flex flex-col items-center justify-center flex-1 ${isActive('/clips') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Video size={22} />
-            <span className="text-[10px] mt-1">Clips</span>
+            <Video size={22} /><span className="text-[10px] mt-1">Clips</span>
           </Link>
           <Link href="/messages" className={`flex flex-col items-center justify-center flex-1 ${isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <MessageCircle size={22} />
-            <span className="text-[10px] mt-1">Messages</span>
+            <MessageCircle size={22} /><span className="text-[10px] mt-1">Messages</span>
           </Link>
           <button onClick={() => setShowMoreMenu(true)} className="flex flex-col items-center justify-center flex-1 text-zinc-400">
-            <Menu size={22} />
-            <span className="text-[10px] mt-1">More</span>
+            <Menu size={22} /><span className="text-[10px] mt-1">More</span>
           </button>
         </div>
       </div>
 
-     {/* ==================== MOBILE "MORE" GRID MENU ==================== */}
-{showMoreMenu && (
-  <div className="lg:hidden fixed inset-0 z-[60] bg-black/70 flex items-end" onClick={() => setShowMoreMenu(false)}>
-    <div 
-      className="w-full bg-zinc-900 rounded-t-3xl p-6" 
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex justify-between items-center mb-6 px-1">
-        <h3 className="text-2xl font-semibold">More</h3>
-        <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400">
-          <X size={26} />
-        </button>
-      </div>
+      {/* Mobile More Grid Menu */}
+      {showMoreMenu && (
+        <div className="lg:hidden fixed inset-0 z-[60] bg-black/70 flex items-end" onClick={() => setShowMoreMenu(false)}>
+          <div className="w-full bg-zinc-900 rounded-t-3xl p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6 px-1">
+              <h3 className="text-2xl font-semibold">More</h3>
+              <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400">
+                <X size={26} />
+              </button>
+            </div>
 
-      <div className="grid grid-cols-4 gap-3">
-        {moreGridItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setShowMoreMenu(false)}
-              className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
-            >
-              <Icon size={28} className="mb-3 text-white" />
-              <span className="text-sm text-center text-white font-medium leading-tight">
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
+            <div className="grid grid-cols-4 gap-3">
+              {moreGridItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setShowMoreMenu(false)}
+                    className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
+                  >
+                    <Icon size={28} className="mb-3 text-white" />
+                    <span className="text-sm text-center text-white font-medium leading-tight">
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
 
-      <div className="mt-8 pt-6 border-t border-zinc-700">
-        <button 
-          onClick={() => { 
-            setShowMoreMenu(false); 
-            alert('Logout coming soon'); 
-          }}
-          className="w-full flex items-center justify-center gap-3 py-4 text-red-400 hover:text-red-500 active:bg-zinc-800 rounded-2xl transition text-base font-medium"
-        >
-          <LogOut size={22} /> Logout
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+            <div className="mt-8 pt-6 border-t border-zinc-700">
+              <button 
+                onClick={() => { setShowMoreMenu(false); alert('Logout coming soon'); }}
+                className="w-full flex items-center justify-center gap-3 py-4 text-red-400 hover:text-red-500 active:bg-zinc-800 rounded-2xl transition text-base font-medium"
+              >
+                <LogOut size={22} /> Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
