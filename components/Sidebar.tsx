@@ -35,7 +35,7 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile Top Bar with Hamburger */}
+      {/* Mobile Top Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-500 rounded-lg flex items-center justify-center">
@@ -88,52 +88,55 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* ==================== MOBILE BOTTOM NAV (with Safe Area) ==================== */}
-<div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
-  <div className="flex justify-around items-center h-16 px-2 pb-[env(safe-area-inset-bottom)]">
-    <Link 
-      href="/" 
-      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/') ? 'text-pink-500' : 'text-zinc-400'}`}
-    >
-      <Home size={22} />
-      <span className="text-[10px] mt-1">Home</span>
-    </Link>
+      {/* ==================== MOBILE BOTTOM NAV (Safe Area) ==================== */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
+        <div className="flex justify-around items-center h-16 px-2 pb-safe">
+          <Link 
+            href="/" 
+            className={`flex flex-col items-center justify-center flex-1 ${isActive('/') ? 'text-pink-500' : 'text-zinc-400'}`}
+          >
+            <Home size={22} />
+            <span className="text-[10px] mt-1">Home</span>
+          </Link>
 
-    <Link 
-      href="/live" 
-      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/live') ? 'text-pink-500' : 'text-zinc-400'}`}
-    >
-      <Radio size={22} />
-      <span className="text-[10px] mt-1">Live</span>
-    </Link>
+          <Link 
+            href="/live" 
+            className={`flex flex-col items-center justify-center flex-1 ${isActive('/live') ? 'text-pink-500' : 'text-zinc-400'}`}
+          >
+            <Radio size={22} />
+            <span className="text-[10px] mt-1">Live</span>
+          </Link>
 
-    <Link 
-      href="/clips" 
-      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/clips') ? 'text-pink-500' : 'text-zinc-400'}`}
-    >
-      <Video size={22} />
-      <span className="text-[10px] mt-1">Clips</span>
-    </Link>
+          <Link 
+            href="/clips" 
+            className={`flex flex-col items-center justify-center flex-1 ${isActive('/clips') ? 'text-pink-500' : 'text-zinc-400'}`}
+          >
+            <Video size={22} />
+            <span className="text-[10px] mt-1">Clips</span>
+          </Link>
 
-    <Link 
-      href="/messages" 
-      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'}`}
-    >
-      <MessageCircle size={22} />
-      <span className="text-[10px] mt-1">Messages</span>
-    </Link>
+          <Link 
+            href="/messages" 
+            className={`flex flex-col items-center justify-center flex-1 ${isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'}`}
+          >
+            <MessageCircle size={22} />
+            <span className="text-[10px] mt-1">Messages</span>
+          </Link>
 
-    <button 
-      onClick={() => setIsOpen(true)} 
-      className="flex flex-col items-center justify-center flex-1 py-1 text-zinc-400"
-    >
-      <Menu size={22} />
-      <span className="text-[10px] mt-1">More</span>
-    </button>
-  </div>
-</div>
+          <button 
+            onClick={() => setIsOpen(true)} 
+            className="flex flex-col items-center justify-center flex-1 text-zinc-400"
+          >
+            <Menu size={22} />
+            <span className="text-[10px] mt-1">More</span>
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
-// Reusable content for both desktop and mobile drawer
+// Reusable Sidebar Content
 function SidebarContent({ 
   navItems, 
   moreItems, 
@@ -147,6 +150,7 @@ function SidebarContent({
 }) {
   return (
     <div className="flex flex-col h-full">
+      {/* Logo - Desktop only */}
       <div className="hidden lg:flex items-center gap-3 px-6 py-6 border-b border-zinc-800">
         <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
           <span className="text-white font-bold text-2xl">♕</span>
@@ -156,6 +160,7 @@ function SidebarContent({
         </span>
       </div>
 
+      {/* Navigation */}
       <div className="px-3 py-4 flex-1 overflow-y-auto">
         <div className="space-y-1">
           {navItems.map((item) => {
@@ -178,6 +183,7 @@ function SidebarContent({
           })}
         </div>
 
+        {/* More Section */}
         <div className="mt-8 px-4">
           <p className="text-xs font-semibold text-zinc-500 mb-3 px-2">MORE</p>
           <div className="space-y-1">
@@ -203,6 +209,7 @@ function SidebarContent({
         </div>
       </div>
 
+      {/* Logout */}
       <div className="p-4 border-t border-zinc-800">
         <button 
           onClick={() => alert('Logout feature coming soon')}
@@ -214,4 +221,4 @@ function SidebarContent({
       </div>
     </div>
   );
-}
+}s
