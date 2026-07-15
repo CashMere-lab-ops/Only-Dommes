@@ -88,41 +88,50 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* ==================== MOBILE BOTTOM NAV ==================== */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
-        <div className="flex justify-around items-center h-16 px-2">
-          <Link href="/" className={`flex flex-col items-center justify-center flex-1 ${isActive('/') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Home size={22} />
-            <span className="text-[10px] mt-1">Home</span>
-          </Link>
+      {/* ==================== MOBILE BOTTOM NAV (with Safe Area) ==================== */}
+<div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
+  <div className="flex justify-around items-center h-16 px-2 pb-[env(safe-area-inset-bottom)]">
+    <Link 
+      href="/" 
+      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/') ? 'text-pink-500' : 'text-zinc-400'}`}
+    >
+      <Home size={22} />
+      <span className="text-[10px] mt-1">Home</span>
+    </Link>
 
-          <Link href="/live" className={`flex flex-col items-center justify-center flex-1 ${isActive('/live') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Radio size={22} />
-            <span className="text-[10px] mt-1">Live</span>
-          </Link>
+    <Link 
+      href="/live" 
+      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/live') ? 'text-pink-500' : 'text-zinc-400'}`}
+    >
+      <Radio size={22} />
+      <span className="text-[10px] mt-1">Live</span>
+    </Link>
 
-          <Link href="/clips" className={`flex flex-col items-center justify-center flex-1 ${isActive('/clips') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Video size={22} />
-            <span className="text-[10px] mt-1">Clips</span>
-          </Link>
+    <Link 
+      href="/clips" 
+      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/clips') ? 'text-pink-500' : 'text-zinc-400'}`}
+    >
+      <Video size={22} />
+      <span className="text-[10px] mt-1">Clips</span>
+    </Link>
 
-          <Link href="/messages" className={`flex flex-col items-center justify-center flex-1 ${isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <MessageCircle size={22} />
-            <span className="text-[10px] mt-1">Messages</span>
-          </Link>
+    <Link 
+      href="/messages" 
+      className={`flex flex-col items-center justify-center flex-1 py-1 ${isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'}`}
+    >
+      <MessageCircle size={22} />
+      <span className="text-[10px] mt-1">Messages</span>
+    </Link>
 
-          <button 
-            onClick={() => setIsOpen(true)} 
-            className="flex flex-col items-center justify-center flex-1 text-zinc-400"
-          >
-            <Menu size={22} />
-            <span className="text-[10px] mt-1">More</span>
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
+    <button 
+      onClick={() => setIsOpen(true)} 
+      className="flex flex-col items-center justify-center flex-1 py-1 text-zinc-400"
+    >
+      <Menu size={22} />
+      <span className="text-[10px] mt-1">More</span>
+    </button>
+  </div>
+</div>
 
 // Reusable content for both desktop and mobile drawer
 function SidebarContent({ 
