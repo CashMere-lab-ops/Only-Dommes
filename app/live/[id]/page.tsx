@@ -315,43 +315,43 @@ export default function LiveRoomPage() {
               </div>
             </div>
 
-            {/* Real-time Chat Sidebar */}
-            <div className="bg-zinc-900 rounded-2xl border border-zinc-800 flex flex-col h-[600px]">
-              <div className="p-4 border-b border-zinc-800 flex items-center gap-2">
-                <span className="font-semibold">Live Chat</span>
-                <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-400">
-                  {messages.length} messages
-                </span>
-              </div>
+           {/* Real-time Chat Sidebar */}
+<div className="bg-zinc-900 rounded-2xl border border-zinc-800 flex flex-col h-[600px] lg:h-[600px] pb-20 lg:pb-0">
+  <div className="p-4 border-b border-zinc-800 flex items-center gap-2">
+    <span className="font-semibold">Live Chat</span>
+    <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-400">
+      {messages.length} messages
+    </span>
+  </div>
 
-              <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
-                {messages.map((msg, index) => (
-                  <div key={index} className="flex gap-2">
-                    <span className="font-medium text-pink-400 min-w-[70px]">{msg.user_name}:</span>
-                    <span className="text-zinc-300">{msg.message}</span>
-                  </div>
-                ))}
-              </div>
+  <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
+    {messages.map((msg, index) => (
+      <div key={index} className="flex gap-2">
+        <span className="font-medium text-pink-400 min-w-[70px]">{msg.user_name}:</span>
+        <span className="text-zinc-300">{msg.message}</span>
+      </div>
+    ))}
+  </div>
 
-              <div className="p-4 border-t border-zinc-800">
-                <div className="flex gap-2 w-full">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                    placeholder="Send a message..."
-                    className="flex-1 min-w-0 bg-zinc-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-pink-500"
-                  />
-                  <button
-                    onClick={sendMessage}
-                    className="bg-pink-600 hover:bg-pink-500 px-5 py-2.5 rounded-xl text-sm font-medium transition shrink-0"
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            </div>
+  <div className="p-4 border-t border-zinc-800">
+    <div className="flex gap-2 w-full">
+      <input
+        type="text"
+        value={chatInput}
+        onChange={(e) => setChatInput(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+        placeholder="Send a message..."
+        className="flex-1 min-w-0 bg-zinc-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-pink-500"
+      />
+      <button
+        onClick={sendMessage}
+        className="bg-pink-600 hover:bg-pink-500 px-5 py-2.5 rounded-xl text-sm font-medium transition shrink-0"
+      >
+        Send
+      </button>
+    </div>
+  </div>
+</div>
 
           </div>
         </div>
