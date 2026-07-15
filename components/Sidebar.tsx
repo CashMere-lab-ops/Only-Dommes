@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Home, Radio, Video, Trophy, MessageCircle, LayoutDashboard,
   TrendingUp, Search, ShoppingBag, Users, Heart, Settings,
-  LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle
+  LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle, User
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -22,7 +22,9 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
+  // Added "My Account" here
   const moreGridItems = [
+    { href: '/account', label: 'My Account', icon: User },           // ← Added
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
@@ -119,16 +121,11 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Mobile More Menu - Base44 Style Bottom Sheet */}
+      {/* Mobile More Menu - Bottom Sheet */}
       {showMoreMenu && (
         <>
-          {/* Backdrop */}
-          <div 
-            className="lg:hidden fixed inset-0 z-40 bg-black/50" 
-            onClick={() => setShowMoreMenu(false)} 
-          />
+          <div className="lg:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setShowMoreMenu(false)} />
           
-          {/* Bottom Sheet */}
           <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-3xl p-4 animate-in slide-in-from-bottom duration-200">
             <div className="flex justify-between items-center mb-4 px-2">
               <h2 className="text-xl font-semibold">More</h2>
