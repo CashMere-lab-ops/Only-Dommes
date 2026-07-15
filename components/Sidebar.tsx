@@ -119,17 +119,22 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Mobile More Grid Menu */}
+      {/* Mobile More Menu (Smaller Centered Modal) */}
       {showMoreMenu && (
-        <div className="lg:hidden fixed inset-0 z-[60] bg-black/70 flex items-end" onClick={() => setShowMoreMenu(false)}>
-          <div className="w-full bg-zinc-900 rounded-t-3xl p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center px-2 mb-5">
-              <h2 className="text-2xl font-semibold text-white">More</h2>
+        <div className="lg:hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowMoreMenu(false)}>
+          <div 
+            className="w-full max-w-md bg-zinc-900 rounded-3xl p-5" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center mb-5 px-1">
+              <h2 className="text-xl font-semibold">More</h2>
               <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400">
-                <X size={26} />
+                <X size={24} />
               </button>
             </div>
 
+            {/* Grid */}
             <div className="grid grid-cols-4 gap-3">
               {moreGridItems.map((item) => {
                 const Icon = item.icon;
@@ -138,10 +143,10 @@ export default function Sidebar() {
                     key={item.href}
                     href={item.href}
                     onClick={() => setShowMoreMenu(false)}
-                    className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
+                    className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-3.5 active:bg-zinc-700 transition"
                   >
-                    <Icon size={26} className="text-white mb-2" />
-                    <span className="text-[13px] text-white text-center font-medium leading-tight">
+                    <Icon size={24} className="text-white mb-1.5" />
+                    <span className="text-xs text-white text-center font-medium leading-tight">
                       {item.label}
                     </span>
                   </Link>
@@ -149,12 +154,13 @@ export default function Sidebar() {
               })}
             </div>
 
-            <div className="mt-6 pt-5 border-t border-zinc-700">
+            {/* Logout */}
+            <div className="mt-5 pt-4 border-t border-zinc-700">
               <button 
                 onClick={() => { setShowMoreMenu(false); alert('Logout coming soon'); }}
-                className="w-full flex items-center justify-center gap-2 py-4 text-red-400 active:bg-zinc-800 rounded-2xl transition text-base font-medium"
+                className="w-full flex items-center justify-center gap-2 py-3 text-red-400 active:bg-zinc-800 rounded-2xl transition text-sm font-medium"
               >
-                <span className="text-lg">↪</span> Logout
+                <span className="text-base">↪</span> Logout
               </button>
             </div>
           </div>
