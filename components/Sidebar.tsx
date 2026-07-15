@@ -22,7 +22,7 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Desktop Sidebar items (Blocked removed, My Account added)
+  // Desktop Sidebar (My Account added, Blocked removed)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
@@ -36,7 +36,7 @@ export default function Sidebar() {
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
-  // Mobile More Grid (includes Blocked + My Account)
+  // Mobile More Menu (includes both My Account + Blocked)
   const mobileMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
@@ -85,7 +85,7 @@ export default function Sidebar() {
             })}
           </div>
 
-          {/* Desktop MORE Section (My Account added, Blocked removed) */}
+          {/* Desktop MORE Section */}
           <div className="mt-8 px-4">
             <p className="text-xs font-semibold text-zinc-500 mb-3 px-2">MORE</p>
             <div className="space-y-1">
