@@ -2,8 +2,8 @@
 
 import { useParams } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
-import Sidebar from '../../components/Sidebar';
-import { createClient } from '../../lib/supabase';
+import Sidebar from '../../../components/Sidebar';
+import { createClient } from '../../../lib/supabase';
 import { Radio, Heart, Gift, Users, Crown, Lock, Star, ArrowLeft } from 'lucide-react';
 
 const supabase = createClient();
@@ -25,7 +25,7 @@ export default function LiveRoomPage() {
   const [chatInput, setChatInput] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
 
-  // Real-time chat logic (unchanged)
+  // Real-time chat
   useEffect(() => {
     const fetchMessages = async () => {
       const { data } = await supabase
