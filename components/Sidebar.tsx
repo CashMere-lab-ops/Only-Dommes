@@ -22,9 +22,23 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Added "My Account" here
-  const moreGridItems = [
-    { href: '/account', label: 'My Account', icon: User },           // ← Added
+  // Desktop Sidebar items (Blocked removed, My Account added)
+  const desktopMoreItems = [
+    { href: '/account', label: 'My Account', icon: User },
+    { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+    { href: '/discover', label: 'Discover', icon: Search },
+    { href: '/shop', label: 'Shop', icon: ShoppingBag },
+    { href: '/following', label: 'Following', icon: Users },
+    { href: '/subscriptions', label: 'Subscriptions', icon: Heart },
+    { href: '/library', label: 'My Library', icon: BookOpen },
+    { href: '/notifications', label: 'Notifications', icon: Bell },
+    { href: '/settings', label: 'Settings', icon: Settings },
+    { href: '/support', label: 'Support', icon: HelpCircle },
+  ];
+
+  // Mobile More Grid (includes Blocked + My Account)
+  const mobileMoreItems = [
+    { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
@@ -71,10 +85,11 @@ export default function Sidebar() {
             })}
           </div>
 
+          {/* Desktop MORE Section (My Account added, Blocked removed) */}
           <div className="mt-8 px-4">
             <p className="text-xs font-semibold text-zinc-500 mb-3 px-2">MORE</p>
             <div className="space-y-1">
-              {moreGridItems.map((item) => {
+              {desktopMoreItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <Link
@@ -121,7 +136,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Mobile More Menu - Bottom Sheet */}
+      {/* Mobile More Menu */}
       {showMoreMenu && (
         <>
           <div className="lg:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setShowMoreMenu(false)} />
@@ -135,7 +150,7 @@ export default function Sidebar() {
             </div>
 
             <div className="grid grid-cols-4 gap-3">
-              {moreGridItems.map((item) => {
+              {mobileMoreItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <Link
