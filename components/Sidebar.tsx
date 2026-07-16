@@ -22,7 +22,6 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Desktop Sidebar Items (My Account added, Blocked removed)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
@@ -36,7 +35,6 @@ export default function Sidebar() {
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
-  // Mobile More Menu Items (includes Blocked)
   const mobileMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
@@ -67,6 +65,7 @@ export default function Sidebar() {
         </div>
 
         <div className="px-3 py-4 flex-1 overflow-y-auto">
+          {/* Main Navigation */}
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -85,9 +84,10 @@ export default function Sidebar() {
             })}
           </div>
 
-          {/* Desktop MORE Section */}
-          <div className="mt-8 px-4">
-            <p className="text-xs font-semibold text-zinc-500 mb-3 px-2">MORE</p>
+          {/* Desktop MORE Section - Polished */}
+          <div className="mt-6 px-3">
+            <p className="px-4 py-2 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
+            
             <div className="space-y-1">
               {desktopMoreItems.map((item) => {
                 const Icon = item.icon;
@@ -95,11 +95,11 @@ export default function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition ${
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${
                       isActive(item.href) ? 'bg-pink-600 text-white' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                     }`}
                   >
-                    <Icon size={18} />
+                    <Icon size={20} />
                     {item.label}
                   </Link>
                 );
