@@ -72,7 +72,7 @@ export default function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition ${
                     isActive(item.href) ? 'bg-pink-600 text-white' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                   }`}
                 >
@@ -83,8 +83,8 @@ export default function Sidebar() {
             })}
           </div>
 
-          {/* MORE Section - Now flush aligned */}
-          <div className="mt-1">
+          {/* MORE Section */}
+          <div className="mt-2">
             <p className="px-4 py-2 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
             
             <div className="space-y-1">
@@ -94,7 +94,7 @@ export default function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition ${
                       isActive(item.href) ? 'bg-pink-600 text-white' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                     }`}
                   >
