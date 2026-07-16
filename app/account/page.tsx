@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { 
-  ArrowLeft, User, Settings, CreditCard, LogOut, Bell, Shield, 
-  Edit3, TrendingUp, Users, DollarSign, Heart 
+  ArrowLeft, Edit3, TrendingUp, Users, DollarSign, Heart, 
+  Settings, Bell, Shield, LogOut 
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 
@@ -13,12 +13,6 @@ export default function MyAccountPage() {
     username: "@scarletbloom",
     joined: "January 2025",
     bio: "Professional Dominatrix & Content Creator. Daily lives, customs, and exclusive content.",
-    stats: {
-      followers: "12.4k",
-      following: "89",
-      totalEarnings: "$45,230",
-      activeSubs: "1,240"
-    }
   };
 
   return (
@@ -40,7 +34,7 @@ export default function MyAccountPage() {
         </div>
 
         <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
-          
+
           {/* Profile Header */}
           <div className="flex flex-col lg:flex-row lg:items-end gap-6 mb-10">
             <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0">
@@ -62,30 +56,29 @@ export default function MyAccountPage() {
                   <Edit3 size={18} /> Edit Profile
                 </Link>
               </div>
-              
               <p className="mt-4 text-zinc-300 max-w-2xl">{user.bio}</p>
             </div>
           </div>
 
-          {/* Stats */}
+          {/* Stats Cards - THIS IS WHAT WAS MISSING */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-3 text-zinc-400 mb-1">
                 <Users size={18} /> <span className="text-sm">Followers</span>
               </div>
-              <div className="text-3xl font-semibold">{user.stats.followers}</div>
+              <div className="text-3xl font-semibold">12.4k</div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-3 text-zinc-400 mb-1">
                 <Heart size={18} /> <span className="text-sm">Active Subscribers</span>
               </div>
-              <div className="text-3xl font-semibold">{user.stats.activeSubs}</div>
+              <div className="text-3xl font-semibold">1,240</div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-3 text-zinc-400 mb-1">
                 <DollarSign size={18} /> <span className="text-sm">Total Earnings</span>
               </div>
-              <div className="text-3xl font-semibold">{user.stats.totalEarnings}</div>
+              <div className="text-3xl font-semibold">$45,230</div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-3 text-zinc-400 mb-1">
@@ -115,7 +108,7 @@ export default function MyAccountPage() {
                 <div className="text-sm text-zinc-400">View & message fans</div>
               </Link>
               <Link href="/settings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
-                <CreditCard className="text-pink-400 mb-3" size={24} />
+                <DollarSign className="text-pink-400 mb-3" size={24} />
                 <div className="font-semibold">Payout Settings</div>
                 <div className="text-sm text-zinc-400">Bank & crypto details</div>
               </Link>
@@ -146,7 +139,7 @@ export default function MyAccountPage() {
               <h2 className="text-xl font-semibold mb-4 px-1">Billing & Support</h2>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
                 <Link href="/earnings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl">
-                  <div className="flex items-center gap-3"><CreditCard size={20} /> Payout History</div>
+                  <div className="flex items-center gap-3"><DollarSign size={20} /> Payout History</div>
                   <span className="text-zinc-400">→</span>
                 </Link>
                 <Link href="/support" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl">
