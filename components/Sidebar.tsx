@@ -22,9 +22,9 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
+  // Desktop MORE items (Leaderboard removed to avoid duplicate)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
-    { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
     { href: '/following', label: 'Following', icon: Users },
@@ -84,7 +84,7 @@ export default function Sidebar() {
             })}
           </div>
 
-          {/* Desktop MORE Section - Now flush with main nav */}
+          {/* Desktop MORE Section - Flush alignment */}
           <div className="mt-3 px-3">
             <p className="px-4 py-1 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
             
