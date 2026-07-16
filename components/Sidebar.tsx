@@ -84,9 +84,9 @@ export default function Sidebar() {
             })}
           </div>
 
-          {/* Desktop MORE Section - Improved Spacing */}
-          <div className="mt-4 px-3">
-            <p className="px-4 py-1.5 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
+          {/* Desktop MORE Section - Now flush with main nav */}
+          <div className="mt-3 px-3">
+            <p className="px-4 py-1 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
             
             <div className="space-y-1">
               {desktopMoreItems.map((item) => {
