@@ -8,7 +8,6 @@ import {
 import Sidebar from '../../components/Sidebar';
 
 export default function MyAccountPage() {
-  // Fake user data (replace with real data from Supabase later)
   const user = {
     name: "Scarlet Bloom",
     username: "@scarletbloom",
@@ -24,7 +23,6 @@ export default function MyAccountPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
-      {/* Sidebar (visible on lg+) */}
       <Sidebar />
 
       <main className="flex-1">
@@ -69,7 +67,7 @@ export default function MyAccountPage() {
             </div>
           </div>
 
-          {/* Stats Grid */}
+          {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-3 text-zinc-400 mb-1">
@@ -104,22 +102,22 @@ export default function MyAccountPage() {
               <Link href="/settings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
                 <Edit3 className="text-pink-400 mb-3" size={24} />
                 <div className="font-semibold">Edit Profile</div>
-                <div className="text-sm text-zinc-400">Update bio, photos &amp; links</div>
+                <div className="text-sm text-zinc-400">Update bio, photos & links</div>
               </Link>
               <Link href="/earnings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
                 <TrendingUp className="text-pink-400 mb-3" size={24} />
                 <div className="font-semibold">View Earnings</div>
-                <div className="text-sm text-zinc-400">Payouts &amp; analytics</div>
+                <div className="text-sm text-zinc-400">Payouts & analytics</div>
               </Link>
               <Link href="/subscriptions" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
                 <Users className="text-pink-400 mb-3" size={24} />
                 <div className="font-semibold">Manage Subscribers</div>
-                <div className="text-sm text-zinc-400">View &amp; message fans</div>
+                <div className="text-sm text-zinc-400">View & message fans</div>
               </Link>
               <Link href="/settings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
                 <CreditCard className="text-pink-400 mb-3" size={24} />
                 <div className="font-semibold">Payout Settings</div>
-                <div className="text-sm text-zinc-400">Bank &amp; crypto details</div>
+                <div className="text-sm text-zinc-400">Bank & crypto details</div>
               </Link>
             </div>
           </div>
@@ -138,14 +136,14 @@ export default function MyAccountPage() {
                   <span className="text-zinc-400">→</span>
                 </Link>
                 <Link href="/settings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl">
-                  <div className="flex items-center gap-3"><Shield size={20} /> Privacy &amp; Safety</div>
+                  <div className="flex items-center gap-3"><Shield size={20} /> Privacy & Safety</div>
                   <span className="text-zinc-400">→</span>
                 </Link>
               </div>
             </div>
 
             <div>
-              <h2 className="text-xl font-semibold mb-4 px-1">Billing &amp; Support</h2>
+              <h2 className="text-xl font-semibold mb-4 px-1">Billing & Support</h2>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
                 <Link href="/earnings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl">
                   <div className="flex items-center gap-3"><CreditCard size={20} /> Payout History</div>
