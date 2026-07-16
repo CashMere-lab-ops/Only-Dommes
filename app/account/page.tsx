@@ -1,87 +1,179 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, User, Settings, CreditCard, LogOut, Bell, Shield } from 'lucide-react';
+import { 
+  ArrowLeft, User, Settings, CreditCard, LogOut, Bell, Shield, 
+  Edit3, TrendingUp, Users, DollarSign, Heart 
+} from 'lucide-react';
+import Sidebar from '../../components/Sidebar';
 
 export default function MyAccountPage() {
+  // Fake user data (replace with real data from Supabase later)
+  const user = {
+    name: "Scarlet Bloom",
+    username: "@scarletbloom",
+    joined: "January 2025",
+    bio: "Professional Dominatrix & Content Creator. Daily lives, customs, and exclusive content.",
+    stats: {
+      followers: "12.4k",
+      following: "89",
+      totalEarnings: "$45,230",
+      activeSubs: "1,240"
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
-      
-      {/* Mobile Header */}
-      <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
-        <Link href="/live" className="text-zinc-400">
-          <ArrowLeft size={22} />
-        </Link>
-        <h1 className="text-xl font-semibold">My Account</h1>
-      </div>
+    <div className="min-h-screen bg-zinc-950 text-white flex">
+      {/* Sidebar (visible on lg+) */}
+      <Sidebar />
 
-      <div className="max-w-2xl mx-auto p-6 space-y-8">
-        
-        {/* Profile Header */}
-        <div className="flex flex-col items-center text-center">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-4xl font-bold mb-4">
-            SB
+      <main className="flex-1">
+        {/* Mobile Top Bar */}
+        <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-zinc-400 hover:text-white">
+              <ArrowLeft size={22} />
+            </Link>
+            <h1 className="text-xl font-semibold">My Account</h1>
           </div>
-          <h2 className="text-2xl font-bold">Scarlet Bloom</h2>
-          <p className="text-pink-400">@scarletbloom</p>
-          <p className="text-sm text-zinc-400 mt-1">Creator • Joined Jan 2025</p>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-4">
-          <Link 
-            href="/settings" 
-            className="flex items-center gap-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 p-4 rounded-2xl transition"
-          >
-            <Settings className="text-pink-400" size={22} />
-            <div>
-              <div className="font-medium">Edit Profile</div>
-              <div className="text-xs text-zinc-400">Update your info</div>
-            </div>
-          </Link>
-
-          <Link 
-            href="/earnings" 
-            className="flex items-center gap-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 p-4 rounded-2xl transition"
-          >
-            <CreditCard className="text-pink-400" size={22} />
-            <div>
-              <div className="font-medium">Earnings</div>
-              <div className="text-xs text-zinc-400">View payouts</div>
-            </div>
+          <Link href="/account" className="w-9 h-9 rounded-full bg-pink-600 flex items-center justify-center text-sm font-bold">
+            SB
           </Link>
         </div>
 
-        {/* Account Options */}
-        <div className="bg-zinc-900 rounded-2xl border border-zinc-800 divide-y divide-zinc-800">
-          <Link href="/settings" className="flex items-center gap-4 px-5 py-4 hover:bg-zinc-800 transition">
-            <Settings size={20} className="text-zinc-400" />
-            <span>Account Settings</span>
-          </Link>
+        <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
           
-          <Link href="/notifications" className="flex items-center gap-4 px-5 py-4 hover:bg-zinc-800 transition">
-            <Bell size={20} className="text-zinc-400" />
-            <span>Notifications</span>
-          </Link>
-          
-          <Link href="/blocked" className="flex items-center gap-4 px-5 py-4 hover:bg-zinc-800 transition">
-            <Shield size={20} className="text-zinc-400" />
-            <span>Blocked Users</span>
-          </Link>
+          {/* Profile Header */}
+          <div className="flex flex-col lg:flex-row lg:items-end gap-6 mb-10">
+            <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0">
+              SB
+            </div>
+            
+            <div className="flex-1">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div>
+                  <h1 className="text-4xl font-bold">{user.name}</h1>
+                  <p className="text-pink-400 text-xl">{user.username}</p>
+                  <p className="text-sm text-zinc-400 mt-1">Joined {user.joined}</p>
+                </div>
+                
+                <Link 
+                  href="/settings" 
+                  className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit"
+                >
+                  <Edit3 size={18} /> Edit Profile
+                </Link>
+              </div>
+              
+              <p className="mt-4 text-zinc-300 max-w-2xl">{user.bio}</p>
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <div className="flex items-center gap-3 text-zinc-400 mb-1">
+                <Users size={18} /> <span className="text-sm">Followers</span>
+              </div>
+              <div className="text-3xl font-semibold">{user.stats.followers}</div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <div className="flex items-center gap-3 text-zinc-400 mb-1">
+                <Heart size={18} /> <span className="text-sm">Active Subscribers</span>
+              </div>
+              <div className="text-3xl font-semibold">{user.stats.activeSubs}</div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <div className="flex items-center gap-3 text-zinc-400 mb-1">
+                <DollarSign size={18} /> <span className="text-sm">Total Earnings</span>
+              </div>
+              <div className="text-3xl font-semibold">{user.stats.totalEarnings}</div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <div className="flex items-center gap-3 text-zinc-400 mb-1">
+                <TrendingUp size={18} /> <span className="text-sm">This Month</span>
+              </div>
+              <div className="text-3xl font-semibold">$8,420</div>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="mb-10">
+            <h2 className="text-xl font-semibold mb-4 px-1">Quick Actions</h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Link href="/settings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
+                <Edit3 className="text-pink-400 mb-3" size={24} />
+                <div className="font-semibold">Edit Profile</div>
+                <div className="text-sm text-zinc-400">Update bio, photos &amp; links</div>
+              </Link>
+              <Link href="/earnings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
+                <TrendingUp className="text-pink-400 mb-3" size={24} />
+                <div className="font-semibold">View Earnings</div>
+                <div className="text-sm text-zinc-400">Payouts &amp; analytics</div>
+              </Link>
+              <Link href="/subscriptions" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
+                <Users className="text-pink-400 mb-3" size={24} />
+                <div className="font-semibold">Manage Subscribers</div>
+                <div className="text-sm text-zinc-400">View &amp; message fans</div>
+              </Link>
+              <Link href="/settings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
+                <CreditCard className="text-pink-400 mb-3" size={24} />
+                <div className="font-semibold">Payout Settings</div>
+                <div className="text-sm text-zinc-400">Bank &amp; crypto details</div>
+              </Link>
+            </div>
+          </div>
+
+          {/* Settings Sections */}
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-xl font-semibold mb-4 px-1">Account</h2>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
+                <Link href="/settings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl">
+                  <div className="flex items-center gap-3"><Settings size={20} /> Account Settings</div>
+                  <span className="text-zinc-400">→</span>
+                </Link>
+                <Link href="/settings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition">
+                  <div className="flex items-center gap-3"><Bell size={20} /> Notifications</div>
+                  <span className="text-zinc-400">→</span>
+                </Link>
+                <Link href="/settings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl">
+                  <div className="flex items-center gap-3"><Shield size={20} /> Privacy &amp; Safety</div>
+                  <span className="text-zinc-400">→</span>
+                </Link>
+              </div>
+            </div>
+
+            <div>
+              <h2 className="text-xl font-semibold mb-4 px-1">Billing &amp; Support</h2>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
+                <Link href="/earnings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl">
+                  <div className="flex items-center gap-3"><CreditCard size={20} /> Payout History</div>
+                  <span className="text-zinc-400">→</span>
+                </Link>
+                <Link href="/support" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl">
+                  <div className="flex items-center gap-3"><Heart size={20} /> Contact Support</div>
+                  <span className="text-zinc-400">→</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Logout */}
+          <div className="mt-10">
+            <button 
+              onClick={() => alert('Logout feature coming soon')}
+              className="w-full flex items-center justify-center gap-3 bg-zinc-900 hover:bg-red-950/30 border border-zinc-800 hover:border-red-900/50 text-red-400 py-4 rounded-2xl font-medium transition"
+            >
+              <LogOut size={20} /> Log Out
+            </button>
+            <p className="text-center text-xs text-zinc-500 mt-4">
+              Only Dommes • v1.0
+            </p>
+          </div>
+
         </div>
-
-        {/* Logout */}
-        <button 
-          onClick={() => alert('Logout feature coming soon')}
-          className="w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-red-400 py-4 rounded-2xl font-medium transition"
-        >
-          <LogOut size={20} /> Logout
-        </button>
-
-        <p className="text-center text-xs text-zinc-500 mt-4">
-          Only Dommes v1.0 • Need help? Contact support
-        </p>
-      </div>
+      </main>
     </div>
   );
 }
