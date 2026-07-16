@@ -22,7 +22,6 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Desktop MORE items (Leaderboard removed to avoid duplicate)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -84,9 +83,9 @@ export default function Sidebar() {
             })}
           </div>
 
-          {/* Desktop MORE Section - Flush alignment */}
-          <div className="mt-3 px-3">
-            <p className="px-4 py-1 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
+          {/* MORE Section - Now flush aligned */}
+          <div className="mt-1">
+            <p className="px-4 py-2 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
             
             <div className="space-y-1">
               {desktopMoreItems.map((item) => {
