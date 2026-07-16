@@ -22,7 +22,7 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Desktop Sidebar (My Account added, Blocked removed)
+  // Desktop Sidebar Items (My Account added, Blocked removed)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
@@ -36,7 +36,7 @@ export default function Sidebar() {
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
-  // Mobile More Menu (includes both My Account + Blocked)
+  // Mobile More Menu Items (includes Blocked)
   const mobileMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
