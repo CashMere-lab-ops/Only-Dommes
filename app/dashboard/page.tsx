@@ -4,15 +4,31 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { 
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye, 
-  ShoppingBag, Users, Heart, Settings 
+  ShoppingBag, X, Settings 
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 
 export default function DashboardPage() {
   const [isLive, setIsLive] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [creating, setCreating] = useState(false);
 
-  // Mock data (later we will replace with real Supabase data)
+  // Form state for uploading a clip
+  const [clipForm, setClipForm] = useState({
+    title: '',
+    description: '',
+    price: 9.99,
+    category: '',
+  });
+
+  // Pricing settings (mock for now)
+  const [pricing, setPricing] = useState({
+    privatePerMinute: 8,
+    minPrivateMinutes: 5,
+    tipMenuEnabled: true,
+  });
+
+  // Mock data
   const stats = {
     today: 142.50,
     week: 890.00,
@@ -32,6 +48,19 @@ export default function DashboardPage() {
     { id: 2, title: 'Private JOI Custom', price: 45.00, sales: 19 },
     { id: 3, title: 'Feet Worship Clip', price: 9.99, sales: 87 },
   ];
+
+  const handleCreateClip = () => {
+    if (!clipForm.title) return;
+    setCreating(true);
+
+    // Simulate upload
+    setTimeout(() => {
+      setCreating(false);
+      setShowUpload(false);
+      setClipForm({ title: '', description: '', price: 9.99, category: '' });
+      alert('Clip uploaded successfully! (This is a demo)');
+    }, 1200);
+  };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -104,6 +133,48 @@ export default function DashboardPage() {
             </button>
           </div>
 
+          {/* Pricing Settings */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
+            <div className="flex items-center gap-2 mb-5">
+              <Settings size={20} className="text-pink-400" />
+              <h2 className="text-lg font-semibold">Pricing Settings</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">Private Session (per minute)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                  <input
+                    type="number"
+                    value={pricing.privatePerMinute}
+                    onChange={(e) => setPricing({ ...pricing, privatePerMinute: Number(e.target.value) })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">Minimum Private Minutes</label>
+                <input
+                  type="number"
+                  value={pricing.minPrivateMinutes}
+                  onChange={(e) => setPricing({ ...pricing, minPrivateMinutes: Number(e.target.value) })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className={`w-11 h-6 rounded-full relative transition ${pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${pricing.tipMenuEnabled ? 'left-5.5' : 'left-0.5'}`} />
+                  </div>
+                  <span className="text-sm">Enable Tip Menu</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           {/* Main Content Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -113,28 +184,22 @@ export default function DashboardPage() {
                 <DollarSign size={20} className="text-pink-400" /> Recent Tips
               </h2>
 
-              {recentTips.length === 0 ? (
-                <div className="text-center py-10 text-zinc-500 text-sm">
-                  No tips yet. Go live to start earning!
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentTips.map((tip) => (
-                    <div key={tip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold">
-                        {tip.name.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{tip.name}</p>
-                        {tip.message && (
-                          <p className="text-xs text-zinc-400 truncate">{tip.message}</p>
-                        )}
-                      </div>
-                      <span className="font-semibold text-pink-400">£{tip.amount}</span>
+              <div className="space-y-3">
+                {recentTips.map((tip) => (
+                  <div key={tip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold">
+                      {tip.name.charAt(0)}
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{tip.name}</p>
+                      {tip.message && (
+                        <p className="text-xs text-zinc-400 truncate">{tip.message}</p>
+                      )}
+                    </div>
+                    <span className="font-semibold text-pink-400">£{tip.amount}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* My Clips */}
@@ -151,32 +216,25 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              {myClips.length === 0 ? (
-                <div className="text-center py-10 text-zinc-500 text-sm">
-                  <Film size={32} className="mx-auto mb-2 opacity-40" />
-                  No clips yet. Upload your first clip!
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {myClips.map((clip) => (
-                    <div key={clip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
-                      <div className="w-14 h-10 rounded-lg bg-zinc-700 flex items-center justify-center">
-                        <Film size={18} className="text-zinc-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{clip.title}</p>
-                        <p className="text-xs text-zinc-400 flex items-center gap-2">
-                          <span className="flex items-center gap-1">
-                            <ShoppingBag size={12} /> {clip.sales}
-                          </span>
-                          <span>·</span>
-                          <span>£{clip.price.toFixed(2)}</span>
-                        </p>
-                      </div>
+              <div className="space-y-3">
+                {myClips.map((clip) => (
+                  <div key={clip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
+                    <div className="w-14 h-10 rounded-lg bg-zinc-700 flex items-center justify-center">
+                      <Film size={18} className="text-zinc-400" />
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{clip.title}</p>
+                      <p className="text-xs text-zinc-400 flex items-center gap-2">
+                        <span className="flex items-center gap-1">
+                          <ShoppingBag size={12} /> {clip.sales}
+                        </span>
+                        <span>·</span>
+                        <span>£{clip.price.toFixed(2)}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -192,10 +250,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
               </div>
-              <Link
-                href="/live/demo"
-                className="text-sm font-medium text-pink-400 hover:text-pink-300"
-              >
+              <Link href="/live/demo" className="text-sm font-medium text-pink-400 hover:text-pink-300">
                 View Stream →
               </Link>
             </div>
@@ -203,6 +258,87 @@ export default function DashboardPage() {
 
         </div>
       </main>
+
+      {/* ==================== UPLOAD CLIP MODAL ==================== */}
+      {showUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-semibold">Upload New Clip</h2>
+              <button onClick={() => setShowUpload(false)} className="text-zinc-400 hover:text-white">
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">Title</label>
+                <input
+                  type="text"
+                  value={clipForm.title}
+                  onChange={(e) => setClipForm({ ...clipForm, title: e.target.value })}
+                  placeholder="Clip title"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">Description</label>
+                <textarea
+                  value={clipForm.description}
+                  onChange={(e) => setClipForm({ ...clipForm, description: e.target.value })}
+                  placeholder="Describe your clip..."
+                  rows={3}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">Price (£)</label>
+                  <input
+                    type="number"
+                    value={clipForm.price}
+                    onChange={(e) => setClipForm({ ...clipForm, price: Number(e.target.value) })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">Category</label>
+                  <select
+                    value={clipForm.category}
+                    onChange={(e) => setClipForm({ ...clipForm, category: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                  >
+                    <option value="">Select category</option>
+                    <option value="Dominatrix">Dominatrix</option>
+                    <option value="Fitness">Fitness</option>
+                    <option value="Lifestyle">Lifestyle</option>
+                    <option value="Custom">Custom</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowUpload(false)}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateClip}
+                disabled={creating || !clipForm.title}
+                className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
+              >
+                {creating ? 'Uploading...' : 'Publish Clip'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
