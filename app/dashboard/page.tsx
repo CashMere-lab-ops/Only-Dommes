@@ -8,12 +8,22 @@ import {
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 
+type Item = {
+  id: number;
+  title: string;
+  description?: string;
+  price: number;
+  category: string;
+  condition: string;
+  photos: string[];
+};
+
 export default function DashboardPage() {
   const [isLive, setIsLive] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showItemForm, setShowItemForm] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
 
   // Clip form
   const [clipForm, setClipForm] = useState({
@@ -61,7 +71,7 @@ export default function DashboardPage() {
     { id: 3, title: 'Feet Worship Clip', price: 9.99, sales: 87 },
   ]);
 
-  const [myItems, setMyItems] = useState([
+  const [myItems, setMyItems] = useState<Item[]>([
     { 
       id: 1, 
       title: 'Black Lace Panties (Worn 2 days)', 
@@ -99,7 +109,7 @@ export default function DashboardPage() {
     }, 1200);
   };
 
-  const openEditItem = (item: any) => {
+  const openEditItem = (item: Item) => {
     setEditingItem(item);
     setItemForm({
       title: item.title,
@@ -123,8 +133,6 @@ export default function DashboardPage() {
     }
 
     const filesToAdd = Array.from(files).slice(0, remainingSlots);
-
-    // Create preview URLs
     const newPhotos = filesToAdd.map(file => URL.createObjectURL(file));
 
     setItemForm(prev => ({
@@ -154,7 +162,7 @@ export default function DashboardPage() {
           )
         );
       } else {
-        const newItem = {
+        const newItem: Item = {
           id: Date.now(),
           ...itemForm,
         };
