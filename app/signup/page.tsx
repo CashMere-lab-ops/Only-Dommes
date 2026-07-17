@@ -1,91 +1,188 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '../../lib/supabase';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Crown } from 'lucide-react';
+import { createClient } from '../../lib/supabase';
 
 export default function SignupPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
-  const handleSignup = async () => {
+  // Check if username is available
+  const checkUsername = async (value: string) => {
+    const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    setUsername(clean);
+
+    if (clean.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+
+    const { data } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('username', clean)
+      .maybeSingle();
+
+    setUsernameAvailable(!data);
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
     setLoading(true);
-    setMessage('');
 
-    const supabase = createClient();
+    if (!username || username.length < 3) {
+      setError('Username must be at least 3 characters');
+      setLoading(false);
+      return;
+    }
+
+    if (usernameAvailable === false) {
+      setError('That username is already taken');
+      setLoading(false);
+      return;
+    }
 
     try {
-      const { error } = await supabase.auth.signUp({
+      // 1. Create the auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
       });
 
-      if (error) {
-        setMessage(error.message);
-      } else {
-        setMessage('Success! Check your email to confirm your account.');
-      }
-    } catch (err) {
-      setMessage('Something went wrong. Please try again.');
-    }
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('No user returned');
 
-    setLoading(false);
+      // 2. Update the profile with the chosen username
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          username: username.toLowerCase(),
+          display_name: displayName || username,
+        })
+        .eq('id', authData.user.id);
+
+      if (profileError) throw profileError;
+
+      // Success
+      router.push('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
+    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        <div className="flex justify-center mb-6">
-          <div className="w-14 h-14 bg-pink-500 rounded-2xl flex items-center justify-center">
-            <Crown className="w-7 h-7 text-white" />
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 mb-2">
+            <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
+              <span className="text-white font-bold text-xl">♕</span>
+            </div>
+            <span className="text-3xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+              Only Dommes
+            </span>
           </div>
+          <p className="text-zinc-400">Create your account</p>
         </div>
 
-        <h1 className="text-3xl font-bold text-center mb-2">
-          Only <span className="gradient-text">Dommes</span>
-        </h1>
-        <p className="text-zinc-400 text-center mb-8">Create your free account</p>
+        <form onSubmit={handleSignup} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-5">
+          
+          {/* Username */}
+          <div>
+            <label className="text-sm text-zinc-400 mb-1.5 block">Username</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">@</span>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => checkUsername(e.target.value)}
+                placeholder="yourusername"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 pl-8 pr-4 outline-none focus:border-pink-500"
+                required
+              />
+            </div>
+            {username.length >= 3 && (
+              <p className={`text-xs mt-1.5 ${usernameAvailable ? 'text-green-400' : 'text-red-400'}`}>
+                {usernameAvailable === null
+                  ? ''
+                  : usernameAvailable
+                  ? '✓ Username is available'
+                  : '✗ Username is already taken'}
+              </p>
+            )}
+          </div>
 
-        <div className="bg-zinc-900 p-8 rounded-3xl">
-          <label className="block text-sm font-medium mb-2">Email</label>
-          <input
-            type="email"
-            placeholder="you@example.com"
-            className="w-full p-4 mb-5 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+          {/* Display Name */}
+          <div>
+            <label className="text-sm text-zinc-400 mb-1.5 block">Display Name</label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="How you want to be known"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
+            />
+          </div>
 
-          <label className="block text-sm font-medium mb-2">Password</label>
-          <input
-            type="password"
-            placeholder="••••••••"
-            className="w-full p-4 mb-6 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          {/* Email */}
+          <div>
+            <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
+              required
+            />
+          </div>
+
+          {/* Password */}
+          <div>
+            <label className="text-sm text-zinc-400 mb-1.5 block">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
+              required
+              minLength={6}
+            />
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
+              {error}
+            </div>
+          )}
 
           <button
-            onClick={handleSignup}
-            disabled={loading}
-            className="w-full bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-700 py-4 rounded-2xl text-lg font-semibold transition"
+            type="submit"
+            disabled={loading || usernameAvailable === false}
+            className="w-full bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
           >
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
+        </form>
 
-          {message && (
-            <p className="mt-5 text-center p-3 bg-zinc-800 rounded-2xl text-sm">
-              {message}
-            </p>
-          )}
-        </div>
-
-        <p className="text-center mt-8 text-zinc-400">
+        <p className="text-center text-sm text-zinc-400 mt-6">
           Already have an account?{' '}
-          <Link href="/login" className="text-pink-500 hover:underline font-medium">
+          <Link href="/login" className="text-pink-400 hover:text-pink-300">
             Log in
           </Link>
         </p>
