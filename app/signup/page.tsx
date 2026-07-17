@@ -1,13 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '../../lib/supabase';
 
 export default function SignupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  // Get account type from URL
+  const accountType = searchParams.get('type') as 'creator' | 'sub' || 'sub';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,7 +57,7 @@ export default function SignupPage() {
     }
 
     try {
-      // 1. Sign up the user
+      // 1. Create auth user + pass account type in metadata
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -61,35 +65,34 @@ export default function SignupPage() {
           data: {
             username: username.toLowerCase(),
             display_name: displayName || username,
+            account_type: accountType,
           },
         },
       });
 
       if (authError) throw authError;
-      if (!authData.user) throw new Error('No user returned from signup');
+      if (!authData.user) throw new Error('No user returned');
 
-      // 2. Force update the profile with the chosen username
-      // We wait a short moment to make sure the trigger has created the row
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      // 2. Update profile with correct account type
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           username: username.toLowerCase(),
           display_name: displayName || username,
+          account_type: accountType,
         })
         .eq('id', authData.user.id);
 
       if (updateError) {
         console.error('Profile update error:', updateError);
-        // Even if update fails, we still continue
       }
 
-      // Success
       router.push('/dashboard');
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Something went wrong during signup');
+      setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -112,7 +115,6 @@ export default function SignupPage() {
 
         <form onSubmit={handleSignup} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-5">
           
-          {/* Username */}
           <div>
             <label className="text-sm text-zinc-400 mb-1.5 block">Username</label>
             <div className="relative">
@@ -137,7 +139,6 @@ export default function SignupPage() {
             )}
           </div>
 
-          {/* Display Name */}
           <div>
             <label className="text-sm text-zinc-400 mb-1.5 block">Display Name</label>
             <input
@@ -149,7 +150,6 @@ export default function SignupPage() {
             />
           </div>
 
-          {/* Email */}
           <div>
             <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
             <input
@@ -162,7 +162,6 @@ export default function SignupPage() {
             />
           </div>
 
-          {/* Password */}
           <div>
             <label className="text-sm text-zinc-400 mb-1.5 block">Password</label>
             <input
