@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { 
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye, 
-  ShoppingBag, X, Settings, Package, Pencil, Trash2 
+  ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon 
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 
@@ -30,6 +30,7 @@ export default function DashboardPage() {
     price: 25,
     category: 'Underwear',
     condition: 'Worn',
+    photos: [] as string[],
   });
 
   // Pricing settings
@@ -61,9 +62,30 @@ export default function DashboardPage() {
   ]);
 
   const [myItems, setMyItems] = useState([
-    { id: 1, title: 'Black Lace Panties (Worn 2 days)', price: 45, category: 'Underwear', condition: 'Worn', stock: 1 },
-    { id: 2, title: 'Red High Heels - Size 6', price: 85, category: 'Heels', condition: 'New', stock: 1 },
-    { id: 3, title: 'White Ankle Socks (Worn)', price: 30, category: 'Socks', condition: 'Heavily Worn', stock: 2 },
+    { 
+      id: 1, 
+      title: 'Black Lace Panties (Worn 2 days)', 
+      price: 45, 
+      category: 'Underwear', 
+      condition: 'Worn',
+      photos: [] 
+    },
+    { 
+      id: 2, 
+      title: 'Red High Heels - Size 6', 
+      price: 85, 
+      category: 'Heels', 
+      condition: 'New',
+      photos: [] 
+    },
+    { 
+      id: 3, 
+      title: 'White Ankle Socks (Worn)', 
+      price: 30, 
+      category: 'Socks', 
+      condition: 'Heavily Worn',
+      photos: [] 
+    },
   ]);
 
   const handleCreateClip = () => {
@@ -85,8 +107,37 @@ export default function DashboardPage() {
       price: item.price,
       category: item.category,
       condition: item.condition || 'Worn',
+      photos: item.photos || [],
     });
     setShowItemForm(true);
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const remainingSlots = 3 - itemForm.photos.length;
+    if (remainingSlots <= 0) {
+      alert('You can only upload a maximum of 3 photos.');
+      return;
+    }
+
+    const filesToAdd = Array.from(files).slice(0, remainingSlots);
+
+    // Create preview URLs
+    const newPhotos = filesToAdd.map(file => URL.createObjectURL(file));
+
+    setItemForm(prev => ({
+      ...prev,
+      photos: [...prev.photos, ...newPhotos]
+    }));
+  };
+
+  const removePhoto = (index: number) => {
+    setItemForm(prev => ({
+      ...prev,
+      photos: prev.photos.filter((_, i) => i !== index)
+    }));
   };
 
   const handleSaveItem = () => {
@@ -95,7 +146,6 @@ export default function DashboardPage() {
 
     setTimeout(() => {
       if (editingItem) {
-        // Update existing item
         setMyItems(prev =>
           prev.map(item =>
             item.id === editingItem.id
@@ -104,11 +154,9 @@ export default function DashboardPage() {
           )
         );
       } else {
-        // Create new item
         const newItem = {
           id: Date.now(),
           ...itemForm,
-          stock: 1,
         };
         setMyItems(prev => [newItem, ...prev]);
       }
@@ -116,7 +164,7 @@ export default function DashboardPage() {
       setCreating(false);
       setShowItemForm(false);
       setEditingItem(null);
-      setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn' });
+      setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn', photos: [] });
     }, 800);
   };
 
@@ -304,7 +352,7 @@ export default function DashboardPage() {
               <button
                 onClick={() => {
                   setEditingItem(null);
-                  setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn' });
+                  setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn', photos: [] });
                   setShowItemForm(true);
                 }}
                 className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
@@ -326,7 +374,7 @@ export default function DashboardPage() {
                       <div>
                         <p className="font-medium leading-tight">{item.title}</p>
                         <p className="text-xs text-zinc-400 mt-1">
-                          {item.category} · {item.condition} · Stock: {item.stock}
+                          {item.category} · {item.condition}
                         </p>
                       </div>
                       <span className="font-semibold text-pink-400 whitespace-nowrap">£{item.price}</span>
@@ -452,7 +500,7 @@ export default function DashboardPage() {
       {/* ==================== ADD / EDIT ITEM MODAL ==================== */}
       {showItemForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-semibold">
                 {editingItem ? 'Edit Item' : 'Add Physical Item'}
@@ -469,6 +517,44 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-4">
+              {/* Photo Upload */}
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">
+                  Photos (max 3)
+                </label>
+
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  {itemForm.photos.map((photo, index) => (
+                    <div key={index} className="relative aspect-square rounded-xl overflow-hidden bg-zinc-800">
+                      <img src={photo} alt={`Photo ${index + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        onClick={() => removePhoto(index)}
+                        className="absolute top-1 right-1 bg-black/70 rounded-full p-1"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+
+                  {itemForm.photos.length < 3 && (
+                    <label className="aspect-square rounded-xl border-2 border-dashed border-zinc-700 flex flex-col items-center justify-center cursor-pointer hover:border-pink-500 transition">
+                      <ImageIcon size={24} className="text-zinc-500 mb-1" />
+                      <span className="text-xs text-zinc-500">Add Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handlePhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+                <p className="text-xs text-zinc-500">
+                  {itemForm.photos.length}/3 photos uploaded
+                </p>
+              </div>
+
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">Item Title</label>
                 <input
