@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { 
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye, 
@@ -27,6 +27,10 @@ export default function DashboardPage() {
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [viewingItem, setViewingItem] = useState<Item | null>(null);
   const [photoIndex, setPhotoIndex] = useState(0);
+
+  // For swipe gestures
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
 
   // Clip form
   const [clipForm, setClipForm] = useState({
@@ -199,6 +203,34 @@ export default function DashboardPage() {
   const prevPhoto = () => {
     if (!viewingItem) return;
     setPhotoIndex((prev) => (prev - 1 + viewingItem.photos.length) % viewingItem.photos.length);
+  };
+
+  // Swipe handlers
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return;
+
+    const distance = touchStartX.current - touchEndX.current;
+    const minSwipeDistance = 50;
+
+    if (distance > minSwipeDistance) {
+      // Swiped left → next photo
+      nextPhoto();
+    } else if (distance < -minSwipeDistance) {
+      // Swiped right → previous photo
+      prevPhoto();
+    }
+
+    // Reset
+    touchStartX.current = null;
+    touchEndX.current = null;
   };
 
   return (
@@ -474,28 +506,33 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* ==================== PHOTO GALLERY MODAL ==================== */}
+      {/* ==================== PHOTO GALLERY MODAL (with swipe) ==================== */}
       {viewingItem && viewingItem.photos.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
           <button
             onClick={() => setViewingItem(null)}
-            className="absolute top-4 right-4 text-white/80 hover:text-white"
+            className="absolute top-4 right-4 text-white/80 hover:text-white z-10"
           >
             <X size={28} />
           </button>
 
           <button
             onClick={prevPhoto}
-            className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded-full"
+            className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded-full z-10"
           >
             <ChevronLeft size={28} />
           </button>
 
-          <div className="max-w-3xl w-full">
+          <div className="max-w-3xl w-full select-none">
             <img
               src={viewingItem.photos[photoIndex]}
               alt={`${viewingItem.title} - Photo ${photoIndex + 1}`}
-              className="w-full max-h-[80vh] object-contain rounded-xl"
+              className="w-full max-h-[80vh] object-contain rounded-xl pointer-events-none"
             />
             <div className="text-center mt-4 text-sm text-zinc-400">
               {photoIndex + 1} / {viewingItem.photos.length} · {viewingItem.title}
@@ -504,7 +541,7 @@ export default function DashboardPage() {
 
           <button
             onClick={nextPhoto}
-            className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded-full"
+            className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded-full z-10"
           >
             <ChevronRight size={28} />
           </button>
