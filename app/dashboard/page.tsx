@@ -4,16 +4,17 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { 
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye, 
-  ShoppingBag, X, Settings 
+  ShoppingBag, X, Settings, Package 
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 
 export default function DashboardPage() {
   const [isLive, setIsLive] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [showItemForm, setShowItemForm] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // Form state for uploading a clip
+  // Clip form
   const [clipForm, setClipForm] = useState({
     title: '',
     description: '',
@@ -21,7 +22,16 @@ export default function DashboardPage() {
     category: '',
   });
 
-  // Pricing settings (mock for now)
+  // Item form
+  const [itemForm, setItemForm] = useState({
+    title: '',
+    description: '',
+    price: 25,
+    category: 'Underwear',
+    condition: 'Worn',
+  });
+
+  // Pricing settings
   const [pricing, setPricing] = useState({
     privatePerMinute: 8,
     minPrivateMinutes: 5,
@@ -49,16 +59,31 @@ export default function DashboardPage() {
     { id: 3, title: 'Feet Worship Clip', price: 9.99, sales: 87 },
   ];
 
+  const myItems = [
+    { id: 1, title: 'Black Lace Panties (Worn 2 days)', price: 45, category: 'Underwear', stock: 1 },
+    { id: 2, title: 'Red High Heels - Size 6', price: 85, category: 'Heels', stock: 1 },
+    { id: 3, title: 'White Ankle Socks (Worn)', price: 30, category: 'Socks', stock: 2 },
+  ];
+
   const handleCreateClip = () => {
     if (!clipForm.title) return;
     setCreating(true);
-
-    // Simulate upload
     setTimeout(() => {
       setCreating(false);
       setShowUpload(false);
       setClipForm({ title: '', description: '', price: 9.99, category: '' });
-      alert('Clip uploaded successfully! (This is a demo)');
+      alert('Clip uploaded successfully! (Demo)');
+    }, 1200);
+  };
+
+  const handleCreateItem = () => {
+    if (!itemForm.title) return;
+    setCreating(true);
+    setTimeout(() => {
+      setCreating(false);
+      setShowItemForm(false);
+      setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn' });
+      alert('Item listed successfully! (Demo)');
     }, 1200);
   };
 
@@ -167,7 +192,7 @@ export default function DashboardPage() {
               <div className="flex items-end">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className={`w-11 h-6 rounded-full relative transition ${pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'}`}>
-                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${pricing.tipMenuEnabled ? 'left-5.5' : 'left-0.5'}`} />
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${pricing.tipMenuEnabled ? 'left-[22px]' : 'left-0.5'}`} />
                   </div>
                   <span className="text-sm">Enable Tip Menu</span>
                 </label>
@@ -176,14 +201,13 @@ export default function DashboardPage() {
           </div>
 
           {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
             {/* Recent Tips */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <DollarSign size={20} className="text-pink-400" /> Recent Tips
               </h2>
-
               <div className="space-y-3">
                 {recentTips.map((tip) => (
                   <div key={tip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
@@ -192,9 +216,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{tip.name}</p>
-                      {tip.message && (
-                        <p className="text-xs text-zinc-400 truncate">{tip.message}</p>
-                      )}
+                      {tip.message && <p className="text-xs text-zinc-400 truncate">{tip.message}</p>}
                     </div>
                     <span className="font-semibold text-pink-400">£{tip.amount}</span>
                   </div>
@@ -215,7 +237,6 @@ export default function DashboardPage() {
                   <Plus size={16} /> Upload
                 </button>
               </div>
-
               <div className="space-y-3">
                 {myClips.map((clip) => (
                   <div key={clip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
@@ -225,9 +246,7 @@ export default function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{clip.title}</p>
                       <p className="text-xs text-zinc-400 flex items-center gap-2">
-                        <span className="flex items-center gap-1">
-                          <ShoppingBag size={12} /> {clip.sales}
-                        </span>
+                        <span className="flex items-center gap-1"><ShoppingBag size={12} /> {clip.sales}</span>
                         <span>·</span>
                         <span>£{clip.price.toFixed(2)}</span>
                       </p>
@@ -238,9 +257,45 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* ==================== ITEM MANAGER ==================== */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Package size={20} className="text-pink-400" /> Physical Items for Sale
+              </h2>
+              <button
+                onClick={() => setShowItemForm(true)}
+                className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
+              >
+                <Plus size={16} /> Add Item
+              </button>
+            </div>
+
+            {myItems.length === 0 ? (
+              <div className="text-center py-10 text-zinc-500 text-sm">
+                <Package size={32} className="mx-auto mb-2 opacity-40" />
+                No items listed yet. Sell underwear, heels, socks and more!
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {myItems.map((item) => (
+                  <div key={item.id} className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-medium leading-tight">{item.title}</p>
+                        <p className="text-xs text-zinc-400 mt-1">{item.category} · Stock: {item.stock}</p>
+                      </div>
+                      <span className="font-semibold text-pink-400 whitespace-nowrap">£{item.price}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Active Stream Banner */}
           {isLive && (
-            <div className="mt-6 rounded-2xl border border-pink-500/40 bg-pink-500/10 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="rounded-2xl border border-pink-500/40 bg-pink-500/10 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="bg-red-600 text-xs font-bold px-2.5 py-1 rounded-full">LIVE</div>
                 <div>
@@ -281,7 +336,6 @@ export default function DashboardPage() {
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
                 />
               </div>
-
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">Description</label>
                 <textarea
@@ -292,7 +346,6 @@ export default function DashboardPage() {
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500 resize-none"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm text-zinc-400 mb-1.5 block">Price (£)</label>
@@ -322,10 +375,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowUpload(false)}
-                className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition"
-              >
+              <button onClick={() => setShowUpload(false)} className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition">
                 Cancel
               </button>
               <button
@@ -334,6 +384,96 @@ export default function DashboardPage() {
                 className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
               >
                 {creating ? 'Uploading...' : 'Publish Clip'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== ADD ITEM MODAL ==================== */}
+      {showItemForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-semibold">Add Physical Item</h2>
+              <button onClick={() => setShowItemForm(false)} className="text-zinc-400 hover:text-white">
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">Item Title</label>
+                <input
+                  type="text"
+                  value={itemForm.title}
+                  onChange={(e) => setItemForm({ ...itemForm, title: e.target.value })}
+                  placeholder="e.g. Black Lace Panties (Worn)"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">Description</label>
+                <textarea
+                  value={itemForm.description}
+                  onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
+                  placeholder="Describe the item, how long it was worn, etc."
+                  rows={3}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">Price (£)</label>
+                  <input
+                    type="number"
+                    value={itemForm.price}
+                    onChange={(e) => setItemForm({ ...itemForm, price: Number(e.target.value) })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">Category</label>
+                  <select
+                    value={itemForm.category}
+                    onChange={(e) => setItemForm({ ...itemForm, category: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                  >
+                    <option value="Underwear">Underwear</option>
+                    <option value="Heels">Heels / Shoes</option>
+                    <option value="Socks">Socks</option>
+                    <option value="Boots">Boots</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-400 mb-1.5 block">Condition</label>
+                <select
+                  value={itemForm.condition}
+                  onChange={(e) => setItemForm({ ...itemForm, condition: e.target.value })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                >
+                  <option value="New">New / Unworn</option>
+                  <option value="Worn">Worn</option>
+                  <option value="Heavily Worn">Heavily Worn</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowItemForm(false)} className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition">
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateItem}
+                disabled={creating || !itemForm.title}
+                className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
+              >
+                {creating ? 'Listing...' : 'List Item'}
               </button>
             </div>
           </div>
