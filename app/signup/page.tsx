@@ -17,7 +17,6 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
-  // Check if username is available
   const checkUsername = async (value: string) => {
     const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
     setUsername(clean);
@@ -54,17 +53,26 @@ export default function SignupPage() {
     }
 
     try {
-      // 1. Create the auth user
+      // 1. Sign up the user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            username: username.toLowerCase(),
+            display_name: displayName || username,
+          },
+        },
       });
 
       if (authError) throw authError;
-      if (!authData.user) throw new Error('No user returned');
+      if (!authData.user) throw new Error('No user returned from signup');
 
-      // 2. Update the profile with the chosen username
-      const { error: profileError } = await supabase
+      // 2. Force update the profile with the chosen username
+      // We wait a short moment to make sure the trigger has created the row
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      const { error: updateError } = await supabase
         .from('profiles')
         .update({
           username: username.toLowerCase(),
@@ -72,12 +80,16 @@ export default function SignupPage() {
         })
         .eq('id', authData.user.id);
 
-      if (profileError) throw profileError;
+      if (updateError) {
+        console.error('Profile update error:', updateError);
+        // Even if update fails, we still continue
+      }
 
       // Success
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+      console.error(err);
+      setError(err.message || 'Something went wrong during signup');
     } finally {
       setLoading(false);
     }
@@ -86,7 +98,6 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-2">
             <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
