@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { 
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye, 
-  ShoppingBag, X, Settings, Package 
+  ShoppingBag, X, Settings, Package, Pencil, Trash2 
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 
@@ -13,6 +13,7 @@ export default function DashboardPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [showItemForm, setShowItemForm] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editingItem, setEditingItem] = useState<any>(null);
 
   // Clip form
   const [clipForm, setClipForm] = useState({
@@ -53,17 +54,17 @@ export default function DashboardPage() {
     { id: 4, name: 'NightOwl', amount: 15, message: '' },
   ];
 
-  const myClips = [
+  const [myClips] = useState([
     { id: 1, title: 'Morning Stretch Session', price: 12.99, sales: 48 },
     { id: 2, title: 'Private JOI Custom', price: 45.00, sales: 19 },
     { id: 3, title: 'Feet Worship Clip', price: 9.99, sales: 87 },
-  ];
+  ]);
 
-  const myItems = [
-    { id: 1, title: 'Black Lace Panties (Worn 2 days)', price: 45, category: 'Underwear', stock: 1 },
-    { id: 2, title: 'Red High Heels - Size 6', price: 85, category: 'Heels', stock: 1 },
-    { id: 3, title: 'White Ankle Socks (Worn)', price: 30, category: 'Socks', stock: 2 },
-  ];
+  const [myItems, setMyItems] = useState([
+    { id: 1, title: 'Black Lace Panties (Worn 2 days)', price: 45, category: 'Underwear', condition: 'Worn', stock: 1 },
+    { id: 2, title: 'Red High Heels - Size 6', price: 85, category: 'Heels', condition: 'New', stock: 1 },
+    { id: 3, title: 'White Ankle Socks (Worn)', price: 30, category: 'Socks', condition: 'Heavily Worn', stock: 2 },
+  ]);
 
   const handleCreateClip = () => {
     if (!clipForm.title) return;
@@ -76,15 +77,53 @@ export default function DashboardPage() {
     }, 1200);
   };
 
-  const handleCreateItem = () => {
+  const openEditItem = (item: any) => {
+    setEditingItem(item);
+    setItemForm({
+      title: item.title,
+      description: item.description || '',
+      price: item.price,
+      category: item.category,
+      condition: item.condition || 'Worn',
+    });
+    setShowItemForm(true);
+  };
+
+  const handleSaveItem = () => {
     if (!itemForm.title) return;
     setCreating(true);
+
     setTimeout(() => {
+      if (editingItem) {
+        // Update existing item
+        setMyItems(prev =>
+          prev.map(item =>
+            item.id === editingItem.id
+              ? { ...item, ...itemForm }
+              : item
+          )
+        );
+      } else {
+        // Create new item
+        const newItem = {
+          id: Date.now(),
+          ...itemForm,
+          stock: 1,
+        };
+        setMyItems(prev => [newItem, ...prev]);
+      }
+
       setCreating(false);
       setShowItemForm(false);
+      setEditingItem(null);
       setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn' });
-      alert('Item listed successfully! (Demo)');
-    }, 1200);
+    }, 800);
+  };
+
+  const handleDeleteItem = (id: number) => {
+    if (confirm('Are you sure you want to delete this item?')) {
+      setMyItems(prev => prev.filter(item => item.id !== id));
+    }
   };
 
   return (
@@ -202,7 +241,6 @@ export default function DashboardPage() {
 
           {/* Main Content Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
             {/* Recent Tips */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -264,7 +302,11 @@ export default function DashboardPage() {
                 <Package size={20} className="text-pink-400" /> Physical Items for Sale
               </h2>
               <button
-                onClick={() => setShowItemForm(true)}
+                onClick={() => {
+                  setEditingItem(null);
+                  setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn' });
+                  setShowItemForm(true);
+                }}
                 className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
               >
                 <Plus size={16} /> Add Item
@@ -280,12 +322,29 @@ export default function DashboardPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {myItems.map((item) => (
                   <div key={item.id} className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
                         <p className="font-medium leading-tight">{item.title}</p>
-                        <p className="text-xs text-zinc-400 mt-1">{item.category} · Stock: {item.stock}</p>
+                        <p className="text-xs text-zinc-400 mt-1">
+                          {item.category} · {item.condition} · Stock: {item.stock}
+                        </p>
                       </div>
                       <span className="font-semibold text-pink-400 whitespace-nowrap">£{item.price}</span>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openEditItem(item)}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition"
+                      >
+                        <Pencil size={13} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-400 transition"
+                      >
+                        <Trash2 size={13} /> Delete
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -390,13 +449,21 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ==================== ADD ITEM MODAL ==================== */}
+      {/* ==================== ADD / EDIT ITEM MODAL ==================== */}
       {showItemForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
           <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-semibold">Add Physical Item</h2>
-              <button onClick={() => setShowItemForm(false)} className="text-zinc-400 hover:text-white">
+              <h2 className="text-xl font-semibold">
+                {editingItem ? 'Edit Item' : 'Add Physical Item'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowItemForm(false);
+                  setEditingItem(null);
+                }}
+                className="text-zinc-400 hover:text-white"
+              >
                 <X size={22} />
               </button>
             </div>
@@ -465,15 +532,21 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowItemForm(false)} className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition">
+              <button
+                onClick={() => {
+                  setShowItemForm(false);
+                  setEditingItem(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition"
+              >
                 Cancel
               </button>
               <button
-                onClick={handleCreateItem}
+                onClick={handleSaveItem}
                 disabled={creating || !itemForm.title}
                 className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
               >
-                {creating ? 'Listing...' : 'List Item'}
+                {creating ? 'Saving...' : editingItem ? 'Save Changes' : 'List Item'}
               </button>
             </div>
           </div>
