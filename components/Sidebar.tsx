@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Home, Radio, Video, Trophy, MessageCircle, LayoutDashboard,
-  Search, ShoppingBag, Users, Heart, Settings,
+  Search, ShoppingBag, Heart, Settings,
   LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle, User
 } from 'lucide-react';
 
@@ -22,12 +22,11 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Desktop MORE items
+  // Desktop MORE items (Following removed)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
-    { href: '/following', label: 'Following', icon: Users },
     { href: '/subscriptions', label: 'Subscriptions', icon: Heart },
     { href: '/library', label: 'My Library', icon: BookOpen },
     { href: '/notifications', label: 'Notifications', icon: Bell },
@@ -35,14 +34,13 @@ export default function Sidebar() {
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
-  // Mobile MORE items (Clips moved here)
+  // Mobile MORE items (Following removed)
   const mobileMoreItems = [
     { href: '/clips', label: 'Clips', icon: Video },
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
-    { href: '/following', label: 'Following', icon: Users },
     { href: '/subscriptions', label: 'Subscriptions', icon: Heart },
     { href: '/library', label: 'My Library', icon: BookOpen },
     { href: '/notifications', label: 'Notifications', icon: Bell },
@@ -121,7 +119,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* ==================== MOBILE BOTTOM NAV ==================== */}
+      {/* Mobile Bottom Nav */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
         <div className="flex justify-around items-center h-16 px-2 pb-safe">
           <Link
@@ -144,7 +142,6 @@ export default function Sidebar() {
             <span className="text-[10px] mt-1">Live</span>
           </Link>
 
-          {/* Dashboard is now in the main bottom nav */}
           <Link
             href="/dashboard"
             className={`flex flex-col items-center justify-center flex-1 ${
