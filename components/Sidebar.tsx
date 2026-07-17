@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Home, Radio, Video, Trophy, MessageCircle, LayoutDashboard,
-  TrendingUp, Search, ShoppingBag, Users, Heart, Settings,
+  Search, ShoppingBag, Users, Heart, Settings,
   LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle, User
 } from 'lucide-react';
 
@@ -22,6 +22,7 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
+  // Desktop MORE items
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -34,7 +35,9 @@ export default function Sidebar() {
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
+  // Mobile MORE items (Clips moved here)
   const mobileMoreItems = [
+    { href: '/clips', label: 'Clips', icon: Video },
     { href: '/account', label: 'My Account', icon: User },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -52,7 +55,7 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Desktop + Tablet Sidebar */}
+      {/* Desktop Sidebar */}
       <div className="hidden lg:flex w-64 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0">
         <div className="flex items-center gap-3 px-6 py-6 border-b border-zinc-800">
           <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
@@ -64,7 +67,6 @@ export default function Sidebar() {
         </div>
 
         <div className="px-3 py-4 flex-1 overflow-y-auto">
-          {/* Main Navigation */}
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -73,7 +75,9 @@ export default function Sidebar() {
                   key={item.href}
                   href={item.href}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition ${
-                    isActive(item.href) ? 'bg-pink-600 text-white' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                    isActive(item.href)
+                      ? 'bg-pink-600 text-white'
+                      : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                   }`}
                 >
                   <Icon size={20} />
@@ -83,10 +87,8 @@ export default function Sidebar() {
             })}
           </div>
 
-          {/* MORE Section */}
           <div className="mt-2">
             <p className="px-4 py-2 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
-            
             <div className="space-y-1">
               {desktopMoreItems.map((item) => {
                 const Icon = item.icon;
@@ -95,7 +97,9 @@ export default function Sidebar() {
                     key={item.href}
                     href={item.href}
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition ${
-                      isActive(item.href) ? 'bg-pink-600 text-white' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                      isActive(item.href)
+                        ? 'bg-pink-600 text-white'
+                        : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                     }`}
                   >
                     <Icon size={20} />
@@ -108,29 +112,65 @@ export default function Sidebar() {
         </div>
 
         <div className="p-4 border-t border-zinc-800">
-          <button onClick={() => alert('Logout coming soon')} className="flex items-center gap-3 w-full px-4 py-3 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-xl transition">
+          <button
+            onClick={() => alert('Logout coming soon')}
+            className="flex items-center gap-3 w-full px-4 py-3 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-xl transition"
+          >
             <LogOut size={18} /> Logout
           </button>
         </div>
       </div>
 
-      {/* Mobile Bottom Nav */}
+      {/* ==================== MOBILE BOTTOM NAV ==================== */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
         <div className="flex justify-around items-center h-16 px-2 pb-safe">
-          <Link href="/" className={`flex flex-col items-center justify-center flex-1 ${isActive('/') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Home size={22} /><span className="text-[10px] mt-1">Home</span>
+          <Link
+            href="/"
+            className={`flex flex-col items-center justify-center flex-1 ${
+              isActive('/') ? 'text-pink-500' : 'text-zinc-400'
+            }`}
+          >
+            <Home size={22} />
+            <span className="text-[10px] mt-1">Home</span>
           </Link>
-          <Link href="/live" className={`flex flex-col items-center justify-center flex-1 ${isActive('/live') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Radio size={22} /><span className="text-[10px] mt-1">Live</span>
+
+          <Link
+            href="/live"
+            className={`flex flex-col items-center justify-center flex-1 ${
+              isActive('/live') ? 'text-pink-500' : 'text-zinc-400'
+            }`}
+          >
+            <Radio size={22} />
+            <span className="text-[10px] mt-1">Live</span>
           </Link>
-          <Link href="/clips" className={`flex flex-col items-center justify-center flex-1 ${isActive('/clips') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <Video size={22} /><span className="text-[10px] mt-1">Clips</span>
+
+          {/* Dashboard is now in the main bottom nav */}
+          <Link
+            href="/dashboard"
+            className={`flex flex-col items-center justify-center flex-1 ${
+              isActive('/dashboard') ? 'text-pink-500' : 'text-zinc-400'
+            }`}
+          >
+            <LayoutDashboard size={22} />
+            <span className="text-[10px] mt-1">Dashboard</span>
           </Link>
-          <Link href="/messages" className={`flex flex-col items-center justify-center flex-1 ${isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'}`}>
-            <MessageCircle size={22} /><span className="text-[10px] mt-1">Messages</span>
+
+          <Link
+            href="/messages"
+            className={`flex flex-col items-center justify-center flex-1 ${
+              isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'
+            }`}
+          >
+            <MessageCircle size={22} />
+            <span className="text-[10px] mt-1">Messages</span>
           </Link>
-          <button onClick={() => setShowMoreMenu(true)} className="flex flex-col items-center justify-center flex-1 text-zinc-400">
-            <Menu size={22} /><span className="text-[10px] mt-1">More</span>
+
+          <button
+            onClick={() => setShowMoreMenu(true)}
+            className="flex flex-col items-center justify-center flex-1 text-zinc-400"
+          >
+            <Menu size={22} />
+            <span className="text-[10px] mt-1">More</span>
           </button>
         </div>
       </div>
@@ -138,8 +178,11 @@ export default function Sidebar() {
       {/* Mobile More Menu */}
       {showMoreMenu && (
         <>
-          <div className="lg:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setShowMoreMenu(false)} />
-          
+          <div
+            className="lg:hidden fixed inset-0 z-40 bg-black/50"
+            onClick={() => setShowMoreMenu(false)}
+          />
+
           <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-3xl p-4 animate-in slide-in-from-bottom duration-200">
             <div className="flex justify-between items-center mb-4 px-2">
               <h2 className="text-xl font-semibold">More</h2>
@@ -168,8 +211,11 @@ export default function Sidebar() {
             </div>
 
             <div className="mt-6 pt-4 border-t border-zinc-700">
-              <button 
-                onClick={() => { setShowMoreMenu(false); alert('Logout coming soon'); }}
+              <button
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  alert('Logout coming soon');
+                }}
                 className="w-full flex items-center justify-center gap-2 py-4 text-red-400 active:bg-zinc-800 rounded-2xl transition text-base font-medium"
               >
                 <span className="text-lg">↪</span> Logout
