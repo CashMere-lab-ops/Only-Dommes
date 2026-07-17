@@ -4,7 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { 
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye, 
-  ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon 
+  ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 
@@ -24,6 +25,8 @@ export default function DashboardPage() {
   const [showItemForm, setShowItemForm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [viewingItem, setViewingItem] = useState<Item | null>(null);
+  const [photoIndex, setPhotoIndex] = useState(0);
 
   // Clip form
   const [clipForm, setClipForm] = useState({
@@ -180,6 +183,22 @@ export default function DashboardPage() {
     if (confirm('Are you sure you want to delete this item?')) {
       setMyItems(prev => prev.filter(item => item.id !== id));
     }
+  };
+
+  const openGallery = (item: Item) => {
+    if (item.photos.length === 0) return;
+    setViewingItem(item);
+    setPhotoIndex(0);
+  };
+
+  const nextPhoto = () => {
+    if (!viewingItem) return;
+    setPhotoIndex((prev) => (prev + 1) % viewingItem.photos.length);
+  };
+
+  const prevPhoto = () => {
+    if (!viewingItem) return;
+    setPhotoIndex((prev) => (prev - 1 + viewingItem.photos.length) % viewingItem.photos.length);
   };
 
   return (
@@ -377,30 +396,56 @@ export default function DashboardPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {myItems.map((item) => (
-                  <div key={item.id} className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div>
-                        <p className="font-medium leading-tight">{item.title}</p>
-                        <p className="text-xs text-zinc-400 mt-1">
-                          {item.category} · {item.condition}
-                        </p>
-                      </div>
-                      <span className="font-semibold text-pink-400 whitespace-nowrap">£{item.price}</span>
+                  <div key={item.id} className="bg-zinc-800/60 border border-zinc-700 rounded-xl overflow-hidden">
+                    {/* Photo */}
+                    <div 
+                      className="aspect-[4/3] bg-zinc-700 relative cursor-pointer"
+                      onClick={() => openGallery(item)}
+                    >
+                      {item.photos.length > 0 ? (
+                        <img 
+                          src={item.photos[0]} 
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <ImageIcon size={32} className="text-zinc-500" />
+                        </div>
+                      )}
+
+                      {item.photos.length > 1 && (
+                        <div className="absolute bottom-2 right-2 bg-black/60 text-xs px-2 py-1 rounded-full">
+                          1/{item.photos.length}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => openEditItem(item)}
-                        className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition"
-                      >
-                        <Pencil size={13} /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteItem(item.id)}
-                        className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-400 transition"
-                      >
-                        <Trash2 size={13} /> Delete
-                      </button>
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div>
+                          <p className="font-medium leading-tight">{item.title}</p>
+                          <p className="text-xs text-zinc-400 mt-1">
+                            {item.category} · {item.condition}
+                          </p>
+                        </div>
+                        <span className="font-semibold text-pink-400 whitespace-nowrap">£{item.price}</span>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => openEditItem(item)}
+                          className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition"
+                        >
+                          <Pencil size={13} /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteItem(item.id)}
+                          className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-400 transition"
+                        >
+                          <Trash2 size={13} /> Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -428,6 +473,43 @@ export default function DashboardPage() {
 
         </div>
       </main>
+
+      {/* ==================== PHOTO GALLERY MODAL ==================== */}
+      {viewingItem && viewingItem.photos.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+          <button
+            onClick={() => setViewingItem(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white"
+          >
+            <X size={28} />
+          </button>
+
+          <button
+            onClick={prevPhoto}
+            className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded-full"
+          >
+            <ChevronLeft size={28} />
+          </button>
+
+          <div className="max-w-3xl w-full">
+            <img
+              src={viewingItem.photos[photoIndex]}
+              alt={`${viewingItem.title} - Photo ${photoIndex + 1}`}
+              className="w-full max-h-[80vh] object-contain rounded-xl"
+            />
+            <div className="text-center mt-4 text-sm text-zinc-400">
+              {photoIndex + 1} / {viewingItem.photos.length} · {viewingItem.title}
+            </div>
+          </div>
+
+          <button
+            onClick={nextPhoto}
+            className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded-full"
+          >
+            <ChevronRight size={28} />
+          </button>
+        </div>
+      )}
 
       {/* ==================== UPLOAD CLIP MODAL ==================== */}
       {showUpload && (
