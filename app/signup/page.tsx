@@ -12,8 +12,6 @@ function SignupForm() {
 
   const accountType = searchParams.get('type') as 'creator' | 'sub' || 'sub';
 
-  console.log("🔍 Account type from URL:", accountType);
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -73,8 +71,7 @@ function SignupForm() {
       if (authError) throw authError;
       if (!authData.user) throw new Error('Signup failed');
 
-      // Force update the profile
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -87,14 +84,12 @@ function SignupForm() {
 
       if (updateError) {
         console.error('Profile update error:', updateError);
-      } else {
-        console.log("✅ SUCCESS: account_type saved as", accountType);
       }
 
       router.push('/dashboard');
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Something went wrong');
+      console.error('Signup error:', err);
+      setError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
