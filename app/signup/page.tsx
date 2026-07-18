@@ -10,8 +10,10 @@ function SignupForm() {
   const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // Get account type from URL (?type=creator or ?type=sub)
+  // Read account type from URL
   const accountType = searchParams.get('type') as 'creator' | 'sub' || 'sub';
+
+  console.log("🔍 Account type from URL:", accountType);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,7 +59,8 @@ function SignupForm() {
     }
 
     try {
-      // Sign up user
+      console.log("Creating user with account_type:", accountType);
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -73,10 +76,9 @@ function SignupForm() {
       if (authError) throw authError;
       if (!authData.user) throw new Error('Signup failed');
 
-      // Update profile with correct account type
-      await new Promise(resolve => setTimeout(resolve, 700));
+      await new Promise(resolve => setTimeout(resolve, 800));
 
-      await supabase
+      const { error: updateError } = await supabase
         .from('profiles')
         .update({
           username: username.toLowerCase(),
@@ -85,8 +87,15 @@ function SignupForm() {
         })
         .eq('id', authData.user.id);
 
+      if (updateError) {
+        console.error('Profile update error:', updateError);
+      } else {
+        console.log("✅ Successfully saved account_type as:", accountType);
+      }
+
       router.push('/dashboard');
     } catch (err: any) {
+      console.error(err);
       setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
