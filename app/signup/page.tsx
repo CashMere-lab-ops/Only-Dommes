@@ -10,6 +10,7 @@ function SignupForm() {
   const searchParams = useSearchParams();
   const supabase = createClient();
 
+  // Get account type from URL (?type=creator or ?type=sub)
   const accountType = searchParams.get('type') as 'creator' | 'sub' || 'sub';
 
   const [email, setEmail] = useState('');
@@ -56,6 +57,7 @@ function SignupForm() {
     }
 
     try {
+      // Sign up user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -69,11 +71,12 @@ function SignupForm() {
       });
 
       if (authError) throw authError;
-      if (!authData.user) throw new Error('No user returned');
+      if (!authData.user) throw new Error('Signup failed');
 
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Update profile with correct account type
+      await new Promise(resolve => setTimeout(resolve, 700));
 
-      const { error: updateError } = await supabase
+      await supabase
         .from('profiles')
         .update({
           username: username.toLowerCase(),
@@ -82,13 +85,8 @@ function SignupForm() {
         })
         .eq('id', authData.user.id);
 
-      if (updateError) {
-        console.error('Profile update error:', updateError);
-      }
-
       router.push('/dashboard');
     } catch (err: any) {
-      console.error(err);
       setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
