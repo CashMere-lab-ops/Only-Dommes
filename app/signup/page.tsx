@@ -88,8 +88,8 @@ function SignupForm() {
 
       router.push('/dashboard');
     } catch (err: any) {
-      console.error('Signup error:', err);
-      setError(err.message || 'Something went wrong. Please try again.');
+      console.error('Full error:', err);
+      setError(err.message || JSON.stringify(err) || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
