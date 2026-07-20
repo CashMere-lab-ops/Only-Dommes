@@ -58,6 +58,7 @@ function SignupForm() {
     }
 
     try {
+      // 1. Create the user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -73,28 +74,29 @@ function SignupForm() {
       if (authError) throw authError;
       if (!authData.user) throw new Error('Signup failed');
 
-      // Force update the profile
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 2. Force update the profile (wait a bit for the trigger to finish)
+      await new Promise(resolve => setTimeout(resolve, 1200));
 
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           username: username.toLowerCase(),
           display_name: displayName || username,
-          account_type: accountType,
+          account_type: accountType, // Force the correct type
         })
         .eq('id', authData.user.id);
 
       if (updateError) {
         console.error('Update error:', updateError);
+        // Even if update fails, we still continue
       } else {
-        console.log("✅ Saved account_type as:", accountType);
+        console.log('Successfully set account_type to:', accountType);
       }
 
       router.push('/dashboard');
     } catch (err: any) {
       console.error('Full error:', err);
-      setError(err.message || JSON.stringify(err) || 'Something went wrong');
+      setError(err.message || 'Something went wrong during signup');
     } finally {
       setLoading(false);
     }
