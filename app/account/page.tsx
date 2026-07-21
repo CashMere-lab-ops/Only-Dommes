@@ -93,10 +93,11 @@ export default function MyAccountPage() {
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
 
             {/* Profile Header */}
-            <div className="flex flex-col sm:flex-row gap-5 mb-6">
-              {/* Left side - Avatar + X link */}
-              <div className="flex flex-col items-start gap-3">
-                <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0 overflow-hidden">
+            <div className="flex flex-col sm:flex-row gap-6 mb-6">
+              
+              {/* Left column - Avatar + X (centred) */}
+              <div className="flex flex-col items-center gap-3 flex-shrink-0">
+                <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden">
                   {profile?.avatar_url ? (
                     <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
@@ -104,7 +105,6 @@ export default function MyAccountPage() {
                   )}
                 </div>
 
-                {/* X Link under avatar */}
                 {profile?.x_username && (
                   <a
                     href={`https://x.com/${profile.x_username}`}
@@ -120,14 +120,14 @@ export default function MyAccountPage() {
                 )}
               </div>
 
-              {/* Right side - Info */}
-              <div className="flex-1">
+              {/* Right column - Text aligned flush left */}
+              <div className="flex-1 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div>
-                    <h1 className="text-3xl sm:text-4xl font-bold">{displayName}</h1>
-                    <p className="text-pink-400 text-lg">@{username}</p>
+                  <div className="space-y-1">
+                    <h1 className="text-3xl sm:text-4xl font-bold leading-tight">{displayName}</h1>
+                    <p className="text-pink-400 text-lg leading-tight">@{username}</p>
 
-                    <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-zinc-400">
+                    <div className="flex flex-wrap items-center gap-2.5 text-sm text-zinc-400 pt-1">
                       <span>Joined {joinedDate}</span>
                       {profile?.account_type && (
                         <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
@@ -139,7 +139,7 @@ export default function MyAccountPage() {
 
                   <Link
                     href="/settings"
-                    className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit"
+                    className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit flex-shrink-0"
                   >
                     <Edit3 size={18} /> Edit Profile
                   </Link>
