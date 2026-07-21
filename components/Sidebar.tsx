@@ -92,7 +92,7 @@ export default function Sidebar() {
           </span>
         </div>
 
-       <div className="px-3 py-4 flex-1 overflow-y-auto sidebar-scroll">
+        <div className="px-3 py-4 flex-1 overflow-y-auto sidebar-scroll">
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -139,13 +139,14 @@ export default function Sidebar() {
 
         {/* Bottom section - Profile + Logout */}
         <div className="p-4 border-t border-zinc-800 space-y-3">
-          {user && (
+          {/* Profile - stable version to prevent jumping */}
+          {profile ? (
             <Link
               href="/account"
               className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-zinc-800 transition"
             >
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
-                {profile?.avatar_url ? (
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
+                {profile.avatar_url ? (
                   <img
                     src={profile.avatar_url}
                     alt="Profile"
@@ -153,19 +154,28 @@ export default function Sidebar() {
                   />
                 ) : (
                   <span>
-                    {(profile?.display_name || profile?.username || 'U').charAt(0).toUpperCase()}
+                    {(profile.display_name || profile.username || 'U').charAt(0).toUpperCase()}
                   </span>
                 )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {profile?.display_name || profile?.username || 'User'}
+                  {profile.display_name || profile.username || 'User'}
                 </p>
                 <p className="text-xs text-zinc-400 truncate">
-                  @{profile?.username || 'username'}
+                  @{profile.username || 'username'}
                 </p>
               </div>
             </Link>
+          ) : (
+            // Placeholder to stop jumping while loading
+            <div className="flex items-center gap-3 px-3 py-2">
+              <div className="w-9 h-9 rounded-full bg-zinc-800 animate-pulse flex-shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 bg-zinc-800 rounded animate-pulse w-24" />
+                <div className="h-3 bg-zinc-800 rounded animate-pulse w-16" />
+              </div>
+            </div>
           )}
 
           <button
