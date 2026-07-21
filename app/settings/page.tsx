@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, User, Lock, Bell, Shield, Camera, Save, Eye, EyeOff
+  ArrowLeft, User, Lock, Bell, Shield, Camera, Save, Eye, EyeOff, Link2, Unlink
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -16,6 +16,7 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -26,6 +27,8 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
+  const [xUsername, setXUsername] = useState('');
+  const [tempXUsername, setTempXUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -43,6 +46,8 @@ export default function SettingsPage() {
         return;
       }
 
+      setUserEmail(user.email || '');
+
       const { data } = await supabase
         .from('profiles')
         .select('*')
@@ -54,6 +59,7 @@ export default function SettingsPage() {
         setDisplayName(data.display_name || '');
         setUsername(data.username || '');
         setBio(data.bio || '');
+        setXUsername(data.x_username || '');
       }
       setLoading(false);
     };
@@ -65,7 +71,6 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file
     if (!file.type.startsWith('image/')) {
       setError('Please select an image file');
       return;
@@ -87,19 +92,16 @@ export default function SettingsPage() {
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // Update profile
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
@@ -107,7 +109,6 @@ export default function SettingsPage() {
 
       if (updateError) throw updateError;
 
-      // Update local state
       setProfile({ ...profile, avatar_url: publicUrl });
       setMessage('Profile picture updated successfully');
     } catch (err: any) {
@@ -128,21 +129,83 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      const updates: any = {
+        display_name: displayName,
+        username: username.toLowerCase(),
+        bio: bio,
+      };
+
       const { error } = await supabase
         .from('profiles')
-        .update({
-          display_name: displayName,
-          username: username.toLowerCase(),
-          bio: bio,
-        })
+        .update(updates)
         .eq('id', user.id);
 
       if (error) throw error;
 
       setMessage('Profile updated successfully');
-      setProfile({ ...profile, display_name: displayName, username, bio });
+      setProfile({ ...profile, ...updates });
     } catch (err: any) {
       setError(err.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLinkX = async () => {
+    if (!tempXUsername.trim()) {
+      setError('Please enter your X username');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const cleanUsername = tempXUsername.replace('@', '').trim();
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ x_username: cleanUsername })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setXUsername(cleanUsername);
+      setTempXUsername('');
+      setProfile({ ...profile, x_username: cleanUsername });
+      setMessage('X account linked successfully');
+    } catch (err: any) {
+      setError(err.message || 'Failed to link X account');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUnlinkX = async () => {
+    setSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ x_username: null })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setXUsername('');
+      setProfile({ ...profile, x_username: null });
+      setMessage('X account unlinked');
+    } catch (err: any) {
+      setError(err.message || 'Failed to unlink X account');
     } finally {
       setSaving(false);
     }
@@ -219,7 +282,6 @@ export default function SettingsPage() {
               <p className="text-zinc-400 mt-1">Manage your profile and account preferences</p>
             </div>
 
-            {/* Success / Error Messages */}
             {message && (
               <div className="mb-6 text-sm text-green-400 bg-green-400/10 border border-green-400/20 rounded-xl px-4 py-3">
                 {message}
@@ -306,6 +368,67 @@ export default function SettingsPage() {
                 />
               </div>
 
+              {/* Linked X Account - Creators only */}
+              {isCreator && (
+                <div className="mb-6">
+                  <label className="text-sm text-zinc-400 mb-2 block">Linked Accounts</label>
+                  
+                  {xUsername ? (
+                    // Already linked
+                    <div className="flex items-center justify-between bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-black flex items-center justify-center">
+                          <span className="text-white font-bold text-lg">𝕏</span>
+                        </div>
+                        <div>
+                          <p className="font-medium">@{xUsername}</p>
+                          <p className="text-xs text-zinc-400">X (Twitter)</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleUnlinkX}
+                        disabled={saving}
+                        className="flex items-center gap-1.5 text-sm text-red-400 hover:text-red-300 transition"
+                      >
+                        <Unlink size={15} /> Unlink
+                      </button>
+                    </div>
+                  ) : (
+                    // Not linked yet
+                    <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-black flex items-center justify-center">
+                          <span className="text-white font-bold text-lg">𝕏</span>
+                        </div>
+                        <div>
+                          <p className="font-medium">X (Twitter)</p>
+                          <p className="text-xs text-zinc-400">Link your X account to show on your profile</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">@</span>
+                          <input
+                            type="text"
+                            value={tempXUsername}
+                            onChange={(e) => setTempXUsername(e.target.value.replace('@', ''))}
+                            placeholder="yourxusername"
+                            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500 text-sm"
+                          />
+                        </div>
+                        <button
+                          onClick={handleLinkX}
+                          disabled={saving || !tempXUsername.trim()}
+                          className="flex items-center gap-1.5 bg-pink-600 hover:bg-pink-700 px-4 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50"
+                        >
+                          <Link2 size={15} /> Link
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Date of Birth (Locked) */}
               <div className="mb-6">
                 <label className="text-sm text-zinc-400 mb-1.5 block">Date of Birth</label>
@@ -339,7 +462,7 @@ export default function SettingsPage() {
                 <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
                 <input
                   type="email"
-                  value={profile?.email || 'Loading...'}
+                  value={userEmail || 'Not available'}
                   disabled
                   className="w-full bg-zinc-800/50 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-500 cursor-not-allowed"
                 />
@@ -476,21 +599,6 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-
-            {/* Creator-only section */}
-            {isCreator && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <h2 className="text-lg font-semibold">Creator Settings</h2>
-                </div>
-                <p className="text-sm text-zinc-400 mb-4">
-                  More creator options (subscription price, tip menu, private show rates) will appear here soon.
-                </p>
-                <Link href="/dashboard" className="text-sm text-pink-400 hover:text-pink-300">
-                  Go to Creator Dashboard →
-                </Link>
-              </div>
-            )}
 
           </div>
         </main>
