@@ -7,7 +7,7 @@ import { createClient } from '../lib/supabase';
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const supabase = createClient();
-  const [loading, setLoading] = useState(true);
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -16,17 +16,19 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (!user) {
         router.push('/login');
       } else {
-        setLoading(false);
+        setChecked(true);
       }
     };
 
     checkUser();
   }, [router, supabase]);
 
-  if (loading) {
+  // While checking, still show the page (no full-screen loading)
+  // This stops the sidebar from flashing
+  if (!checked) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white">
-        Loading...
+      <div className="min-h-screen bg-zinc-950">
+        {children}
       </div>
     );
   }
