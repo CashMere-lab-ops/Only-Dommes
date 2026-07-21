@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
+import { createClient } from '../../lib/supabase';
 
 type Item = {
   id: number;
@@ -21,6 +22,11 @@ type Item = {
 };
 
 export default function DashboardPage() {
+  const supabase = createClient();
+
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
   const [isLive, setIsLive] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showItemForm, setShowItemForm] = useState(false);
@@ -29,11 +35,9 @@ export default function DashboardPage() {
   const [viewingItem, setViewingItem] = useState<Item | null>(null);
   const [photoIndex, setPhotoIndex] = useState(0);
 
-  // For swipe gestures
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
 
-  // Clip form
   const [clipForm, setClipForm] = useState({
     title: '',
     description: '',
@@ -41,7 +45,6 @@ export default function DashboardPage() {
     category: '',
   });
 
-  // Item form
   const [itemForm, setItemForm] = useState({
     title: '',
     description: '',
@@ -51,60 +54,46 @@ export default function DashboardPage() {
     photos: [] as string[],
   });
 
-  // Pricing settings
   const [pricing, setPricing] = useState({
     privatePerMinute: 8,
     minPrivateMinutes: 5,
     tipMenuEnabled: true,
   });
 
-  // Mock data
+  // Demo data for now
   const stats = {
-    today: 142.50,
-    week: 890.00,
-    month: 3420.75,
-    total: 18450.00,
+    today: 0,
+    week: 0,
+    month: 0,
+    total: 0,
   };
 
-  const recentTips = [
-    { id: 1, name: 'PrincessK', amount: 50, message: 'Love your energy 🔥' },
-    { id: 2, name: 'TommyB', amount: 25, message: '' },
-    { id: 3, name: 'SubmissiveSam', amount: 100, message: 'Thank you Mistress' },
-    { id: 4, name: 'NightOwl', amount: 15, message: '' },
-  ];
+  const recentTips: any[] = [];
 
   const [myClips] = useState([
-    { id: 1, title: 'Morning Stretch Session', price: 12.99, sales: 48 },
-    { id: 2, title: 'Private JOI Custom', price: 45.00, sales: 19 },
-    { id: 3, title: 'Feet Worship Clip', price: 9.99, sales: 87 },
+    { id: 1, title: 'Morning Stretch Session', price: 12.99, sales: 0 },
+    { id: 2, title: 'Private JOI Custom', price: 45.00, sales: 0 },
   ]);
 
-  const [myItems, setMyItems] = useState<Item[]>([
-    {
-      id: 1,
-      title: 'Black Lace Panties (Worn 2 days)',
-      price: 45,
-      category: 'Underwear',
-      condition: 'Worn',
-      photos: []
-    },
-    {
-      id: 2,
-      title: 'Red High Heels - Size 6',
-      price: 85,
-      category: 'Heels',
-      condition: 'New',
-      photos: []
-    },
-    {
-      id: 3,
-      title: 'White Ankle Socks (Worn)',
-      price: 30,
-      category: 'Socks',
-      condition: 'Heavily Worn',
-      photos: []
-    },
-  ]);
+  const [myItems, setMyItems] = useState<Item[]>([]);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      setProfile(data);
+      setLoading(false);
+    };
+
+    loadProfile();
+  }, []);
 
   const handleCreateClip = () => {
     if (!clipForm.title) return;
@@ -206,7 +195,6 @@ export default function DashboardPage() {
     setPhotoIndex((prev) => (prev - 1 + viewingItem.photos.length) % viewingItem.photos.length);
   };
 
-  // Swipe handlers
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.targetTouches[0].clientX;
   };
@@ -231,6 +219,9 @@ export default function DashboardPage() {
     touchEndX.current = null;
   };
 
+  const displayName = profile?.display_name || profile?.username || 'Creator';
+  const isCreator = profile?.account_type === 'creator';
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -242,21 +233,27 @@ export default function DashboardPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
               <div>
-                <h1 className="text-3xl font-bold">Creator Dashboard</h1>
-                <p className="text-zinc-400 mt-1">Manage your content and earnings</p>
+                <h1 className="text-3xl font-bold">
+                  {loading ? 'Loading...' : `Welcome, ${displayName}`}
+                </h1>
+                <p className="text-zinc-400 mt-1">
+                  {isCreator ? 'Manage your content and earnings' : 'Your personal dashboard'}
+                </p>
               </div>
 
-              <button
-                onClick={() => setIsLive(!isLive)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition ${
-                  isLive
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90'
-                }`}
-              >
-                <Radio size={18} />
-                {isLive ? 'End Stream' : 'Go Live'}
-              </button>
+              {isCreator && (
+                <button
+                  onClick={() => setIsLive(!isLive)}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition ${
+                    isLive
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90'
+                  }`}
+                >
+                  <Radio size={18} />
+                  {isLive ? 'End Stream' : 'Go Live'}
+                </button>
+              )}
             </div>
 
             {/* Earnings Cards */}
@@ -303,47 +300,49 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {/* Pricing Settings */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
-              <div className="flex items-center gap-2 mb-5">
-                <Settings size={20} className="text-pink-400" />
-                <h2 className="text-lg font-semibold">Pricing Settings</h2>
-              </div>
+            {/* Pricing Settings - Creators only */}
+            {isCreator && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
+                <div className="flex items-center gap-2 mb-5">
+                  <Settings size={20} className="text-pink-400" />
+                  <h2 className="text-lg font-semibold">Pricing Settings</h2>
+                </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <div>
-                  <label className="text-sm text-zinc-400 mb-1.5 block">Private Session (per minute)</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div>
+                    <label className="text-sm text-zinc-400 mb-1.5 block">Private Session (per minute)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                      <input
+                        type="number"
+                        value={pricing.privatePerMinute}
+                        onChange={(e) => setPricing({ ...pricing, privatePerMinute: Number(e.target.value) })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-zinc-400 mb-1.5 block">Minimum Private Minutes</label>
                     <input
                       type="number"
-                      value={pricing.privatePerMinute}
-                      onChange={(e) => setPricing({ ...pricing, privatePerMinute: Number(e.target.value) })}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                      value={pricing.minPrivateMinutes}
+                      onChange={(e) => setPricing({ ...pricing, minPrivateMinutes: Number(e.target.value) })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="text-sm text-zinc-400 mb-1.5 block">Minimum Private Minutes</label>
-                  <input
-                    type="number"
-                    value={pricing.minPrivateMinutes}
-                    onChange={(e) => setPricing({ ...pricing, minPrivateMinutes: Number(e.target.value) })}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <div className={`w-11 h-6 rounded-full relative transition ${pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'}`}>
-                      <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${pricing.tipMenuEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-                    </div>
-                    <span className="text-sm">Enable Tip Menu</span>
-                  </label>
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <div className={`w-11 h-6 rounded-full relative transition ${pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'}`}>
+                        <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${pricing.tipMenuEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+                      </div>
+                      <span className="text-sm">Enable Tip Menu</span>
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -352,20 +351,24 @@ export default function DashboardPage() {
                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <DollarSign size={20} className="text-pink-400" /> Recent Tips
                 </h2>
-                <div className="space-y-3">
-                  {recentTips.map((tip) => (
-                    <div key={tip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold">
-                        {tip.name.charAt(0)}
+                {recentTips.length === 0 ? (
+                  <p className="text-zinc-500 text-sm py-8 text-center">No tips yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentTips.map((tip) => (
+                      <div key={tip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold">
+                          {tip.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{tip.name}</p>
+                          {tip.message && <p className="text-xs text-zinc-400 truncate">{tip.message}</p>}
+                        </div>
+                        <span className="font-semibold text-pink-400">£{tip.amount}</span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{tip.name}</p>
-                        {tip.message && <p className="text-xs text-zinc-400 truncate">{tip.message}</p>}
-                      </div>
-                      <span className="font-semibold text-pink-400">£{tip.amount}</span>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* My Clips */}
@@ -374,12 +377,14 @@ export default function DashboardPage() {
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Film size={20} className="text-pink-400" /> My Clips
                   </h2>
-                  <button
-                    onClick={() => setShowUpload(true)}
-                    className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
-                  >
-                    <Plus size={16} /> Upload
-                  </button>
+                  {isCreator && (
+                    <button
+                      onClick={() => setShowUpload(true)}
+                      className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
+                    >
+                      <Plus size={16} /> Upload
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-3">
                   {myClips.map((clip) => (
@@ -401,88 +406,89 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ==================== ITEM MANAGER ==================== */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                  <Package size={20} className="text-pink-400" /> Physical Items for Sale
-                </h2>
-                <button
-                  onClick={() => {
-                    setEditingItem(null);
-                    setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn', photos: [] });
-                    setShowItemForm(true);
-                  }}
-                  className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
-                >
-                  <Plus size={16} /> Add Item
-                </button>
+            {/* Physical Items - Creators only */}
+            {isCreator && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Package size={20} className="text-pink-400" /> Physical Items for Sale
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setEditingItem(null);
+                      setItemForm({ title: '', description: '', price: 25, category: 'Underwear', condition: 'Worn', photos: [] });
+                      setShowItemForm(true);
+                    }}
+                    className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
+                  >
+                    <Plus size={16} /> Add Item
+                  </button>
+                </div>
+
+                {myItems.length === 0 ? (
+                  <div className="text-center py-10 text-zinc-500 text-sm">
+                    <Package size={32} className="mx-auto mb-2 opacity-40" />
+                    No items listed yet. Sell underwear, heels, socks and more!
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {myItems.map((item) => (
+                      <div key={item.id} className="bg-zinc-800/60 border border-zinc-700 rounded-xl overflow-hidden">
+                        <div
+                          className="aspect-[4/3] bg-zinc-700 relative cursor-pointer"
+                          onClick={() => openGallery(item)}
+                        >
+                          {item.photos.length > 0 ? (
+                            <img
+                              src={item.photos[0]}
+                              alt={item.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ImageIcon size={32} className="text-zinc-500" />
+                            </div>
+                          )}
+
+                          {item.photos.length > 1 && (
+                            <div className="absolute bottom-2 right-2 bg-black/60 text-xs px-2 py-1 rounded-full">
+                              1/{item.photos.length}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="p-4">
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div>
+                              <p className="font-medium leading-tight">{item.title}</p>
+                              <p className="text-xs text-zinc-400 mt-1">
+                                {item.category} · {item.condition}
+                              </p>
+                            </div>
+                            <span className="font-semibold text-pink-400 whitespace-nowrap">£{item.price}</span>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openEditItem(item)}
+                              className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition"
+                            >
+                              <Pencil size={13} /> Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-400 transition"
+                            >
+                              <Trash2 size={13} /> Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-
-              {myItems.length === 0 ? (
-                <div className="text-center py-10 text-zinc-500 text-sm">
-                  <Package size={32} className="mx-auto mb-2 opacity-40" />
-                  No items listed yet. Sell underwear, heels, socks and more!
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {myItems.map((item) => (
-                    <div key={item.id} className="bg-zinc-800/60 border border-zinc-700 rounded-xl overflow-hidden">
-                      {/* Photo */}
-                      <div
-                        className="aspect-[4/3] bg-zinc-700 relative cursor-pointer"
-                        onClick={() => openGallery(item)}
-                      >
-                        {item.photos.length > 0 ? (
-                          <img
-                            src={item.photos[0]}
-                            alt={item.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon size={32} className="text-zinc-500" />
-                          </div>
-                        )}
-
-                        {item.photos.length > 1 && (
-                          <div className="absolute bottom-2 right-2 bg-black/60 text-xs px-2 py-1 rounded-full">
-                            1/{item.photos.length}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="p-4">
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div>
-                            <p className="font-medium leading-tight">{item.title}</p>
-                            <p className="text-xs text-zinc-400 mt-1">
-                              {item.category} · {item.condition}
-                            </p>
-                          </div>
-                          <span className="font-semibold text-pink-400 whitespace-nowrap">£{item.price}</span>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => openEditItem(item)}
-                            className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition"
-                          >
-                            <Pencil size={13} /> Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteItem(item.id)}
-                            className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-400 transition"
-                          >
-                            <Trash2 size={13} /> Delete
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Active Stream Banner */}
             {isLive && (
@@ -492,7 +498,7 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-semibold">You are currently live</p>
                     <p className="text-sm text-zinc-400 flex items-center gap-1">
-                      <Eye size={14} /> 47 watching
+                      <Eye size={14} /> 0 watching
                     </p>
                   </div>
                 </div>
