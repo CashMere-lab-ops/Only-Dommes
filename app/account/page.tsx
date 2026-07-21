@@ -146,7 +146,7 @@ export default function MyAccountPage() {
                 </div>
 
                 {profile?.bio && (
-                  <p className="mt-4 text-zinc-300 max-w-2xl leading-relaxed">
+                  <p className="mt-6 text-zinc-300 max-w-2xl leading-relaxed">
                     {profile.bio}
                   </p>
                 )}
@@ -154,7 +154,7 @@ export default function MyAccountPage() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-2">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-3 text-zinc-400 mb-1">
                   <Users size={18} /> <span className="text-sm">Followers</span>
