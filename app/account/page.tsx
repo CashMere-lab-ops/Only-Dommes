@@ -91,29 +91,35 @@ export default function MyAccountPage() {
           </div>
 
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
-            {/* Profile Header */}
-            <div className="flex flex-col lg:flex-row lg:items-end gap-6 mb-10">
-              <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0 overflow-hidden">
+
+            {/* Profile Header - Cleaner version */}
+            <div className="flex flex-col sm:flex-row gap-6 mb-10">
+              {/* Avatar */}
+              <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0 overflow-hidden">
                 {profile?.avatar_url ? (
                   <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   initial
                 )}
               </div>
-             
+
+              {/* Info */}
               <div className="flex-1">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div>
-                    <h1 className="text-4xl font-bold">{displayName}</h1>
-                    <p className="text-pink-400 text-xl">@{username}</p>
-                    <p className="text-sm text-zinc-400 mt-1">Joined {joinedDate}</p>
-                    {profile?.account_type && (
-                      <span className="inline-block mt-2 text-xs font-medium px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
-                        {profile.account_type}
-                      </span>
-                    )}
+                    <h1 className="text-3xl sm:text-4xl font-bold">{displayName}</h1>
+                    <p className="text-pink-400 text-lg">@{username}</p>
+
+                    <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-zinc-400">
+                      <span>Joined {joinedDate}</span>
+                      {profile?.account_type && (
+                        <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
+                          {profile.account_type}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                 
+
                   <Link
                     href="/settings"
                     className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit"
@@ -123,7 +129,9 @@ export default function MyAccountPage() {
                 </div>
 
                 {profile?.bio && (
-                  <p className="mt-4 text-zinc-300 max-w-2xl">{profile.bio}</p>
+                  <p className="mt-4 text-zinc-300 max-w-2xl leading-relaxed">
+                    {profile.bio}
+                  </p>
                 )}
 
                 {/* Linked X Account */}
@@ -132,10 +140,10 @@ export default function MyAccountPage() {
                     href={`https://x.com/${profile.x_username}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 mt-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-4 py-2 rounded-xl transition"
+                    className="inline-flex items-center gap-2 mt-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-3.5 py-2 rounded-xl transition"
                   >
-                    <div className="w-6 h-6 rounded-full bg-black flex items-center justify-center">
-                      <span className="text-white font-bold text-sm">𝕏</span>
+                    <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
+                      <span className="text-white font-bold text-xs">𝕏</span>
                     </div>
                     <span className="text-sm font-medium">@{profile.x_username}</span>
                   </a>
