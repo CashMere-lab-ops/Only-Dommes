@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye,
-  ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon,
-  ChevronLeft, ChevronRight, Heart, Users, Play, Clock
+  DollarSign, TrendingUp, Film, Radio, Wallet, Eye,
+  Heart, Users, Clock, Package
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -16,8 +15,6 @@ export default function DashboardPage() {
 
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-
-  // Creator states
   const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
@@ -41,8 +38,25 @@ export default function DashboardPage() {
   const displayName = profile?.display_name || profile?.username || 'User';
   const isCreator = profile?.account_type === 'creator';
 
+  // ==================== LOADING STATE ====================
+  if (loading) {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-zinc-950 text-white flex">
+          <Sidebar />
+          <main className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-10 h-10 border-2 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-zinc-400">Loading dashboard...</p>
+            </div>
+          </main>
+        </div>
+      </AuthGuard>
+    );
+  }
+
   // ==================== SUB DASHBOARD ====================
-  if (!loading && !isCreator) {
+  if (!isCreator) {
     return (
       <AuthGuard>
         <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -181,9 +195,7 @@ export default function DashboardPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
               <div>
-                <h1 className="text-3xl font-bold">
-                  {loading ? 'Loading...' : `Welcome, ${displayName}`}
-                </h1>
+                <h1 className="text-3xl font-bold">Welcome, {displayName}</h1>
                 <p className="text-zinc-400 mt-1">Manage your content and earnings</p>
               </div>
 
@@ -254,16 +266,16 @@ export default function DashboardPage() {
                 <div className="font-semibold">Go Live</div>
                 <div className="text-sm text-zinc-400">Start a live stream</div>
               </button>
-              <Link href="/dashboard" className="bg-zinc-900 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 transition">
+              <div className="bg-zinc-900 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 transition">
                 <Film className="text-pink-400 mb-3" size={24} />
                 <div className="font-semibold">Upload Clip</div>
                 <div className="text-sm text-zinc-400">Sell exclusive videos</div>
-              </Link>
-              <Link href="/dashboard" className="bg-zinc-900 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 transition">
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 transition">
                 <Package className="text-pink-400 mb-3" size={24} />
                 <div className="font-semibold">Sell Items</div>
                 <div className="text-sm text-zinc-400">Underwear, heels & more</div>
-              </Link>
+              </div>
             </div>
 
             {/* Active Stream Banner */}
