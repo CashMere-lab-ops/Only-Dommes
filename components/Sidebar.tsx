@@ -18,6 +18,7 @@ export default function Sidebar() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
     const getUser = async () => {
@@ -31,8 +32,11 @@ export default function Sidebar() {
           .eq('id', user.id)
           .single();
 
-        setProfile(data);
+        if (data) {
+          setProfile(data);
+        }
       }
+      setProfileLoaded(true);
     };
 
     getUser();
@@ -139,8 +143,7 @@ export default function Sidebar() {
 
         {/* Bottom section - Profile + Logout */}
         <div className="p-4 border-t border-zinc-800 space-y-3">
-          {/* Profile - stable version to prevent jumping */}
-          {profile ? (
+          {profileLoaded && profile ? (
             <Link
               href="/account"
               className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-zinc-800 transition"
@@ -168,13 +171,8 @@ export default function Sidebar() {
               </div>
             </Link>
           ) : (
-            // Placeholder to stop jumping while loading
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="w-9 h-9 rounded-full bg-zinc-800 animate-pulse flex-shrink-0" />
-              <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 bg-zinc-800 rounded animate-pulse w-24" />
-                <div className="h-3 bg-zinc-800 rounded animate-pulse w-16" />
-              </div>
+            <div className="flex items-center gap-3 px-3 py-2 h-[52px]">
+              {/* empty space to keep height stable */}
             </div>
           )}
 
