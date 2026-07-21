@@ -92,7 +92,7 @@ export default function Sidebar() {
           </span>
         </div>
 
-        <div className="px-3 py-4 flex-1 overflow-y-auto">
+       <div className="px-3 py-4 flex-1 overflow-y-auto sidebar-scroll">
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
