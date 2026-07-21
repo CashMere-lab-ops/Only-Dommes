@@ -12,12 +12,11 @@ function SignupForm() {
 
   const accountType = searchParams.get('type') as 'creator' | 'sub' || 'sub';
 
-  console.log("Account type from URL:", accountType);
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
@@ -40,6 +39,18 @@ function SignupForm() {
     setUsernameAvailable(!data);
   };
 
+  const calculateAge = (dob: string) => {
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -57,8 +68,20 @@ function SignupForm() {
       return;
     }
 
+    if (!dateOfBirth) {
+      setError('Please enter your date of birth');
+      setLoading(false);
+      return;
+    }
+
+    const age = calculateAge(dateOfBirth);
+    if (age < 18) {
+      setError('You must be at least 18 years old to create an account');
+      setLoading(false);
+      return;
+    }
+
     try {
-      // 1. Create the user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -67,6 +90,7 @@ function SignupForm() {
             username: username.toLowerCase(),
             display_name: displayName || username,
             account_type: accountType,
+            date_of_birth: dateOfBirth,
           },
         },
       });
@@ -74,7 +98,7 @@ function SignupForm() {
       if (authError) throw authError;
       if (!authData.user) throw new Error('Signup failed');
 
-      // 2. Force update the profile (wait a bit for the trigger to finish)
+      // Wait for trigger then force update
       await new Promise(resolve => setTimeout(resolve, 1200));
 
       const { error: updateError } = await supabase
@@ -82,15 +106,13 @@ function SignupForm() {
         .update({
           username: username.toLowerCase(),
           display_name: displayName || username,
-          account_type: accountType, // Force the correct type
+          account_type: accountType,
+          date_of_birth: dateOfBirth,
         })
         .eq('id', authData.user.id);
 
       if (updateError) {
         console.error('Update error:', updateError);
-        // Even if update fails, we still continue
-      } else {
-        console.log('Successfully set account_type to:', accountType);
       }
 
       router.push('/dashboard');
@@ -137,6 +159,18 @@ function SignupForm() {
           placeholder="How you want to be known"
           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
         />
+      </div>
+
+      <div>
+        <label className="text-sm text-zinc-400 mb-1.5 block">Date of Birth</label>
+        <input
+          type="date"
+          value={dateOfBirth}
+          onChange={(e) => setDateOfBirth(e.target.value)}
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
+          required
+        />
+        <p className="text-xs text-zinc-500 mt-1.5">You must be 18 or older to join</p>
       </div>
 
       <div>
