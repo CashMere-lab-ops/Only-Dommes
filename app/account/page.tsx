@@ -21,7 +21,6 @@ export default function MyAccountPage() {
   useEffect(() => {
     const loadProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-
       if (!user) {
         router.push('/login');
         return;
@@ -122,8 +121,24 @@ export default function MyAccountPage() {
                     <Edit3 size={18} /> Edit Profile
                   </Link>
                 </div>
+
                 {profile?.bio && (
                   <p className="mt-4 text-zinc-300 max-w-2xl">{profile.bio}</p>
+                )}
+
+                {/* Linked X Account */}
+                {profile?.x_username && (
+                  <a
+                    href={`https://x.com/${profile.x_username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 mt-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-4 py-2 rounded-xl transition"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-black flex items-center justify-center">
+                      <span className="text-white font-bold text-sm">𝕏</span>
+                    </div>
+                    <span className="text-sm font-medium">@{profile.x_username}</span>
+                  </a>
                 )}
               </div>
             </div>
