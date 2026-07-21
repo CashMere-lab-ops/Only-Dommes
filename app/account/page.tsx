@@ -92,18 +92,35 @@ export default function MyAccountPage() {
 
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
 
-            {/* Profile Header - Cleaner version */}
-            <div className="flex flex-col sm:flex-row gap-6 mb-10">
-              {/* Avatar */}
-              <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0 overflow-hidden">
-                {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  initial
+            {/* Profile Header */}
+            <div className="flex flex-col sm:flex-row gap-5 mb-6">
+              {/* Left side - Avatar + X link */}
+              <div className="flex flex-col items-start gap-3">
+                <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0 overflow-hidden">
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    initial
+                  )}
+                </div>
+
+                {/* X Link under avatar */}
+                {profile?.x_username && (
+                  <a
+                    href={`https://x.com/${profile.x_username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-xl transition"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
+                      <span className="text-white font-bold text-xs">𝕏</span>
+                    </div>
+                    <span className="text-sm font-medium">@{profile.x_username}</span>
+                  </a>
                 )}
               </div>
 
-              {/* Info */}
+              {/* Right side - Info */}
               <div className="flex-1">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div>
@@ -133,26 +150,11 @@ export default function MyAccountPage() {
                     {profile.bio}
                   </p>
                 )}
-
-                {/* Linked X Account */}
-                {profile?.x_username && (
-                  <a
-                    href={`https://x.com/${profile.x_username}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 mt-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-3.5 py-2 rounded-xl transition"
-                  >
-                    <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
-                      <span className="text-white font-bold text-xs">𝕏</span>
-                    </div>
-                    <span className="text-sm font-medium">@{profile.x_username}</span>
-                  </a>
-                )}
               </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-3 text-zinc-400 mb-1">
                   <Users size={18} /> <span className="text-sm">Followers</span>
