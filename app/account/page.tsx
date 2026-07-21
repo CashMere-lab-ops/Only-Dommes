@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -14,17 +15,58 @@ export default function MyAccountPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const user = {
-    name: "Scarlet Bloom",
-    username: "@scarletbloom",
-    joined: "January 2025",
-    bio: "Professional Dominatrix & Content Creator. Daily lives, customs, and exclusive content.",
-  };
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      setProfile(data);
+      setLoading(false);
+    };
+
+    loadProfile();
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
   };
+
+  if (loading) {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-zinc-950 text-white flex">
+          <Sidebar />
+          <main className="flex-1 flex items-center justify-center">
+            <p className="text-zinc-400">Loading profile...</p>
+          </main>
+        </div>
+      </AuthGuard>
+    );
+  }
+
+  const displayName = profile?.display_name || profile?.username || 'User';
+  const username = profile?.username || 'username';
+  const initial = displayName.charAt(0).toUpperCase();
+  const joinedDate = profile?.created_at
+    ? new Date(profile.created_at).toLocaleDateString('en-GB', {
+        month: 'long',
+        year: 'numeric',
+      })
+    : 'Recently';
 
   return (
     <AuthGuard>
@@ -40,24 +82,37 @@ export default function MyAccountPage() {
               </Link>
               <h1 className="text-xl font-semibold">My Account</h1>
             </div>
-            <Link href="/account" className="w-9 h-9 rounded-full bg-pink-600 flex items-center justify-center text-sm font-bold">
-              SB
-            </Link>
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                initial
+              )}
+            </div>
           </div>
 
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
             {/* Profile Header */}
             <div className="flex flex-col lg:flex-row lg:items-end gap-6 mb-10">
-              <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0">
-                SB
+              <div className="w-24 h-24 lg:w-28 lg:h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold flex-shrink-0 overflow-hidden">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  initial
+                )}
               </div>
              
               <div className="flex-1">
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                   <div>
-                    <h1 className="text-4xl font-bold">{user.name}</h1>
-                    <p className="text-pink-400 text-xl">{user.username}</p>
-                    <p className="text-sm text-zinc-400 mt-1">Joined {user.joined}</p>
+                    <h1 className="text-4xl font-bold">{displayName}</h1>
+                    <p className="text-pink-400 text-xl">@{username}</p>
+                    <p className="text-sm text-zinc-400 mt-1">Joined {joinedDate}</p>
+                    {profile?.account_type && (
+                      <span className="inline-block mt-2 text-xs font-medium px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
+                        {profile.account_type}
+                      </span>
+                    )}
                   </div>
                  
                   <Link
@@ -67,7 +122,9 @@ export default function MyAccountPage() {
                     <Edit3 size={18} /> Edit Profile
                   </Link>
                 </div>
-                <p className="mt-4 text-zinc-300 max-w-2xl">{user.bio}</p>
+                {profile?.bio && (
+                  <p className="mt-4 text-zinc-300 max-w-2xl">{profile.bio}</p>
+                )}
               </div>
             </div>
 
@@ -77,25 +134,25 @@ export default function MyAccountPage() {
                 <div className="flex items-center gap-3 text-zinc-400 mb-1">
                   <Users size={18} /> <span className="text-sm">Followers</span>
                 </div>
-                <div className="text-3xl font-semibold">12.4k</div>
+                <div className="text-3xl font-semibold">0</div>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-3 text-zinc-400 mb-1">
                   <Heart size={18} /> <span className="text-sm">Active Subscribers</span>
                 </div>
-                <div className="text-3xl font-semibold">1,240</div>
+                <div className="text-3xl font-semibold">0</div>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-3 text-zinc-400 mb-1">
                   <DollarSign size={18} /> <span className="text-sm">Total Earnings</span>
                 </div>
-                <div className="text-3xl font-semibold">$45,230</div>
+                <div className="text-3xl font-semibold">£0</div>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-3 text-zinc-400 mb-1">
                   <TrendingUp size={18} /> <span className="text-sm">This Month</span>
                 </div>
-                <div className="text-3xl font-semibold">$8,420</div>
+                <div className="text-3xl font-semibold">£0</div>
               </div>
             </div>
 
