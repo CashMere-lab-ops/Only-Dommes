@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   DollarSign, TrendingUp, Film, Radio, Wallet, Eye,
-  Heart, Users, Clock, Package
+  Heart, Users, Clock, Package, Plus, Search
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -66,12 +66,20 @@ export default function DashboardPage() {
             <div className="max-w-6xl mx-auto px-4 lg:px-8 py-8">
 
               {/* Header */}
-              <div className="mb-8">
-                <h1 className="text-3xl font-bold">Welcome, {displayName}</h1>
-                <p className="text-zinc-400 mt-1">Your personal fan dashboard</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                <div>
+                  <h1 className="text-3xl font-bold">Welcome back, {displayName}</h1>
+                  <p className="text-zinc-400 mt-1">Here’s what’s happening with your account</p>
+                </div>
+                <Link
+                  href="/discover"
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 px-5 py-2.5 rounded-xl text-sm font-medium transition"
+                >
+                  <Search size={18} /> Discover Creators
+                </Link>
               </div>
 
-              {/* Stats */}
+              {/* Stats Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                   <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
@@ -87,55 +95,68 @@ export default function DashboardPage() {
                 </div>
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                   <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                    <Film size={16} /> Clips Purchased
+                    <Film size={16} /> Clips Owned
                   </div>
                   <p className="text-2xl font-bold">0</p>
                 </div>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                  <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
+                <div className="bg-gradient-to-br from-pink-600/20 to-rose-600/20 border border-pink-500/30 rounded-2xl p-5">
+                  <div className="flex items-center gap-2 text-zinc-300 text-sm mb-1">
                     <Wallet size={16} /> Wallet Balance
                   </div>
                   <p className="text-2xl font-bold text-pink-400">£0.00</p>
+                  <button className="mt-3 text-xs text-pink-400 hover:text-pink-300 font-medium">
+                    + Top Up
+                  </button>
                 </div>
               </div>
 
-              {/* Active Subscriptions */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
-                <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <Heart size={20} className="text-pink-400" /> Your Subscriptions
-                  </h2>
-                  <Link href="/subscriptions" className="text-sm text-pink-400 hover:text-pink-300">
-                    View all →
-                  </Link>
+              {/* Main Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+                {/* Your Subscriptions */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <Heart size={20} className="text-pink-400" /> Your Subscriptions
+                    </h2>
+                    <Link href="/subscriptions" className="text-sm text-pink-400 hover:text-pink-300">
+                      View all
+                    </Link>
+                  </div>
+
+                  <div className="text-center py-12 text-zinc-500">
+                    <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+                      <Heart size={28} className="opacity-40" />
+                    </div>
+                    <p className="text-sm mb-1">No active subscriptions</p>
+                    <p className="text-xs text-zinc-600 mb-5">Subscribe to creators to unlock exclusive content</p>
+                    <Link 
+                      href="/discover" 
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-pink-600 hover:bg-pink-700 rounded-xl text-sm font-medium transition"
+                    >
+                      Find Creators
+                    </Link>
+                  </div>
                 </div>
 
-                <div className="text-center py-10 text-zinc-500 text-sm">
-                  <Heart size={32} className="mx-auto mb-3 opacity-40" />
-                  <p>You’re not subscribed to any creators yet.</p>
-                  <Link 
-                    href="/discover" 
-                    className="inline-block mt-4 px-5 py-2.5 bg-pink-600 hover:bg-pink-700 rounded-xl text-sm font-medium transition"
-                  >
-                    Discover Creators
-                  </Link>
-                </div>
-              </div>
+                {/* Your Library */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <Film size={20} className="text-pink-400" /> Your Library
+                    </h2>
+                    <Link href="/library" className="text-sm text-pink-400 hover:text-pink-300">
+                      View all
+                    </Link>
+                  </div>
 
-              {/* Purchased Clips / Library */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
-                <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <Film size={20} className="text-pink-400" /> Your Library
-                  </h2>
-                  <Link href="/library" className="text-sm text-pink-400 hover:text-pink-300">
-                    View all →
-                  </Link>
-                </div>
-
-                <div className="text-center py-10 text-zinc-500 text-sm">
-                  <Film size={32} className="mx-auto mb-3 opacity-40" />
-                  <p>No purchased clips yet.</p>
+                  <div className="text-center py-12 text-zinc-500">
+                    <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+                      <Film size={28} className="opacity-40" />
+                    </div>
+                    <p className="text-sm mb-1">No purchased clips yet</p>
+                    <p className="text-xs text-zinc-600">Clips you buy will appear here</p>
+                  </div>
                 </div>
               </div>
 
@@ -147,9 +168,12 @@ export default function DashboardPage() {
                   </h2>
                 </div>
 
-                <div className="text-center py-10 text-zinc-500 text-sm">
-                  <Clock size={32} className="mx-auto mb-3 opacity-40" />
-                  <p>No upcoming lives from creators you follow.</p>
+                <div className="text-center py-12 text-zinc-500">
+                  <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+                    <Clock size={28} className="opacity-40" />
+                  </div>
+                  <p className="text-sm mb-1">No upcoming lives</p>
+                  <p className="text-xs text-zinc-600">Follow creators to see when they go live</p>
                 </div>
               </div>
 
@@ -160,18 +184,21 @@ export default function DashboardPage() {
                     <Users size={20} className="text-pink-400" /> Recommended For You
                   </h2>
                   <Link href="/discover" className="text-sm text-pink-400 hover:text-pink-300">
-                    See more →
+                    See more
                   </Link>
                 </div>
 
-                <div className="text-center py-10 text-zinc-500 text-sm">
-                  <Users size={32} className="mx-auto mb-3 opacity-40" />
-                  <p>Discover new creators to follow.</p>
+                <div className="text-center py-12 text-zinc-500">
+                  <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+                    <Users size={28} className="opacity-40" />
+                  </div>
+                  <p className="text-sm mb-1">Discover new creators</p>
+                  <p className="text-xs text-zinc-600 mb-5">Explore trending and recommended creators</p>
                   <Link 
                     href="/discover" 
-                    className="inline-block mt-4 px-5 py-2.5 border border-zinc-700 hover:bg-zinc-800 rounded-xl text-sm font-medium transition"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 border border-zinc-700 hover:bg-zinc-800 rounded-xl text-sm font-medium transition"
                   >
-                    Explore Discover
+                    <Search size={16} /> Explore Discover
                   </Link>
                 </div>
               </div>
