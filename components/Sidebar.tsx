@@ -10,20 +10,28 @@ import {
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 
+// Simple cache so the profile doesn't flash on every navigation
+let cachedProfile: any = null;
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
 
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [profile, setProfile] = useState<any>(cachedProfile);
+  const [profileLoaded, setProfileLoaded] = useState(!!cachedProfile);
 
   useEffect(() => {
+    // If we already have the profile cached, don't fetch again
+    if (cachedProfile) {
+      setProfile(cachedProfile);
+      setProfileLoaded(true);
+      return;
+    }
+
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
 
       if (user) {
         const { data } = await supabase
@@ -33,6 +41,7 @@ export default function Sidebar() {
           .single();
 
         if (data) {
+          cachedProfile = data; // save to cache
           setProfile(data);
         }
       }
@@ -43,6 +52,7 @@ export default function Sidebar() {
   }, []);
 
   const handleLogout = async () => {
+    cachedProfile = null; // clear cache on logout
     await supabase.auth.signOut();
     router.push('/login');
   };
@@ -171,9 +181,7 @@ export default function Sidebar() {
               </div>
             </Link>
           ) : (
-            <div className="flex items-center gap-3 px-3 py-2 h-[52px]">
-              {/* empty space to keep height stable */}
-            </div>
+            <div className="h-[52px]" /> 
           )}
 
           <button
