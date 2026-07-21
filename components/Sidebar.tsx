@@ -1,17 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Home, Radio, Video, Trophy, MessageCircle, LayoutDashboard,
   Search, ShoppingBag, Heart, Settings,
   LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle, User
 } from 'lucide-react';
+import { createClient } from '../lib/supabase';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+
+      if (user) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url')
+          .eq('id', user.id)
+          .single();
+
+        setProfile(data);
+      }
+    };
+
+    getUser();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   const navItems = [
     { href: '/', label: 'Home', icon: Home },
@@ -22,7 +52,6 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Desktop MORE items (Following removed)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -34,7 +63,6 @@ export default function Sidebar() {
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
-  // Mobile MORE items (Following removed)
   const mobileMoreItems = [
     { href: '/clips', label: 'Clips', icon: Video },
     { href: '/account', label: 'My Account', icon: User },
@@ -109,9 +137,39 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <div className="p-4 border-t border-zinc-800">
+        {/* Bottom section - Profile + Logout */}
+        <div className="p-4 border-t border-zinc-800 space-y-3">
+          {user && (
+            <Link
+              href="/account"
+              className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-zinc-800 transition"
+            >
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt="Profile"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span>
+                    {(profile?.display_name || profile?.username || 'U').charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {profile?.display_name || profile?.username || 'User'}
+                </p>
+                <p className="text-xs text-zinc-400 truncate">
+                  @{profile?.username || 'username'}
+                </p>
+              </div>
+            </Link>
+          )}
+
           <button
-            onClick={() => alert('Logout coming soon')}
+            onClick={handleLogout}
             className="flex items-center gap-3 w-full px-4 py-3 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-xl transition"
           >
             <LogOut size={18} /> Logout
@@ -131,7 +189,6 @@ export default function Sidebar() {
             <Home size={22} />
             <span className="text-[10px] mt-1">Home</span>
           </Link>
-
           <Link
             href="/live"
             className={`flex flex-col items-center justify-center flex-1 ${
@@ -141,7 +198,6 @@ export default function Sidebar() {
             <Radio size={22} />
             <span className="text-[10px] mt-1">Live</span>
           </Link>
-
           <Link
             href="/dashboard"
             className={`flex flex-col items-center justify-center flex-1 ${
@@ -151,7 +207,6 @@ export default function Sidebar() {
             <LayoutDashboard size={22} />
             <span className="text-[10px] mt-1">Dashboard</span>
           </Link>
-
           <Link
             href="/messages"
             className={`flex flex-col items-center justify-center flex-1 ${
@@ -161,7 +216,6 @@ export default function Sidebar() {
             <MessageCircle size={22} />
             <span className="text-[10px] mt-1">Messages</span>
           </Link>
-
           <button
             onClick={() => setShowMoreMenu(true)}
             className="flex flex-col items-center justify-center flex-1 text-zinc-400"
@@ -179,7 +233,6 @@ export default function Sidebar() {
             className="lg:hidden fixed inset-0 z-40 bg-black/50"
             onClick={() => setShowMoreMenu(false)}
           />
-
           <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-3xl p-4 animate-in slide-in-from-bottom duration-200">
             <div className="flex justify-between items-center mb-4 px-2">
               <h2 className="text-xl font-semibold">More</h2>
@@ -211,7 +264,7 @@ export default function Sidebar() {
               <button
                 onClick={() => {
                   setShowMoreMenu(false);
-                  alert('Logout coming soon');
+                  handleLogout();
                 }}
                 className="w-full flex items-center justify-center gap-2 py-4 text-red-400 active:bg-zinc-800 rounded-2xl transition text-base font-medium"
               >
