@@ -153,31 +153,38 @@ export default function MyAccountPage() {
               </div>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-2">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-3 text-zinc-400 mb-1">
-                  <Users size={18} /> <span className="text-sm">Followers</span>
+            {/* Stats Cards - Improved alignment */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-8">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+                  <Users size={16} />
+                  <span>Followers</span>
                 </div>
-                <div className="text-3xl font-semibold">0</div>
+                <div className="text-3xl font-semibold mt-3">0</div>
               </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-3 text-zinc-400 mb-1">
-                  <Heart size={18} /> <span className="text-sm">Active Subscribers</span>
+
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+                  <Heart size={16} />
+                  <span>Active Subscribers</span>
                 </div>
-                <div className="text-3xl font-semibold">0</div>
+                <div className="text-3xl font-semibold mt-3">0</div>
               </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-3 text-zinc-400 mb-1">
-                  <DollarSign size={18} /> <span className="text-sm">Total Earnings</span>
+
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+                  <DollarSign size={16} />
+                  <span>Total Earnings</span>
                 </div>
-                <div className="text-3xl font-semibold">£0</div>
+                <div className="text-3xl font-semibold mt-3">£0</div>
               </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-3 text-zinc-400 mb-1">
-                  <TrendingUp size={18} /> <span className="text-sm">This Month</span>
+
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+                  <TrendingUp size={16} />
+                  <span>This Month</span>
                 </div>
-                <div className="text-3xl font-semibold">£0</div>
+                <div className="text-3xl font-semibold mt-3">£0</div>
               </div>
             </div>
 
