@@ -151,33 +151,27 @@ export default function DiscoverPage() {
           .delete()
           .eq('post_id', postId)
           .eq('user_id', user.id);
-
-        // Update count in posts table
-        await supabase
-          .from('posts')
-          .update({ likes_count: Math.max(0, (posts.find(p => p.id === postId)?.likes_count || 1) - 1) })
-          .eq('id', postId);
       } else {
         // Like
         await supabase
           .from('post_likes')
           .insert({ post_id: postId, user_id: user.id });
-
-        // Update count in posts table
-        await supabase
-          .from('posts')
-          .update({ likes_count: (posts.find(p => p.id === postId)?.likes_count || 0) + 1 })
-          .eq('id', postId);
       }
+
+      // Get the real current count from the likes table
+      const { count } = await supabase
+        .from('post_likes')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId);
+
+      // Update the posts table with the real count
+      await supabase
+        .from('posts')
+        .update({ likes_count: count || 0 })
+        .eq('id', postId);
+
     } catch (err) {
       console.error('Like error:', err);
-      // Revert on error
-      setLikedPosts((prev) => {
-        const newSet = new Set(prev);
-        if (isLiked) newSet.add(postId);
-        else newSet.delete(postId);
-        return newSet;
-      });
     }
   };
 
