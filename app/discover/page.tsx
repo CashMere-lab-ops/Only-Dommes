@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, DollarSign } from 'lucide-react';
+import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, DollarSign, Send } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
@@ -19,6 +19,12 @@ export default function DiscoverPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
+
+  // Comments state
+  const [openComments, setOpenComments] = useState<string | null>(null);
+  const [comments, setComments] = useState<Record<string, any[]>>({});
+  const [newComment, setNewComment] = useState<Record<string, string>>({});
+  const [postingComment, setPostingComment] = useState<string | null>(null);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -72,7 +78,6 @@ export default function DiscoverPage() {
           .single();
         setProfile(profileData);
 
-        // Load which posts the user has already liked
         const { data: likesData } = await supabase
           .from('post_likes')
           .select('post_id')
@@ -118,14 +123,10 @@ export default function DiscoverPage() {
 
     const isLiked = likedPosts.has(postId);
 
-    // Optimistic UI update
     setLikedPosts((prev) => {
       const newSet = new Set(prev);
-      if (isLiked) {
-        newSet.delete(postId);
-      } else {
-        newSet.add(postId);
-      }
+      if (isLiked) newSet.delete(postId);
+      else newSet.add(postId);
       return newSet;
     });
 
@@ -145,33 +146,122 @@ export default function DiscoverPage() {
 
     try {
       if (isLiked) {
-        // Unlike
         await supabase
           .from('post_likes')
           .delete()
           .eq('post_id', postId)
           .eq('user_id', user.id);
       } else {
-        // Like
         await supabase
           .from('post_likes')
           .insert({ post_id: postId, user_id: user.id });
       }
 
-      // Get the real current count from the likes table
       const { count } = await supabase
         .from('post_likes')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId);
 
-      // Update the posts table with the real count
       await supabase
         .from('posts')
         .update({ likes_count: count || 0 })
         .eq('id', postId);
-
     } catch (err) {
       console.error('Like error:', err);
+    }
+  };
+
+  const toggleComments = async (postId: string) => {
+    if (openComments === postId) {
+      setOpenComments(null);
+      return;
+    }
+
+    setOpenComments(postId);
+
+    // Load comments if not already loaded
+    if (!comments[postId]) {
+      const { data } = await supabase
+        .from('post_comments')
+        .select(`
+          *,
+          profiles:user_id (
+            username,
+            display_name,
+            avatar_url
+          )
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+      setComments((prev) => ({
+        ...prev,
+        [postId]: data || [],
+      }));
+    }
+  };
+
+  const handleAddComment = async (postId: string) => {
+    if (!user || !newComment[postId]?.trim()) return;
+
+    setPostingComment(postId);
+
+    try {
+      const { data, error } = await supabase
+        .from('post_comments')
+        .insert({
+          post_id: postId,
+          user_id: user.id,
+          content: newComment[postId].trim(),
+        })
+        .select(`
+          *,
+          profiles:user_id (
+            username,
+            display_name,
+            avatar_url
+          )
+        `)
+        .single();
+
+      if (error) throw error;
+
+      // Add to local comments
+      setComments((prev) => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), data],
+      }));
+
+      // Update comment count
+      setPosts((prev) =>
+        prev.map((post) => {
+          if (post.id === postId) {
+            return {
+              ...post,
+              comments_count: (post.comments_count || 0) + 1,
+            };
+          }
+          return post;
+        })
+      );
+
+      // Update count in database
+      const { count } = await supabase
+        .from('post_comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId);
+
+      await supabase
+        .from('posts')
+        .update({ comments_count: count || 0 })
+        .eq('id', postId);
+
+      // Clear input
+      setNewComment((prev) => ({ ...prev, [postId]: '' }));
+    } catch (err) {
+      console.error('Comment error:', err);
+    } finally {
+      setPostingComment(null);
     }
   };
 
@@ -220,6 +310,8 @@ export default function DiscoverPage() {
                 <>
                   {posts.map((post) => {
                     const isLiked = likedPosts.has(post.id);
+                    const isCommentsOpen = openComments === post.id;
+                    const postComments = comments[post.id] || [];
 
                     return (
                       <div
@@ -305,7 +397,12 @@ export default function DiscoverPage() {
                             <span className="text-sm">{post.likes_count || 0}</span>
                           </button>
 
-                          <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                          <button
+                            onClick={() => toggleComments(post.id)}
+                            className={`flex items-center gap-1.5 transition group ${
+                              isCommentsOpen ? 'text-pink-400' : 'text-zinc-400 hover:text-pink-400'
+                            }`}
+                          >
                             <MessageCircle size={22} className="group-hover:scale-110 transition" />
                             <span className="text-sm">{post.comments_count || 0}</span>
                           </button>
@@ -319,6 +416,67 @@ export default function DiscoverPage() {
                             <Share2 size={20} className="group-hover:scale-110 transition" />
                           </button>
                         </div>
+
+                        {/* Comments Section */}
+                        {isCommentsOpen && (
+                          <div className="border-t border-zinc-800 px-4 py-3">
+                            {/* Existing comments */}
+                            <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
+                              {postComments.length === 0 ? (
+                                <p className="text-sm text-zinc-500 text-center py-2">No comments yet</p>
+                              ) : (
+                                postComments.map((comment) => (
+                                  <div key={comment.id} className="flex gap-2.5">
+                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden">
+                                      {comment.profiles?.avatar_url ? (
+                                        <img src={comment.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                                      ) : (
+                                        (comment.profiles?.display_name || 'U').charAt(0)
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm">
+                                        <span className="font-semibold text-pink-400">
+                                          {comment.profiles?.display_name || 'User'}
+                                        </span>{' '}
+                                        <span className="text-zinc-300">{comment.content}</span>
+                                      </p>
+                                      <p className="text-xs text-zinc-500 mt-0.5">
+                                        {formatTime(comment.created_at)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            {/* Add comment */}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={newComment[post.id] || ''}
+                                onChange={(e) =>
+                                  setNewComment((prev) => ({
+                                    ...prev,
+                                    [post.id]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleAddComment(post.id);
+                                }}
+                                placeholder="Add a comment..."
+                                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-full px-4 py-2 text-sm outline-none focus:border-pink-500"
+                              />
+                              <button
+                                onClick={() => handleAddComment(post.id)}
+                                disabled={postingComment === post.id || !newComment[post.id]?.trim()}
+                                className="w-9 h-9 rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40"
+                              >
+                                <Send size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
