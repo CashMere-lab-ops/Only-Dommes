@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, Play } from 'lucide-react';
+import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, Play, DollarSign } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
@@ -103,16 +103,26 @@ export default function DiscoverPage() {
                   {/* Post Header */}
                   <div className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
+                      <Link href={`/${post.creator.username}`} className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
                         {post.creator.avatar_url ? (
                           <img src={post.creator.avatar_url} alt="" className="w-full h-full object-cover" />
                         ) : (
                           post.creator.display_name.charAt(0)
                         )}
-                      </div>
+                      </Link>
                       <div>
-                        <p className="font-semibold text-sm leading-tight">{post.creator.display_name}</p>
-                        <p className="text-xs text-zinc-400">@{post.creator.username} · {post.created_at}</p>
+                        <Link 
+                          href={`/${post.creator.username}`}
+                          className="font-semibold text-sm leading-tight hover:text-pink-400 transition"
+                        >
+                          {post.creator.display_name}
+                        </Link>
+                        <p className="text-xs text-zinc-400">
+                          <Link href={`/${post.creator.username}`} className="hover:text-pink-400 transition">
+                            @{post.creator.username}
+                          </Link>
+                          {' · '}{post.created_at}
+                        </p>
                       </div>
                     </div>
                     <button className="text-zinc-400 hover:text-white p-1">
@@ -127,15 +137,17 @@ export default function DiscoverPage() {
                     </div>
                   )}
 
-                  {/* Media */}
+                  {/* Media - limited height on desktop */}
                   {post.type === 'photo' && (
-                    <div className="aspect-square bg-zinc-800 flex items-center justify-center border-y border-zinc-800">
-                      <p className="text-zinc-500 text-sm">Photo</p>
+                    <div className="bg-zinc-800 flex items-center justify-center border-y border-zinc-800 max-h-[420px] overflow-hidden">
+                      <div className="w-full aspect-square max-h-[420px] bg-zinc-800 flex items-center justify-center">
+                        <p className="text-zinc-500 text-sm">Photo</p>
+                      </div>
                     </div>
                   )}
 
                   {post.type === 'video' && (
-                    <div className="aspect-video bg-zinc-800 flex items-center justify-center relative border-y border-zinc-800">
+                    <div className="aspect-video max-h-[420px] bg-zinc-800 flex items-center justify-center relative border-y border-zinc-800">
                       <div className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center">
                         <Play size={28} className="text-white ml-1" fill="white" />
                       </div>
@@ -155,7 +167,11 @@ export default function DiscoverPage() {
                       <MessageCircle size={22} className="group-hover:scale-110 transition" />
                       <span className="text-sm">{post.comments}</span>
                     </button>
-                    <button className="text-zinc-400 hover:text-pink-400 transition group">
+                    <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                      <DollarSign size={20} className="group-hover:scale-110 transition" />
+                      <span className="text-sm">Tip</span>
+                    </button>
+                    <button className="text-zinc-400 hover:text-pink-400 transition group ml-auto">
                       <Share2 size={20} className="group-hover:scale-110 transition" />
                     </button>
                   </div>
