@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, DollarSign, Send } from 'lucide-react';
+import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, DollarSign, Send, X } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
 const POSTS_PER_PAGE = 20;
+const TIP_AMOUNTS = [5, 10, 20, 50];
 
 export default function DiscoverPage() {
   const supabase = createClient();
@@ -25,6 +26,14 @@ export default function DiscoverPage() {
   const [comments, setComments] = useState<Record<string, any[]>>({});
   const [newComment, setNewComment] = useState<Record<string, string>>({});
   const [postingComment, setPostingComment] = useState<string | null>(null);
+
+  // Tip state
+  const [tipPost, setTipPost] = useState<any>(null);
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(10);
+  const [customAmount, setCustomAmount] = useState('');
+  const [tipMessage, setTipMessage] = useState('');
+  const [sendingTip, setSendingTip] = useState(false);
+  const [tipSuccess, setTipSuccess] = useState(false);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -179,7 +188,6 @@ export default function DiscoverPage() {
 
     setOpenComments(postId);
 
-    // Load comments if not already loaded
     if (!comments[postId]) {
       const { data } = await supabase
         .from('post_comments')
@@ -226,13 +234,11 @@ export default function DiscoverPage() {
 
       if (error) throw error;
 
-      // Add to local comments
       setComments((prev) => ({
         ...prev,
         [postId]: [...(prev[postId] || []), data],
       }));
 
-      // Update comment count
       setPosts((prev) =>
         prev.map((post) => {
           if (post.id === postId) {
@@ -245,7 +251,6 @@ export default function DiscoverPage() {
         })
       );
 
-      // Update count in database
       const { count } = await supabase
         .from('post_comments')
         .select('*', { count: 'exact', head: true })
@@ -256,12 +261,59 @@ export default function DiscoverPage() {
         .update({ comments_count: count || 0 })
         .eq('id', postId);
 
-      // Clear input
       setNewComment((prev) => ({ ...prev, [postId]: '' }));
     } catch (err) {
       console.error('Comment error:', err);
     } finally {
       setPostingComment(null);
+    }
+  };
+
+  const openTipModal = (post: any) => {
+    setTipPost(post);
+    setSelectedAmount(10);
+    setCustomAmount('');
+    setTipMessage('');
+    setTipSuccess(false);
+  };
+
+  const closeTipModal = () => {
+    setTipPost(null);
+    setTipSuccess(false);
+  };
+
+  const handleSendTip = async () => {
+    if (!user || !tipPost) return;
+
+    const amount = customAmount ? parseFloat(customAmount) : selectedAmount;
+    if (!amount || amount <= 0) return;
+
+    setSendingTip(true);
+
+    try {
+      const { error } = await supabase
+        .from('tips')
+        .insert({
+          post_id: tipPost.id,
+          from_user_id: user.id,
+          to_user_id: tipPost.creator_id,
+          amount: amount,
+          message: tipMessage.trim() || null,
+        });
+
+      if (error) throw error;
+
+      setTipSuccess(true);
+
+      // Auto close after success
+      setTimeout(() => {
+        closeTipModal();
+      }, 1800);
+    } catch (err) {
+      console.error('Tip error:', err);
+      alert('Failed to send tip. Please try again.');
+    } finally {
+      setSendingTip(false);
     }
   };
 
@@ -407,7 +459,10 @@ export default function DiscoverPage() {
                             <span className="text-sm">{post.comments_count || 0}</span>
                           </button>
 
-                          <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                          <button
+                            onClick={() => openTipModal(post)}
+                            className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group"
+                          >
                             <DollarSign size={20} className="group-hover:scale-110 transition" />
                             <span className="text-sm">Tip</span>
                           </button>
@@ -420,7 +475,6 @@ export default function DiscoverPage() {
                         {/* Comments Section */}
                         {isCommentsOpen && (
                           <div className="border-t border-zinc-800 px-4 py-3">
-                            {/* Existing comments */}
                             <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
                               {postComments.length === 0 ? (
                                 <p className="text-sm text-zinc-500 text-center py-2">No comments yet</p>
@@ -450,7 +504,6 @@ export default function DiscoverPage() {
                               )}
                             </div>
 
-                            {/* Add comment */}
                             <div className="flex items-center gap-2">
                               <input
                                 type="text"
@@ -481,7 +534,6 @@ export default function DiscoverPage() {
                     );
                   })}
 
-                  {/* Load more trigger */}
                   <div ref={loadMoreRef} className="py-6 text-center">
                     {loadingMore && (
                       <p className="text-zinc-400 text-sm">Loading more posts...</p>
@@ -503,6 +555,117 @@ export default function DiscoverPage() {
             >
               <Plus size={28} className="text-white" />
             </Link>
+          )}
+
+          {/* Tip Modal */}
+          {tipPost && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                  <h2 className="font-semibold text-lg">Send a Tip</h2>
+                  <button onClick={closeTipModal} className="text-zinc-400 hover:text-white">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {tipSuccess ? (
+                  <div className="px-5 py-10 text-center">
+                    <div className="w-16 h-16 rounded-full bg-pink-500/20 flex items-center justify-center mx-auto mb-4">
+                      <DollarSign size={32} className="text-pink-400" />
+                    </div>
+                    <p className="text-xl font-semibold mb-1">Tip Sent!</p>
+                    <p className="text-zinc-400 text-sm">
+                      You tipped {tipPost.profiles?.display_name}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="px-5 py-5">
+                    {/* Creator info */}
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
+                        {tipPost.profiles?.avatar_url ? (
+                          <img src={tipPost.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          (tipPost.profiles?.display_name || 'U').charAt(0)
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-semibold">{tipPost.profiles?.display_name}</p>
+                        <p className="text-sm text-zinc-400">@{tipPost.profiles?.username}</p>
+                      </div>
+                    </div>
+
+                    {/* Quick amounts */}
+                    <div className="grid grid-cols-4 gap-2 mb-4">
+                      {TIP_AMOUNTS.map((amount) => (
+                        <button
+                          key={amount}
+                          onClick={() => {
+                            setSelectedAmount(amount);
+                            setCustomAmount('');
+                          }}
+                          className={`py-2.5 rounded-xl text-sm font-medium transition ${
+                            selectedAmount === amount && !customAmount
+                              ? 'bg-pink-600 text-white'
+                              : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                          }`}
+                        >
+                          £{amount}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Custom amount */}
+                    <div className="mb-4">
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Custom amount</label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          value={customAmount}
+                          onChange={(e) => {
+                            setCustomAmount(e.target.value);
+                            setSelectedAmount(null);
+                          }}
+                          placeholder="0.00"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Optional message */}
+                    <div className="mb-6">
+                      <label className="text-xs text-zinc-400 mb-1.5 block">Message (optional)</label>
+                      <input
+                        type="text"
+                        value={tipMessage}
+                        onChange={(e) => setTipMessage(e.target.value)}
+                        placeholder="Say something nice..."
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500 text-sm"
+                      />
+                    </div>
+
+                    {/* Send button */}
+                    <button
+                      onClick={handleSendTip}
+                      disabled={sendingTip || (!selectedAmount && !customAmount)}
+                      className="w-full bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
+                    >
+                      {sendingTip
+                        ? 'Sending...'
+                        : `Send £${customAmount || selectedAmount || 0} Tip`}
+                    </button>
+
+                    <p className="text-xs text-zinc-500 text-center mt-3">
+                      Real payments will be connected with Stripe later
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </main>
       </div>
