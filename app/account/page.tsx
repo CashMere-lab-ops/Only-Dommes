@@ -153,38 +153,38 @@ export default function MyAccountPage() {
               </div>
             </div>
 
-            {/* Stats Cards - Improved alignment */}
+            {/* Stats Cards - Clean version */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-8">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <Users size={16} />
                   <span>Followers</span>
                 </div>
-                <div className="text-3xl font-semibold mt-3">0</div>
+                <div className="text-3xl font-semibold">0</div>
               </div>
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <Heart size={16} />
-                  <span>Active Subscribers</span>
+                  <span>Subscribers</span>
                 </div>
-                <div className="text-3xl font-semibold mt-3">0</div>
+                <div className="text-3xl font-semibold">0</div>
               </div>
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <DollarSign size={16} />
                   <span>Total Earnings</span>
                 </div>
-                <div className="text-3xl font-semibold mt-3">£0</div>
+                <div className="text-3xl font-semibold">£0</div>
               </div>
 
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <TrendingUp size={16} />
                   <span>This Month</span>
                 </div>
-                <div className="text-3xl font-semibold mt-3">£0</div>
+                <div className="text-3xl font-semibold">£0</div>
               </div>
             </div>
 
