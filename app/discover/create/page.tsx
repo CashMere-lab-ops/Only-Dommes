@@ -99,12 +99,51 @@ export default function CreatePostPage() {
     setPosting(true);
     setError('');
 
-    // Demo for now – we will connect to database later
-    setTimeout(() => {
-      setPosting(false);
-      alert('Post created successfully! (Demo)');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+
+      let mediaUrl = null;
+      let finalMediaType = 'text';
+
+      // Upload media if exists
+      if (mediaFile) {
+        const fileExt = mediaFile.name.split('.').pop();
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('posts')
+          .upload(filePath, mediaFile);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('posts')
+          .getPublicUrl(filePath);
+
+        mediaUrl = publicUrl;
+        finalMediaType = mediaType;
+      }
+
+      // Save post to database
+      const { error: insertError } = await supabase
+        .from('posts')
+        .insert({
+          creator_id: user.id,
+          content: caption.trim() || null,
+          media_url: mediaUrl,
+          media_type: finalMediaType,
+        });
+
+      if (insertError) throw insertError;
+
       router.push('/discover');
-    }, 1200);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to create post');
+      setPosting(false);
+    }
   };
 
   if (loading) {
@@ -266,7 +305,6 @@ export default function CreatePostPage() {
               className="hidden"
             />
 
-            {/* Info */}
             <div className="text-xs text-zinc-500 text-center">
               Posts on Discover are free for everyone to see
             </div>
