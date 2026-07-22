@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal } from 'lucide-react';
+import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, Play } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
@@ -94,7 +94,7 @@ export default function DiscoverPage() {
             </div>
 
             {/* Feed */}
-            <div className="space-y-6 pb-24">
+            <div className="space-y-5 pb-24">
               {demoPosts.map((post) => (
                 <div
                   key={post.id}
@@ -103,7 +103,7 @@ export default function DiscoverPage() {
                   {/* Post Header */}
                   <div className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
                         {post.creator.avatar_url ? (
                           <img src={post.creator.avatar_url} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -111,60 +111,60 @@ export default function DiscoverPage() {
                         )}
                       </div>
                       <div>
-                        <p className="font-semibold text-sm">{post.creator.display_name}</p>
+                        <p className="font-semibold text-sm leading-tight">{post.creator.display_name}</p>
                         <p className="text-xs text-zinc-400">@{post.creator.username} · {post.created_at}</p>
                       </div>
                     </div>
-                    <button className="text-zinc-400 hover:text-white">
-                      <MoreHorizontal size={20} />
+                    <button className="text-zinc-400 hover:text-white p-1">
+                      <MoreHorizontal size={18} />
                     </button>
                   </div>
 
-                  {/* Post Content */}
+                  {/* Caption */}
                   {post.content && (
                     <div className="px-4 pb-3">
-                      <p className="text-sm leading-relaxed">{post.content}</p>
+                      <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
                     </div>
                   )}
 
-                  {/* Media Placeholder */}
+                  {/* Media */}
                   {post.type === 'photo' && (
-                    <div className="aspect-square bg-zinc-800 flex items-center justify-center">
-                      <p className="text-zinc-500 text-sm">Photo Post</p>
+                    <div className="aspect-square bg-zinc-800 flex items-center justify-center border-y border-zinc-800">
+                      <p className="text-zinc-500 text-sm">Photo</p>
                     </div>
                   )}
 
                   {post.type === 'video' && (
-                    <div className="aspect-video bg-zinc-800 flex items-center justify-center relative">
-                      <p className="text-zinc-500 text-sm">Video Post (max 15s)</p>
-                      <div className="absolute bottom-3 right-3 bg-black/70 text-xs px-2 py-1 rounded">
+                    <div className="aspect-video bg-zinc-800 flex items-center justify-center relative border-y border-zinc-800">
+                      <div className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center">
+                        <Play size={28} className="text-white ml-1" fill="white" />
+                      </div>
+                      <div className="absolute bottom-3 right-3 bg-black/70 text-xs px-2 py-1 rounded-md">
                         0:12
                       </div>
                     </div>
                   )}
 
                   {/* Actions */}
-                  <div className="px-4 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-5">
-                      <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition">
-                        <Heart size={20} />
-                        <span className="text-sm">{post.likes}</span>
-                      </button>
-                      <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition">
-                        <MessageCircle size={20} />
-                        <span className="text-sm">{post.comments}</span>
-                      </button>
-                      <button className="text-zinc-400 hover:text-pink-400 transition">
-                        <Share2 size={20} />
-                      </button>
-                    </div>
+                  <div className="px-4 py-3 flex items-center gap-5">
+                    <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                      <Heart size={22} className="group-hover:scale-110 transition" />
+                      <span className="text-sm">{post.likes}</span>
+                    </button>
+                    <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                      <MessageCircle size={22} className="group-hover:scale-110 transition" />
+                      <span className="text-sm">{post.comments}</span>
+                    </button>
+                    <button className="text-zinc-400 hover:text-pink-400 transition group">
+                      <Share2 size={20} className="group-hover:scale-110 transition" />
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Floating Create Post Button (Creators only) - 80% opacity */}
+          {/* Floating Create Post Button */}
           {isCreator && (
             <Link
               href="/discover/create"
