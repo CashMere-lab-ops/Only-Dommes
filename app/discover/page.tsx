@@ -1,20 +1,65 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, Play, DollarSign } from 'lucide-react';
+import { Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal, DollarSign } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
+
+const POSTS_PER_PAGE = 20;
 
 export default function DiscoverPage() {
   const supabase = createClient();
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
+
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  const loadPosts = useCallback(async (pageNumber: number, reset = false) => {
+    if (pageNumber === 0) setLoading(true);
+    else setLoadingMore(true);
+
+    const from = pageNumber * POSTS_PER_PAGE;
+    const to = from + POSTS_PER_PAGE - 1;
+
+    const { data: postsData, error } = await supabase
+      .from('posts')
+      .select(`
+        *,
+        profiles:creator_id (
+          username,
+          display_name,
+          avatar_url
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (!error && postsData) {
+      if (reset) {
+        setPosts(postsData);
+      } else {
+        setPosts((prev) => [...prev, ...postsData]);
+      }
+
+      // If we got fewer posts than requested, there are no more
+      if (postsData.length < POSTS_PER_PAGE) {
+        setHasMore(false);
+      }
+    }
+
+    setLoading(false);
+    setLoadingMore(false);
+  }, []);
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadInitial = async () => {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
@@ -26,28 +71,35 @@ export default function DiscoverPage() {
         setProfile(profileData);
       }
 
-      // Load real posts with creator info
-      const { data: postsData, error } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles:creator_id (
-            username,
-            display_name,
-            avatar_url
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      if (!error && postsData) {
-        setPosts(postsData);
-      }
-
-      setLoading(false);
+      await loadPosts(0, true);
     };
 
-    loadData();
-  }, []);
+    loadInitial();
+  }, [loadPosts]);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    if (loading) return;
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          const nextPage = page + 1;
+          setPage(nextPage);
+          loadPosts(nextPage);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+
+    return () => {
+      if (observerRef.current) observerRef.current.disconnect();
+    };
+  }, [loading, hasMore, loadingMore, page, loadPosts]);
 
   const isCreator = profile?.account_type === 'creator';
 
@@ -91,95 +143,107 @@ export default function DiscoverPage() {
                   <p className="text-zinc-500 mt-2 text-sm">Be the first to post something!</p>
                 </div>
               ) : (
-                posts.map((post) => (
-                  <div
-                    key={post.id}
-                    className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden"
-                  >
-                    {/* Post Header */}
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Link
-                          href={`/${post.profiles?.username}`}
-                          className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0"
-                        >
-                          {post.profiles?.avatar_url ? (
-                            <img src={post.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            (post.profiles?.display_name || 'U').charAt(0)
-                          )}
-                        </Link>
-                        <div>
+                <>
+                  {posts.map((post) => (
+                    <div
+                      key={post.id}
+                      className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden"
+                    >
+                      {/* Post Header */}
+                      <div className="flex items-center justify-between px-4 py-3">
+                        <div className="flex items-center gap-3">
                           <Link
                             href={`/${post.profiles?.username}`}
-                            className="font-semibold text-sm leading-tight hover:text-pink-400 transition"
+                            className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0"
                           >
-                            {post.profiles?.display_name || 'Unknown'}
+                            {post.profiles?.avatar_url ? (
+                              <img src={post.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              (post.profiles?.display_name || 'U').charAt(0)
+                            )}
                           </Link>
-                          <p className="text-xs text-zinc-400">
+                          <div>
                             <Link
                               href={`/${post.profiles?.username}`}
-                              className="hover:text-pink-400 transition"
+                              className="font-semibold text-sm leading-tight hover:text-pink-400 transition"
                             >
-                              @{post.profiles?.username}
+                              {post.profiles?.display_name || 'Unknown'}
                             </Link>
-                            {' · '}{formatTime(post.created_at)}
-                          </p>
+                            <p className="text-xs text-zinc-400">
+                              <Link
+                                href={`/${post.profiles?.username}`}
+                                className="hover:text-pink-400 transition"
+                              >
+                                @{post.profiles?.username}
+                              </Link>
+                              {' · '}{formatTime(post.created_at)}
+                            </p>
+                          </div>
                         </div>
+                        <button className="text-zinc-400 hover:text-white p-1">
+                          <MoreHorizontal size={18} />
+                        </button>
                       </div>
-                      <button className="text-zinc-400 hover:text-white p-1">
-                        <MoreHorizontal size={18} />
-                      </button>
+
+                      {/* Caption */}
+                      {post.content && (
+                        <div className="px-4 pb-3">
+                          <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
+                        </div>
+                      )}
+
+                      {/* Media */}
+                      {post.media_type === 'photo' && post.media_url && (
+                        <div className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden">
+                          <img
+                            src={post.media_url}
+                            alt="Post"
+                            className="w-full max-h-[420px] object-cover"
+                          />
+                        </div>
+                      )}
+
+                      {post.media_type === 'video' && post.media_url && (
+                        <div className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative">
+                          <video
+                            src={post.media_url}
+                            controls
+                            className="w-full max-h-[420px]"
+                          />
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="px-4 py-3 flex items-center gap-5">
+                        <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                          <Heart size={22} className="group-hover:scale-110 transition" />
+                          <span className="text-sm">{post.likes_count || 0}</span>
+                        </button>
+                        <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                          <MessageCircle size={22} className="group-hover:scale-110 transition" />
+                          <span className="text-sm">{post.comments_count || 0}</span>
+                        </button>
+                        <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
+                          <DollarSign size={20} className="group-hover:scale-110 transition" />
+                          <span className="text-sm">Tip</span>
+                        </button>
+                        <button className="text-zinc-400 hover:text-pink-400 transition group ml-auto">
+                          <Share2 size={20} className="group-hover:scale-110 transition" />
+                        </button>
+                      </div>
                     </div>
+                  ))}
 
-                    {/* Caption */}
-                    {post.content && (
-                      <div className="px-4 pb-3">
-                        <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
-                      </div>
+                  {/* Load more trigger */}
+                  <div ref={loadMoreRef} className="py-6 text-center">
+                    {loadingMore && (
+                      <p className="text-zinc-400 text-sm">Loading more posts...</p>
                     )}
-
-                    {/* Media */}
-                    {post.media_type === 'photo' && post.media_url && (
-                      <div className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden">
-                        <img
-                          src={post.media_url}
-                          alt="Post"
-                          className="w-full max-h-[420px] object-cover"
-                        />
-                      </div>
+                    {!hasMore && posts.length > 0 && (
+                      <p className="text-zinc-500 text-sm">No more posts</p>
                     )}
-
-                    {post.media_type === 'video' && post.media_url && (
-                      <div className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative">
-                        <video
-                          src={post.media_url}
-                          controls
-                          className="w-full max-h-[420px]"
-                        />
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div className="px-4 py-3 flex items-center gap-5">
-                      <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
-                        <Heart size={22} className="group-hover:scale-110 transition" />
-                        <span className="text-sm">{post.likes_count || 0}</span>
-                      </button>
-                      <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
-                        <MessageCircle size={22} className="group-hover:scale-110 transition" />
-                        <span className="text-sm">{post.comments_count || 0}</span>
-                      </button>
-                      <button className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group">
-                        <DollarSign size={20} className="group-hover:scale-110 transition" />
-                        <span className="text-sm">Tip</span>
-                      </button>
-                      <button className="text-zinc-400 hover:text-pink-400 transition group ml-auto">
-                        <Share2 size={20} className="group-hover:scale-110 transition" />
-                      </button>
-                    </div>
                   </div>
-                ))
+                </>
               )}
             </div>
           </div>
