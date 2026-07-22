@@ -12,7 +12,7 @@ export default function DiscoverPage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Temporary demo posts (we will replace with real data later)
+  // Temporary demo posts
   const demoPosts = [
     {
       id: 1,
@@ -83,7 +83,7 @@ export default function DiscoverPage() {
         <Sidebar />
 
         <main className="flex-1 overflow-y-auto relative">
-          <div className="max-w-2xl mx-auto px-4 py-6">
+          <div className="max-w-3xl mx-auto px-4 py-6">
 
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
@@ -164,11 +164,11 @@ export default function DiscoverPage() {
             </div>
           </div>
 
-          {/* Floating Create Post Button (Creators only) */}
+          {/* Floating Create Post Button (Creators only) - 80% opacity */}
           {isCreator && (
             <Link
               href="/discover/create"
-              className="fixed bottom-24 right-6 lg:bottom-8 lg:right-8 z-40 w-14 h-14 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center shadow-lg hover:opacity-80 transition opacity-50 hover:opacity-100"
+              className="fixed bottom-24 right-6 lg:bottom-8 lg:right-8 z-40 w-14 h-14 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center shadow-lg transition opacity-80 hover:opacity-100"
             >
               <Plus size={28} className="text-white" />
             </Link>
