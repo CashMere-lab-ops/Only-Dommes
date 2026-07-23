@@ -301,6 +301,21 @@ export default function DiscoverPage() {
     alert(`@${username} has been blocked. (Full block system coming soon)`);
   };
 
+  const handleShare = (post: any) => {
+    const url = `${window.location.origin}/discover?post=${post.id}`;
+
+    if (navigator.share) {
+      navigator.share({
+        title: `Post by ${post.profiles?.display_name || 'Creator'}`,
+        text: post.content || 'Check out this post on Only Dommes',
+        url: url,
+      }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url);
+      alert('Link copied to clipboard');
+    }
+  };
+
   // Tip functions
   const openTipModal = (post: any) => {
     setTipPost(post);
@@ -552,7 +567,10 @@ export default function DiscoverPage() {
                               <span className="text-sm">Tip</span>
                             </button>
 
-                            <button className="text-zinc-400 hover:text-pink-400 transition group ml-auto">
+                            <button
+                              onClick={() => handleShare(post)}
+                              className="text-zinc-400 hover:text-pink-400 transition group ml-auto"
+                            >
                               <Share2 size={20} className="group-hover:scale-110 transition" />
                             </button>
                           </div>
