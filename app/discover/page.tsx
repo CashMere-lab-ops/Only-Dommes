@@ -438,13 +438,22 @@ export default function DiscoverPage() {
                               {isMenuOpen && (
                                 <div className="absolute right-0 top-9 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden">
                                   {isOwnPost ? (
-                                    <button
-                                      onClick={() => handleDeletePost(post.id)}
-                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition"
-                                    >
-                                      <Trash2 size={16} />
-                                      Delete post
-                                    </button>
+                                    <>
+                                      <button
+                                        onClick={() => handleCopyLink(post.id)}
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
+                                      >
+                                        <LinkIcon size={16} />
+                                        Copy link
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeletePost(post.id)}
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition border-t border-zinc-800"
+                                      >
+                                        <Trash2 size={16} />
+                                        Delete post
+                                      </button>
+                                    </>
                                   ) : (
                                     <>
                                       <button
