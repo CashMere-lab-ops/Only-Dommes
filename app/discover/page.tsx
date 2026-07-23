@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Search, Heart, MessageCircle, Share2, Plus, MoreHorizontal,
-  DollarSign, Send, X, Trash2, Flag, Link as LinkIcon, EyeOff, Ban
+  DollarSign, Send, X, Trash2, Flag, Link as LinkIcon, EyeOff, Ban,
+  RefreshCw
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -12,6 +13,13 @@ import { createClient } from '../../lib/supabase';
 
 const POSTS_PER_PAGE = 20;
 const TIP_AMOUNTS = [5, 10, 20, 50];
+const REPORT_REASONS = [
+  'Spam or scam',
+  'Inappropriate content',
+  'Harassment or bullying',
+  'Copyright violation',
+  'Other',
+];
 
 export default function DiscoverPage() {
   const supabase = createClient();
@@ -19,10 +27,16 @@ export default function DiscoverPage() {
   const [user, setUser] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Tabs & Search
+  const [activeTab, setActiveTab] = useState<'foryou' | 'following'>('foryou');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Comments
   const [openComments, setOpenComments] = useState<string | null>(null);
@@ -43,8 +57,18 @@ export default function DiscoverPage() {
   const [hiddenPosts, setHiddenPosts] = useState<Set<string>>(new Set());
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // Report modal
+  const [reportPostId, setReportPostId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reporting, setReporting] = useState(false);
+
+  // Double-tap like
+  const lastTap = useRef<Record<string, number>>({});
+  const [likedAnimation, setLikedAnimation] = useState<string | null>(null);
+
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -57,14 +81,14 @@ export default function DiscoverPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const loadPosts = useCallback(async (pageNumber: number, reset = false) => {
+  const loadPosts = useCallback(async (pageNumber: number, reset = false, tab = activeTab) => {
     if (pageNumber === 0) setLoading(true);
     else setLoadingMore(true);
 
     const from = pageNumber * POSTS_PER_PAGE;
     const to = from + POSTS_PER_PAGE - 1;
 
-    const { data: postsData, error } = await supabase
+    let query = supabase
       .from('posts')
       .select(`
         *,
@@ -77,16 +101,31 @@ export default function DiscoverPage() {
       .order('created_at', { ascending: false })
       .range(from, to);
 
+    // Following tab filter
+    if (tab === 'following' && followingIds.size > 0) {
+      query = query.in('creator_id', Array.from(followingIds));
+    } else if (tab === 'following' && followingIds.size === 0) {
+      setPosts([]);
+      setLoading(false);
+      setLoadingMore(false);
+      setHasMore(false);
+      return;
+    }
+
+    const { data: postsData, error } = await query;
+
     if (!error && postsData) {
       if (reset) setPosts(postsData);
       else setPosts((prev) => [...prev, ...postsData]);
 
       if (postsData.length < POSTS_PER_PAGE) setHasMore(false);
+      else setHasMore(true);
     }
 
     setLoading(false);
     setLoadingMore(false);
-  }, []);
+    setRefreshing(false);
+  }, [activeTab, followingIds]);
 
   useEffect(() => {
     const loadInitial = async () => {
@@ -101,13 +140,22 @@ export default function DiscoverPage() {
           .single();
         setProfile(profileData);
 
+        // Load likes
         const { data: likesData } = await supabase
           .from('post_likes')
           .select('post_id')
           .eq('user_id', user.id);
-
         if (likesData) {
           setLikedPosts(new Set(likesData.map((like) => like.post_id)));
+        }
+
+        // Load following
+        const { data: followsData } = await supabase
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', user.id);
+        if (followsData) {
+          setFollowingIds(new Set(followsData.map((f) => f.following_id)));
         }
       }
 
@@ -115,7 +163,14 @@ export default function DiscoverPage() {
     };
 
     loadInitial();
-  }, [loadPosts]);
+  }, []);
+
+  // Reload when tab changes
+  useEffect(() => {
+    setPage(0);
+    setHasMore(true);
+    loadPosts(0, true, activeTab);
+  }, [activeTab]);
 
   // Infinite scroll
   useEffect(() => {
@@ -141,9 +196,23 @@ export default function DiscoverPage() {
     };
   }, [loading, hasMore, loadingMore, page, loadPosts]);
 
+  // Pull to refresh (simple version)
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setPage(0);
+    setHasMore(true);
+    await loadPosts(0, true, activeTab);
+  };
+
   const handleLike = async (postId: string) => {
     if (!user) return;
     const isLiked = likedPosts.has(postId);
+
+    // Animation
+    if (!isLiked) {
+      setLikedAnimation(postId);
+      setTimeout(() => setLikedAnimation(null), 600);
+    }
 
     setLikedPosts((prev) => {
       const newSet = new Set(prev);
@@ -182,6 +251,24 @@ export default function DiscoverPage() {
     } catch (err) {
       console.error('Like error:', err);
     }
+  };
+
+  // Double-tap to like
+  const handleDoubleTap = (postId: string) => {
+    const now = Date.now();
+    const last = lastTap.current[postId] || 0;
+
+    if (now - last < 300) {
+      // Double tap detected
+      if (!likedPosts.has(postId)) {
+        handleLike(postId);
+      } else {
+        // Already liked – still show animation
+        setLikedAnimation(postId);
+        setTimeout(() => setLikedAnimation(null), 600);
+      }
+    }
+    lastTap.current[postId] = now;
   };
 
   const toggleComments = async (postId: string) => {
@@ -292,7 +379,20 @@ export default function DiscoverPage() {
 
   const handleReportPost = (postId: string) => {
     setOpenMenu(null);
-    alert('Post reported. Thank you for helping keep Only Dommes safe.');
+    setReportPostId(postId);
+    setReportReason('');
+  };
+
+  const submitReport = async () => {
+    if (!reportReason) return;
+    setReporting(true);
+
+    // For now just show success (we can save reports to DB later)
+    setTimeout(() => {
+      setReporting(false);
+      setReportPostId(null);
+      alert('Thank you. The post has been reported.');
+    }, 800);
   };
 
   const handleBlockUser = (username: string) => {
@@ -370,276 +470,396 @@ export default function DiscoverPage() {
     return date.toLocaleDateString();
   };
 
+  // Filter posts by search
+  const filteredPosts = posts.filter((post) => {
+    if (hiddenPosts.has(post.id)) return false;
+    if (!searchQuery.trim()) return true;
+
+    const q = searchQuery.toLowerCase();
+    const name = (post.profiles?.display_name || '').toLowerCase();
+    const username = (post.profiles?.username || '').toLowerCase();
+    const content = (post.content || '').toLowerCase();
+
+    return name.includes(q) || username.includes(q) || content.includes(q);
+  });
+
+  // Skeleton card
+  const SkeletonCard = () => (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden animate-pulse">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="w-10 h-10 rounded-full bg-zinc-800" />
+        <div className="flex-1">
+          <div className="h-3 w-28 bg-zinc-800 rounded mb-2" />
+          <div className="h-2.5 w-20 bg-zinc-800 rounded" />
+        </div>
+      </div>
+      <div className="px-4 pb-3">
+        <div className="h-3 w-full bg-zinc-800 rounded mb-2" />
+        <div className="h-3 w-2/3 bg-zinc-800 rounded" />
+      </div>
+      <div className="aspect-square bg-zinc-800" />
+      <div className="px-4 py-3 flex gap-5">
+        <div className="h-5 w-12 bg-zinc-800 rounded" />
+        <div className="h-5 w-12 bg-zinc-800 rounded" />
+        <div className="h-5 w-12 bg-zinc-800 rounded" />
+      </div>
+    </div>
+  );
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
 
-        <main className="flex-1 overflow-y-auto relative">
+        <main ref={mainRef} className="flex-1 overflow-y-auto relative">
           <div className="max-w-3xl mx-auto px-4 py-6">
 
-            <div className="flex items-center justify-between mb-8">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-5">
               <h1 className="text-3xl font-bold flex items-center gap-3">
                 <Search className="text-pink-500" size={28} />
                 Discover
               </h1>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition"
+              >
+                <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
+              </button>
             </div>
 
+            {/* Search Bar */}
+            <div className="relative mb-5">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search creators or posts..."
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-full py-2.5 pl-11 pr-4 text-sm outline-none focus:border-pink-500 transition"
+              />
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setActiveTab('foryou')}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition ${
+                  activeTab === 'foryou'
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-zinc-900 text-zinc-400 hover:text-white'
+                }`}
+              >
+                For You
+              </button>
+              <button
+                onClick={() => setActiveTab('following')}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition ${
+                  activeTab === 'following'
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-zinc-900 text-zinc-400 hover:text-white'
+                }`}
+              >
+                Following
+              </button>
+            </div>
+
+            {/* Feed */}
             <div className="space-y-5 pb-24">
               {loading ? (
-                <div className="text-center py-20 text-zinc-400">Loading posts...</div>
-              ) : posts.length === 0 ? (
+                <>
+                  <SkeletonCard />
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </>
+              ) : filteredPosts.length === 0 ? (
                 <div className="text-center py-20">
-                  <p className="text-zinc-400 text-lg">No posts yet</p>
-                  <p className="text-zinc-500 mt-2 text-sm">Be the first to post something!</p>
+                  <p className="text-zinc-400 text-lg">
+                    {activeTab === 'following'
+                      ? 'No posts from people you follow'
+                      : searchQuery
+                      ? 'No posts found'
+                      : 'No posts yet'}
+                  </p>
+                  <p className="text-zinc-500 mt-2 text-sm">
+                    {activeTab === 'following'
+                      ? 'Follow some creators to see their posts here'
+                      : 'Be the first to post something!'}
+                  </p>
                 </div>
               ) : (
                 <>
-                  {posts
-                    .filter((post) => !hiddenPosts.has(post.id))
-                    .map((post) => {
-                      const isLiked = likedPosts.has(post.id);
-                      const isCommentsOpen = openComments === post.id;
-                      const postComments = comments[post.id] || [];
-                      const isOwnPost = user?.id === post.creator_id;
-                      const isMenuOpen = openMenu === post.id;
+                  {filteredPosts.map((post) => {
+                    const isLiked = likedPosts.has(post.id);
+                    const isCommentsOpen = openComments === post.id;
+                    const postComments = comments[post.id] || [];
+                    const isOwnPost = user?.id === post.creator_id;
+                    const isMenuOpen = openMenu === post.id;
+                    const showHeartAnim = likedAnimation === post.id;
 
-                      return (
-                        <div
-                          key={post.id}
-                          className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden relative"
-                        >
-                          {/* Post Header */}
-                          <div className="flex items-center justify-between px-4 py-3">
-                            <div className="flex items-center gap-3">
+                    return (
+                      <div
+                        key={post.id}
+                        className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden relative"
+                      >
+                        {/* Post Header */}
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <Link
+                              href={`/${post.profiles?.username}`}
+                              className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0"
+                            >
+                              {post.profiles?.avatar_url ? (
+                                <img src={post.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                (post.profiles?.display_name || 'U').charAt(0)
+                              )}
+                            </Link>
+                            <div>
                               <Link
                                 href={`/${post.profiles?.username}`}
-                                className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0"
+                                className="font-semibold text-sm leading-tight hover:text-pink-400 transition"
                               >
-                                {post.profiles?.avatar_url ? (
-                                  <img src={post.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  (post.profiles?.display_name || 'U').charAt(0)
-                                )}
+                                {post.profiles?.display_name || 'Unknown'}
                               </Link>
-                              <div>
+                              <p className="text-xs text-zinc-400">
                                 <Link
                                   href={`/${post.profiles?.username}`}
-                                  className="font-semibold text-sm leading-tight hover:text-pink-400 transition"
+                                  className="hover:text-pink-400 transition"
                                 >
-                                  {post.profiles?.display_name || 'Unknown'}
+                                  @{post.profiles?.username}
                                 </Link>
-                                <p className="text-xs text-zinc-400">
-                                  <Link
-                                    href={`/${post.profiles?.username}`}
-                                    className="hover:text-pink-400 transition"
-                                  >
-                                    @{post.profiles?.username}
-                                  </Link>
-                                  {' · '}{formatTime(post.created_at)}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* 3 Dots Menu */}
-                            <div className="relative" ref={isMenuOpen ? menuRef : null}>
-                              <button
-                                onClick={() => setOpenMenu(isMenuOpen ? null : post.id)}
-                                className="text-zinc-400 hover:text-white p-1.5 rounded-full hover:bg-zinc-800 transition"
-                              >
-                                <MoreHorizontal size={18} />
-                              </button>
-
-                              {isMenuOpen && (
-                                <div className="absolute right-0 top-9 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden">
-                                  {isOwnPost ? (
-                                    <>
-                                      <button
-                                        onClick={() => handleCopyLink(post.id)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
-                                      >
-                                        <LinkIcon size={16} />
-                                        Copy link
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeletePost(post.id)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition border-t border-zinc-800"
-                                      >
-                                        <Trash2 size={16} />
-                                        Delete post
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => handleReportPost(post.id)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
-                                      >
-                                        <Flag size={16} />
-                                        Report
-                                      </button>
-                                      <button
-                                        onClick={() => handleCopyLink(post.id)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
-                                      >
-                                        <LinkIcon size={16} />
-                                        Copy link
-                                      </button>
-                                      <button
-                                        onClick={() => handleHidePost(post.id)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
-                                      >
-                                        <EyeOff size={16} />
-                                        Hide post
-                                      </button>
-                                      <button
-                                        onClick={() => handleBlockUser(post.profiles?.username)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition border-t border-zinc-800"
-                                      >
-                                        <Ban size={16} />
-                                        Block @{post.profiles?.username}
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              )}
+                                {' · '}{formatTime(post.created_at)}
+                              </p>
                             </div>
                           </div>
 
-                          {/* Caption */}
-                          {post.content && (
-                            <div className="px-4 pb-3">
-                              <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
-                            </div>
-                          )}
-
-                          {/* Media */}
-                          {post.media_type === 'photo' && post.media_url && (
-                            <div className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden">
-                              <img
-                                src={post.media_url}
-                                alt="Post"
-                                className="w-full max-h-[420px] object-cover"
-                              />
-                            </div>
-                          )}
-
-                          {post.media_type === 'video' && post.media_url && (
-                            <div className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative">
-                              <video
-                                src={post.media_url}
-                                controls
-                                className="w-full max-h-[420px]"
-                              />
-                            </div>
-                          )}
-
-                          {/* Actions */}
-                          <div className="px-4 py-3 flex items-center gap-5">
+                          {/* 3 Dots Menu */}
+                          <div className="relative" ref={isMenuOpen ? menuRef : null}>
                             <button
-                              onClick={() => handleLike(post.id)}
-                              className={`flex items-center gap-1.5 transition group ${
-                                isLiked ? 'text-pink-500' : 'text-zinc-400 hover:text-pink-400'
-                              }`}
+                              onClick={() => setOpenMenu(isMenuOpen ? null : post.id)}
+                              className="text-zinc-400 hover:text-white p-1.5 rounded-full hover:bg-zinc-800 transition"
                             >
-                              <Heart
-                                size={22}
-                                className={`group-hover:scale-110 transition ${isLiked ? 'fill-pink-500' : ''}`}
-                              />
-                              <span className="text-sm">{post.likes_count || 0}</span>
+                              <MoreHorizontal size={18} />
                             </button>
 
-                            <button
-                              onClick={() => toggleComments(post.id)}
-                              className={`flex items-center gap-1.5 transition group ${
-                                isCommentsOpen ? 'text-pink-400' : 'text-zinc-400 hover:text-pink-400'
-                              }`}
-                            >
-                              <MessageCircle size={22} className="group-hover:scale-110 transition" />
-                              <span className="text-sm">{post.comments_count || 0}</span>
-                            </button>
-
-                            <button
-                              onClick={() => openTipModal(post)}
-                              className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group"
-                            >
-                              <DollarSign size={20} className="group-hover:scale-110 transition" />
-                              <span className="text-sm">Tip</span>
-                            </button>
-
-                            <button
-                              onClick={() => handleShare(post)}
-                              className="text-zinc-400 hover:text-pink-400 transition group ml-auto"
-                            >
-                              <Share2 size={20} className="group-hover:scale-110 transition" />
-                            </button>
-                          </div>
-
-                          {/* Comments */}
-                          {isCommentsOpen && (
-                            <div className="border-t border-zinc-800 px-4 py-3">
-                              <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
-                                {postComments.length === 0 ? (
-                                  <p className="text-sm text-zinc-500 text-center py-2">No comments yet</p>
+                            {isMenuOpen && (
+                              <div className="absolute right-0 top-9 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden">
+                                {isOwnPost ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleCopyLink(post.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
+                                    >
+                                      <LinkIcon size={16} />
+                                      Copy link
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeletePost(post.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition border-t border-zinc-800"
+                                    >
+                                      <Trash2 size={16} />
+                                      Delete post
+                                    </button>
+                                  </>
                                 ) : (
-                                  postComments.map((comment) => (
-                                    <div key={comment.id} className="flex gap-2.5">
-                                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden">
-                                        {comment.profiles?.avatar_url ? (
-                                          <img src={comment.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                          (comment.profiles?.display_name || 'U').charAt(0)
-                                        )}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm">
-                                          <span className="font-semibold text-pink-400">
-                                            {comment.profiles?.display_name || 'User'}
-                                          </span>{' '}
-                                          <span className="text-zinc-300">{comment.content}</span>
-                                        </p>
-                                        <p className="text-xs text-zinc-500 mt-0.5">
-                                          {formatTime(comment.created_at)}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  ))
+                                  <>
+                                    <button
+                                      onClick={() => handleReportPost(post.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
+                                    >
+                                      <Flag size={16} />
+                                      Report
+                                    </button>
+                                    <button
+                                      onClick={() => handleCopyLink(post.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
+                                    >
+                                      <LinkIcon size={16} />
+                                      Copy link
+                                    </button>
+                                    <button
+                                      onClick={() => handleHidePost(post.id)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 transition"
+                                    >
+                                      <EyeOff size={16} />
+                                      Hide post
+                                    </button>
+                                    <button
+                                      onClick={() => handleBlockUser(post.profiles?.username)}
+                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition border-t border-zinc-800"
+                                    >
+                                      <Ban size={16} />
+                                      Block @{post.profiles?.username}
+                                    </button>
+                                  </>
                                 )}
                               </div>
-
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={newComment[post.id] || ''}
-                                  onChange={(e) =>
-                                    setNewComment((prev) => ({
-                                      ...prev,
-                                      [post.id]: e.target.value,
-                                    }))
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleAddComment(post.id);
-                                  }}
-                                  placeholder="Add a comment..."
-                                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-full px-4 py-2 text-sm outline-none focus:border-pink-500"
-                                />
-                                <button
-                                  onClick={() => handleAddComment(post.id)}
-                                  disabled={postingComment === post.id || !newComment[post.id]?.trim()}
-                                  className="w-9 h-9 rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40"
-                                >
-                                  <Send size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      );
-                    })}
+
+                        {/* Caption */}
+                        {post.content && (
+                          <div className="px-4 pb-3">
+                            <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
+                          </div>
+                        )}
+
+                        {/* Media with double-tap */}
+                        {post.media_type === 'photo' && post.media_url && (
+                          <div
+                            className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative cursor-pointer"
+                            onClick={() => handleDoubleTap(post.id)}
+                          >
+                            <img
+                              src={post.media_url}
+                              alt="Post"
+                              className="w-full max-h-[420px] object-cover"
+                            />
+                            {showHeartAnim && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <Heart
+                                  size={80}
+                                  className="text-pink-500 fill-pink-500 animate-ping"
+                                  style={{ animationDuration: '0.6s' }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {post.media_type === 'video' && post.media_url && (
+                          <div
+                            className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative"
+                            onClick={() => handleDoubleTap(post.id)}
+                          >
+                            <video
+                              src={post.media_url}
+                              controls
+                              className="w-full max-h-[420px]"
+                            />
+                            {showHeartAnim && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <Heart
+                                  size={80}
+                                  className="text-pink-500 fill-pink-500 animate-ping"
+                                  style={{ animationDuration: '0.6s' }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="px-4 py-3 flex items-center gap-5">
+                          <button
+                            onClick={() => handleLike(post.id)}
+                            className={`flex items-center gap-1.5 transition group ${
+                              isLiked ? 'text-pink-500' : 'text-zinc-400 hover:text-pink-400'
+                            }`}
+                          >
+                            <Heart
+                              size={22}
+                              className={`group-hover:scale-110 transition-transform ${
+                                isLiked ? 'fill-pink-500 scale-110' : ''
+                              }`}
+                            />
+                            <span className="text-sm">{post.likes_count || 0}</span>
+                          </button>
+
+                          <button
+                            onClick={() => toggleComments(post.id)}
+                            className={`flex items-center gap-1.5 transition group ${
+                              isCommentsOpen ? 'text-pink-400' : 'text-zinc-400 hover:text-pink-400'
+                            }`}
+                          >
+                            <MessageCircle size={22} className="group-hover:scale-110 transition" />
+                            <span className="text-sm">{post.comments_count || 0}</span>
+                          </button>
+
+                          <button
+                            onClick={() => openTipModal(post)}
+                            className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group"
+                          >
+                            <DollarSign size={20} className="group-hover:scale-110 transition" />
+                            <span className="text-sm">Tip</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleShare(post)}
+                            className="text-zinc-400 hover:text-pink-400 transition group ml-auto"
+                          >
+                            <Share2 size={20} className="group-hover:scale-110 transition" />
+                          </button>
+                        </div>
+
+                        {/* Comments */}
+                        {isCommentsOpen && (
+                          <div className="border-t border-zinc-800 px-4 py-3">
+                            <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
+                              {postComments.length === 0 ? (
+                                <p className="text-sm text-zinc-500 text-center py-2">No comments yet</p>
+                              ) : (
+                                postComments.map((comment) => (
+                                  <div key={comment.id} className="flex gap-2.5">
+                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden">
+                                      {comment.profiles?.avatar_url ? (
+                                        <img src={comment.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                                      ) : (
+                                        (comment.profiles?.display_name || 'U').charAt(0)
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm">
+                                        <span className="font-semibold text-pink-400">
+                                          {comment.profiles?.display_name || 'User'}
+                                        </span>{' '}
+                                        <span className="text-zinc-300">{comment.content}</span>
+                                      </p>
+                                      <p className="text-xs text-zinc-500 mt-0.5">
+                                        {formatTime(comment.created_at)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={newComment[post.id] || ''}
+                                onChange={(e) =>
+                                  setNewComment((prev) => ({
+                                    ...prev,
+                                    [post.id]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleAddComment(post.id);
+                                }}
+                                placeholder="Add a comment..."
+                                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-full px-4 py-2 text-sm outline-none focus:border-pink-500"
+                              />
+                              <button
+                                onClick={() => handleAddComment(post.id)}
+                                disabled={postingComment === post.id || !newComment[post.id]?.trim()}
+                                className="w-9 h-9 rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40"
+                              >
+                                <Send size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   <div ref={loadMoreRef} className="py-6 text-center">
                     {loadingMore && <p className="text-zinc-400 text-sm">Loading more posts...</p>}
-                    {!hasMore && posts.length > 0 && (
+                    {!hasMore && filteredPosts.length > 0 && (
                       <p className="text-zinc-500 text-sm">No more posts</p>
                     )}
                   </div>
@@ -759,6 +979,53 @@ export default function DiscoverPage() {
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Report Modal */}
+          {reportPostId && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                  <h2 className="font-semibold text-lg">Report Post</h2>
+                  <button
+                    onClick={() => setReportPostId(null)}
+                    className="text-zinc-400 hover:text-white"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="px-5 py-5">
+                  <p className="text-sm text-zinc-400 mb-4">
+                    Why are you reporting this post?
+                  </p>
+
+                  <div className="space-y-2 mb-6">
+                    {REPORT_REASONS.map((reason) => (
+                      <button
+                        key={reason}
+                        onClick={() => setReportReason(reason)}
+                        className={`w-full text-left px-4 py-3 rounded-xl text-sm transition ${
+                          reportReason === reason
+                            ? 'bg-pink-600/20 border border-pink-500 text-pink-400'
+                            : 'bg-zinc-800 border border-zinc-700 text-zinc-300 hover:border-zinc-600'
+                        }`}
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={submitReport}
+                    disabled={!reportReason || reporting}
+                    className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
+                  >
+                    {reporting ? 'Submitting...' : 'Submit Report'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
