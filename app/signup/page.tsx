@@ -8,7 +8,8 @@ function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
-  const accountType = searchParams.get('type') as 'creator' | 'sub' || 'sub';
+  const accountType = (searchParams.get('type') as 'creator' | 'sub') || 'sub';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -16,6 +17,7 @@ function SignupForm() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
   const checkUsername = async (value: string) => {
@@ -82,14 +84,17 @@ function SignupForm() {
             account_type: accountType,
             date_of_birth: dateOfBirth,
           },
+          emailRedirectTo: `${window.location.origin}/dashboard`,
         },
       });
+
       if (authError) throw authError;
       if (!authData.user) throw new Error('Signup failed');
 
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      // Wait for trigger then update profile
+      await new Promise((resolve) => setTimeout(resolve, 1200));
 
-      const { error: updateError } = await supabase
+      await supabase
         .from('profiles')
         .update({
           username: username.toLowerCase(),
@@ -99,11 +104,8 @@ function SignupForm() {
         })
         .eq('id', authData.user.id);
 
-      if (updateError) {
-        console.error('Update error:', updateError);
-      }
-
-      router.push('/dashboard');
+      // Show success message instead of redirecting
+      setSuccess(true);
     } catch (err: any) {
       console.error('Full error:', err);
       setError(err.message || 'Something went wrong during signup');
@@ -111,6 +113,31 @@ function SignupForm() {
       setLoading(false);
     }
   };
+
+  // Success screen
+  if (success) {
+    return (
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+        <div className="w-16 h-16 bg-pink-500/20 rounded-full flex items-center justify-center mx-auto mb-5">
+          <span className="text-3xl">✉️</span>
+        </div>
+        <h2 className="text-2xl font-bold mb-3">Check your email</h2>
+        <p className="text-zinc-400 mb-2">
+          We’ve sent a confirmation link to:
+        </p>
+        <p className="text-pink-400 font-medium mb-6">{email}</p>
+        <p className="text-sm text-zinc-500 mb-8">
+          Click the link in the email to activate your account, then you can log in.
+        </p>
+        <Link
+          href="/login"
+          className="inline-block bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white font-semibold py-3 px-8 rounded-xl transition"
+        >
+          Go to Login
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSignup} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-5">
@@ -137,6 +164,7 @@ function SignupForm() {
           </p>
         )}
       </div>
+
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Display Name</label>
         <input
@@ -147,6 +175,7 @@ function SignupForm() {
           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
         />
       </div>
+
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Date of Birth</label>
         <input
@@ -158,6 +187,7 @@ function SignupForm() {
         />
         <p className="text-xs text-zinc-500 mt-1.5">You must be 18 or older to join</p>
       </div>
+
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
         <input
@@ -169,6 +199,7 @@ function SignupForm() {
           required
         />
       </div>
+
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Password</label>
         <input
@@ -181,11 +212,13 @@ function SignupForm() {
           minLength={6}
         />
       </div>
+
       {error && (
         <div className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
           {error}
         </div>
       )}
+
       <button
         type="submit"
         disabled={loading || usernameAvailable === false}
@@ -212,9 +245,11 @@ export default function SignupPage() {
           </div>
           <p className="text-zinc-400">Create your account</p>
         </div>
+
         <Suspense fallback={<div className="text-center py-10">Loading...</div>}>
           <SignupForm />
         </Suspense>
+
         <p className="text-center text-sm text-zinc-400 mt-6">
           Already have an account?{' '}
           <Link href="/login" className="text-pink-400 hover:text-pink-300">
