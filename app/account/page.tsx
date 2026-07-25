@@ -1,5 +1,4 @@
 'use client';
-
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,7 +13,6 @@ import { createClient } from '../../lib/supabase';
 export default function MyAccountPage() {
   const router = useRouter();
   const supabase = createClient();
-
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -25,17 +23,14 @@ export default function MyAccountPage() {
         router.push('/login');
         return;
       }
-
       const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
-
       setProfile(data);
       setLoading(false);
     };
-
     loadProfile();
   }, []);
 
@@ -71,7 +66,6 @@ export default function MyAccountPage() {
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-
         <main className="flex-1">
           {/* Mobile Top Bar */}
           <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
@@ -91,10 +85,9 @@ export default function MyAccountPage() {
           </div>
 
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
-
             {/* Profile Header */}
             <div className="flex flex-col sm:flex-row gap-6 mb-6">
-              
+             
               {/* Left column - Avatar + X (centred) */}
               <div className="flex flex-col items-center gap-3 flex-shrink-0">
                 <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden">
@@ -104,7 +97,6 @@ export default function MyAccountPage() {
                     initial
                   )}
                 </div>
-
                 {profile?.x_username && (
                   <a
                     href={`https://x.com/${profile.x_username}`}
@@ -126,7 +118,6 @@ export default function MyAccountPage() {
                   <div className="space-y-1">
                     <h1 className="text-3xl sm:text-4xl font-bold leading-tight">{displayName}</h1>
                     <p className="text-pink-400 text-lg leading-tight">@{username}</p>
-
                     <div className="flex flex-wrap items-center gap-2.5 text-sm text-zinc-400 pt-1">
                       <span>Joined {joinedDate}</span>
                       {profile?.account_type && (
@@ -136,7 +127,6 @@ export default function MyAccountPage() {
                       )}
                     </div>
                   </div>
-
                   <Link
                     href="/settings"
                     className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit flex-shrink-0"
@@ -144,7 +134,6 @@ export default function MyAccountPage() {
                     <Edit3 size={18} /> Edit Profile
                   </Link>
                 </div>
-
                 {profile?.bio && (
                   <p className="mt-6 text-zinc-300 max-w-2xl leading-relaxed">
                     {profile.bio}
@@ -153,7 +142,7 @@ export default function MyAccountPage() {
               </div>
             </div>
 
-            {/* Stats Cards - Clean version */}
+            {/* Stats Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-8">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
@@ -162,7 +151,6 @@ export default function MyAccountPage() {
                 </div>
                 <div className="text-3xl font-semibold">0</div>
               </div>
-
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <Heart size={16} />
@@ -170,7 +158,6 @@ export default function MyAccountPage() {
                 </div>
                 <div className="text-3xl font-semibold">0</div>
               </div>
-
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <DollarSign size={16} />
@@ -178,7 +165,6 @@ export default function MyAccountPage() {
                 </div>
                 <div className="text-3xl font-semibold">£0</div>
               </div>
-
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <TrendingUp size={16} />
@@ -234,7 +220,6 @@ export default function MyAccountPage() {
                   </Link>
                 </div>
               </div>
-
               <div>
                 <h2 className="text-xl font-semibold mb-4 px-1">Billing & Support</h2>
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
@@ -259,7 +244,7 @@ export default function MyAccountPage() {
                 <LogOut size={20} /> Log Out
               </button>
               <p className="text-center text-xs text-zinc-500 mt-4">
-                Only Dommes • v1.0
+                World Of Dommes • v1.0
               </p>
             </div>
           </div>

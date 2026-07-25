@@ -1,5 +1,4 @@
 'use client';
-
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -8,7 +7,6 @@ import { createClient } from '../../lib/supabase';
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,18 +16,15 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-
     if (error) {
       setError(error.message);
       setLoading(false);
       return;
     }
-
     router.push('/dashboard');
   };
 
@@ -43,12 +38,11 @@ export default function LoginPage() {
               <span className="text-white font-bold text-xl">♕</span>
             </div>
             <span className="text-3xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-              Only Dommes
+              World Of Dommes
             </span>
           </div>
           <p className="text-zinc-400">Welcome back</p>
         </div>
-
         <form onSubmit={handleLogin} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-5">
           <div>
             <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
@@ -61,7 +55,6 @@ export default function LoginPage() {
               required
             />
           </div>
-
           <div>
             <label className="text-sm text-zinc-400 mb-1.5 block">Password</label>
             <input
@@ -73,13 +66,11 @@ export default function LoginPage() {
               required
             />
           </div>
-
           {error && (
             <div className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
               {error}
             </div>
           )}
-
           <button
             type="submit"
             disabled={loading}
@@ -88,7 +79,6 @@ export default function LoginPage() {
             {loading ? 'Logging in...' : 'Log In'}
           </button>
         </form>
-
         <div className="text-center mt-6 space-y-2">
           <p className="text-sm text-zinc-400">
             Don’t have an account?{' '}
@@ -96,7 +86,6 @@ export default function LoginPage() {
               Sign up
             </Link>
           </p>
-
           <Link href="/forgot-password" className="text-sm text-zinc-400 hover:text-pink-300">
             Forgot your password?
           </Link>

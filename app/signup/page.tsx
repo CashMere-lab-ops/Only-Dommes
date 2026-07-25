@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -9,9 +8,7 @@ function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
-
   const accountType = searchParams.get('type') as 'creator' | 'sub' || 'sub';
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -24,18 +21,15 @@ function SignupForm() {
   const checkUsername = async (value: string) => {
     const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
     setUsername(clean);
-
     if (clean.length < 3) {
       setUsernameAvailable(null);
       return;
     }
-
     const { data } = await supabase
       .from('profiles')
       .select('username')
       .eq('username', clean)
       .maybeSingle();
-
     setUsernameAvailable(!data);
   };
 
@@ -44,7 +38,6 @@ function SignupForm() {
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
-
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
       age--;
     }
@@ -61,19 +54,16 @@ function SignupForm() {
       setLoading(false);
       return;
     }
-
     if (usernameAvailable === false) {
       setError('That username is already taken');
       setLoading(false);
       return;
     }
-
     if (!dateOfBirth) {
       setError('Please enter your date of birth');
       setLoading(false);
       return;
     }
-
     const age = calculateAge(dateOfBirth);
     if (age < 18) {
       setError('You must be at least 18 years old to create an account');
@@ -94,11 +84,9 @@ function SignupForm() {
           },
         },
       });
-
       if (authError) throw authError;
       if (!authData.user) throw new Error('Signup failed');
 
-      // Wait for trigger then force update
       await new Promise(resolve => setTimeout(resolve, 1200));
 
       const { error: updateError } = await supabase
@@ -149,7 +137,6 @@ function SignupForm() {
           </p>
         )}
       </div>
-
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Display Name</label>
         <input
@@ -160,7 +147,6 @@ function SignupForm() {
           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
         />
       </div>
-
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Date of Birth</label>
         <input
@@ -172,7 +158,6 @@ function SignupForm() {
         />
         <p className="text-xs text-zinc-500 mt-1.5">You must be 18 or older to join</p>
       </div>
-
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
         <input
@@ -184,7 +169,6 @@ function SignupForm() {
           required
         />
       </div>
-
       <div>
         <label className="text-sm text-zinc-400 mb-1.5 block">Password</label>
         <input
@@ -197,13 +181,11 @@ function SignupForm() {
           minLength={6}
         />
       </div>
-
       {error && (
         <div className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
           {error}
         </div>
       )}
-
       <button
         type="submit"
         disabled={loading || usernameAvailable === false}
@@ -225,16 +207,14 @@ export default function SignupPage() {
               <span className="text-white font-bold text-xl">♕</span>
             </div>
             <span className="text-3xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-              Only Dommes
+              World Of Dommes
             </span>
           </div>
           <p className="text-zinc-400">Create your account</p>
         </div>
-
         <Suspense fallback={<div className="text-center py-10">Loading...</div>}>
           <SignupForm />
         </Suspense>
-
         <p className="text-center text-sm text-zinc-400 mt-6">
           Already have an account?{' '}
           <Link href="/login" className="text-pink-400 hover:text-pink-300">

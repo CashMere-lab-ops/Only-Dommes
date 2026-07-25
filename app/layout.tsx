@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Only Dommes",
-  description: "The premium platform for Dommes and their fans",
+  title: "World Of Dommes | Premium Dominatrix Platform",
+  description: "Join World Of Dommes — the exclusive platform for Dominatrices. Go live, sell content, receive tips, and connect with fans in private sessions.",
 };
 
 export default function RootLayout({

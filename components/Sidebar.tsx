@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -17,7 +16,6 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [profile, setProfile] = useState<any>(cachedProfile);
   const [profileLoaded, setProfileLoaded] = useState(!!cachedProfile);
@@ -32,14 +30,12 @@ export default function Sidebar() {
 
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-
       if (user) {
         const { data } = await supabase
           .from('profiles')
           .select('username, display_name, avatar_url')
           .eq('id', user.id)
           .single();
-
         if (data) {
           cachedProfile = data; // save to cache
           setProfile(data);
@@ -47,7 +43,6 @@ export default function Sidebar() {
       }
       setProfileLoaded(true);
     };
-
     getUser();
   }, []);
 
@@ -101,8 +96,8 @@ export default function Sidebar() {
           <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
             <span className="text-white font-bold text-2xl">♕</span>
           </div>
-          <span className="font-bold text-2xl bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-            Only Dommes
+          <span className="font-bold text-xl bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+            World Of Dommes
           </span>
         </div>
 
@@ -181,7 +176,7 @@ export default function Sidebar() {
               </div>
             </Link>
           ) : (
-            <div className="h-[52px]" /> 
+            <div className="h-[52px]" />
           )}
 
           <button
@@ -256,7 +251,6 @@ export default function Sidebar() {
                 <X size={24} />
               </button>
             </div>
-
             <div className="grid grid-cols-4 gap-3">
               {mobileMoreItems.map((item) => {
                 const Icon = item.icon;
@@ -275,7 +269,6 @@ export default function Sidebar() {
                 );
               })}
             </div>
-
             <div className="mt-6 pt-4 border-t border-zinc-700">
               <button
                 onClick={() => {

@@ -402,19 +402,18 @@ export default function DiscoverPage() {
   };
 
   const handleShare = (post: any) => {
-    const url = `${window.location.origin}/discover?post=${post.id}`;
-
-    if (navigator.share) {
-      navigator.share({
-        title: `Post by ${post.profiles?.display_name || 'Creator'}`,
-        text: post.content || 'Check out this post on Only Dommes',
-        url: url,
-      }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(url);
-      alert('Link copied to clipboard');
-    }
-  };
+  const url = `${window.location.origin}/discover?post=${post.id}`;
+  if (navigator.share) {
+    navigator.share({
+      title: `Post by ${post.profiles?.display_name || 'Creator'}`,
+      text: post.content || 'Check out this post on World Of Dommes',
+      url: url,
+    }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(url);
+    alert('Link copied to clipboard');
+  }
+};
 
   // Tip functions
   const openTipModal = (post: any) => {

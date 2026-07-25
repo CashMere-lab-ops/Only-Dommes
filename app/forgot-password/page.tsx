@@ -1,5 +1,4 @@
 'use client';
-
 import { useState } from 'react';
 import { createClient } from '../../lib/supabase';
 import Link from 'next/link';
@@ -13,19 +12,15 @@ export default function ForgotPasswordPage() {
   const handleReset = async () => {
     setLoading(true);
     setMessage('');
-
     const supabase = createClient();
-
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://only-dommes.vercel.app/reset-password',
+      redirectTo: `${window.location.origin}/reset-password`,
     });
-
     if (error) {
       setMessage(error.message);
     } else {
       setMessage('Check your email for the password reset link.');
     }
-
     setLoading(false);
   };
 
@@ -37,12 +32,10 @@ export default function ForgotPasswordPage() {
             <Crown className="w-7 h-7 text-white" />
           </div>
         </div>
-
         <h1 className="text-3xl font-bold text-center mb-2">
-          Only <span className="gradient-text">Dommes</span>
+          World Of <span className="gradient-text">Dommes</span>
         </h1>
         <p className="text-zinc-400 text-center mb-8">Reset your password</p>
-
         <div className="bg-zinc-900 p-8 rounded-3xl">
           <label className="block text-sm font-medium mb-2">Email</label>
           <input
@@ -52,7 +45,6 @@ export default function ForgotPasswordPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-
           <button
             onClick={handleReset}
             disabled={loading}
@@ -60,14 +52,12 @@ export default function ForgotPasswordPage() {
           >
             {loading ? 'Sending...' : 'Send Reset Link'}
           </button>
-
           {message && (
             <p className="mt-5 text-center p-3 bg-zinc-800 rounded-2xl text-sm">
               {message}
             </p>
           )}
         </div>
-
         <p className="text-center mt-8 text-zinc-400">
           <Link href="/login" className="text-pink-500 hover:underline font-medium">
             Back to Log in
