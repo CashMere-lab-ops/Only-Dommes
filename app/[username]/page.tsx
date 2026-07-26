@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Users, Heart, DollarSign, TrendingUp
+  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
@@ -20,16 +20,17 @@ export default function PublicProfilePage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
 
   useEffect(() => {
     const loadProfile = async () => {
       setLoading(true);
 
-      // Get current logged in user (optional)
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
 
-      // Load the profile by username
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
@@ -44,7 +45,7 @@ export default function PublicProfilePage() {
 
       setProfile(profileData);
 
-      // Load their posts
+      // Load posts
       const { data: postsData } = await supabase
         .from('posts')
         .select('*')
@@ -53,6 +54,27 @@ export default function PublicProfilePage() {
         .limit(20);
 
       setPosts(postsData || []);
+
+      // Load followers count
+      const { count } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('following_id', profileData.id);
+
+      setFollowersCount(count || 0);
+
+      // Check if current user is following this profile
+      if (user) {
+        const { data: followData } = await supabase
+          .from('follows')
+          .select('id')
+          .eq('follower_id', user.id)
+          .eq('following_id', profileData.id)
+          .maybeSingle();
+
+        setIsFollowing(!!followData);
+      }
+
       setLoading(false);
     };
 
@@ -60,6 +82,53 @@ export default function PublicProfilePage() {
       loadProfile();
     }
   }, [username]);
+
+  const handleFollow = async () => {
+    if (!currentUser) {
+      router.push('/login');
+      return;
+    }
+    if (!profile || followLoading) return;
+
+    setFollowLoading(true);
+
+    try {
+      if (isFollowing) {
+        // Unfollow
+        await supabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', currentUser.id)
+          .eq('following_id', profile.id);
+
+        setIsFollowing(false);
+        setFollowersCount((prev) => Math.max(0, prev - 1));
+      } else {
+        // Follow
+        await supabase.from('follows').insert({
+          follower_id: currentUser.id,
+          following_id: profile.id,
+        });
+
+        setIsFollowing(true);
+        setFollowersCount((prev) => prev + 1);
+      }
+    } catch (err) {
+      console.error('Follow error:', err);
+      alert('Something went wrong');
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
+  const handleMessage = () => {
+    if (!currentUser) {
+      router.push('/login');
+      return;
+    }
+    // For now go to messages page (we can make proper DMs later)
+    router.push(`/messages?user=${profile.username}`);
+  };
 
   if (loading) {
     return (
@@ -164,6 +233,7 @@ export default function PublicProfilePage() {
                   </div>
                 </div>
 
+                {/* Buttons */}
                 {isOwnProfile ? (
                   <Link
                     href="/account"
@@ -172,12 +242,27 @@ export default function PublicProfilePage() {
                     Edit Profile
                   </Link>
                 ) : (
-                  <button
-                    onClick={() => alert('Follow feature coming soon')}
-                    className="inline-flex items-center gap-2 bg-pink-600 hover:bg-pink-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit"
-                  >
-                    Follow
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleFollow}
+                      disabled={followLoading}
+                      className={`px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit disabled:opacity-50 ${
+                        isFollowing
+                          ? 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white'
+                          : 'bg-pink-600 hover:bg-pink-700 text-white'
+                      }`}
+                    >
+                      {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
+                    </button>
+
+                    <button
+                      onClick={handleMessage}
+                      className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit"
+                    >
+                      <MessageCircle size={16} />
+                      Message
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -196,7 +281,7 @@ export default function PublicProfilePage() {
                 <Users size={16} />
                 <span>Followers</span>
               </div>
-              <div className="text-3xl font-semibold">0</div>
+              <div className="text-3xl font-semibold">{followersCount}</div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
