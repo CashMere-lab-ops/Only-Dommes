@@ -24,26 +24,18 @@ export default function MessagesPage() {
       }
       setCurrentUserId(user.id);
 
-      // Get all conversations the user is in
       const { data: convos, error } = await supabase
         .from('conversations')
         .select('*')
         .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
         .order('last_message_at', { ascending: false });
 
-      if (error) {
-        console.error(error);
-        setLoading(false);
-        return;
-      }
-
-      if (!convos || convos.length === 0) {
+      if (error || !convos) {
         setConversations([]);
         setLoading(false);
         return;
       }
 
-      // Get the other user's profile for each conversation
       const enriched = await Promise.all(
         convos.map(async (convo) => {
           const otherId =
@@ -57,19 +49,27 @@ export default function MessagesPage() {
             .eq('id', otherId)
             .single();
 
-          // Get last message
           const { data: lastMsg } = await supabase
             .from('messages')
-            .select('content, created_at, sender_id')
+            .select('content, created_at, sender_id, is_read')
             .eq('conversation_id', convo.id)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
+          // Unread count (messages from the other person that aren't read)
+          const { count: unreadCount } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('conversation_id', convo.id)
+            .eq('is_read', false)
+            .neq('sender_id', user.id);
+
           return {
             ...convo,
             otherUser: profile,
             lastMessage: lastMsg,
+            unreadCount: unreadCount || 0,
           };
         })
       );
@@ -90,16 +90,17 @@ export default function MessagesPage() {
     if (diff < 60) return 'Just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return date.toLocaleDateString();
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   };
 
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
           {/* Mobile header */}
-          <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
+          <div className="lg:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
             <Link href="/" className="text-zinc-400">
               <ArrowLeft size={22} />
             </Link>
@@ -107,60 +108,91 @@ export default function MessagesPage() {
           </div>
 
           <div className="max-w-2xl mx-auto px-4 py-6">
-            <h1 className="hidden lg:block text-3xl font-bold mb-6 flex items-center gap-3">
-              <MessageCircle className="text-pink-500" size={28} />
+            <h1 className="hidden lg:flex text-3xl font-bold mb-8 items-center gap-3">
+              <MessageCircle className="text-pink-500" size={30} />
               Messages
             </h1>
 
             {loading ? (
-              <p className="text-zinc-400 text-center py-20">Loading conversations...</p>
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-4 p-4 bg-zinc-900 rounded-2xl animate-pulse">
+                    <div className="w-14 h-14 rounded-full bg-zinc-800" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-zinc-800 rounded w-1/3" />
+                      <div className="h-3 bg-zinc-800 rounded w-2/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : conversations.length === 0 ? (
-              <div className="text-center py-20">
-                <MessageCircle size={48} className="mx-auto text-zinc-600 mb-4" />
-                <p className="text-zinc-400 text-lg">No messages yet</p>
-                <p className="text-zinc-500 text-sm mt-2">
-                  Click Message on someone’s profile to start a chat
+              <div className="text-center py-24">
+                <div className="w-20 h-20 rounded-full bg-zinc-900 flex items-center justify-center mx-auto mb-5">
+                  <MessageCircle size={36} className="text-zinc-600" />
+                </div>
+                <p className="text-zinc-300 text-lg font-medium">No messages yet</p>
+                <p className="text-zinc-500 text-sm mt-2 max-w-xs mx-auto">
+                  When someone messages you, or you message them, it will show up here
                 </p>
+                <Link
+                  href="/discover"
+                  className="inline-block mt-6 text-pink-400 hover:text-pink-300 text-sm font-medium"
+                >
+                  Find people on Discover →
+                </Link>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {conversations.map((convo) => {
                   const name =
                     convo.otherUser?.display_name ||
                     convo.otherUser?.username ||
                     'User';
                   const initial = name.charAt(0).toUpperCase();
+                  const hasUnread = convo.unreadCount > 0;
+                  const isFromMe = convo.lastMessage?.sender_id === currentUserId;
 
                   return (
                     <Link
                       key={convo.id}
                       href={`/messages/${convo.id}`}
-                      className="flex items-center gap-4 p-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-2xl transition"
+                      className="flex items-center gap-3.5 p-3.5 hover:bg-zinc-900/80 rounded-2xl transition group"
                     >
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-lg font-bold overflow-hidden flex-shrink-0">
-                        {convo.otherUser?.avatar_url ? (
-                          <img
-                            src={convo.otherUser.avatar_url}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          initial
+                      {/* Avatar */}
+                      <div className="relative flex-shrink-0">
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-lg font-bold overflow-hidden">
+                          {convo.otherUser?.avatar_url ? (
+                            <img
+                              src={convo.otherUser.avatar_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            initial
+                          )}
+                        </div>
+                        {hasUnread && (
+                          <div className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-pink-500 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-zinc-950">
+                            {convo.unreadCount > 9 ? '9+' : convo.unreadCount}
+                          </div>
                         )}
                       </div>
 
+                      {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="font-semibold truncate">{name}</p>
+                          <p className={`truncate ${hasUnread ? 'font-bold text-white' : 'font-semibold text-zinc-100'}`}>
+                            {name}
+                          </p>
                           {convo.lastMessage && (
-                            <span className="text-xs text-zinc-500 flex-shrink-0">
+                            <span className={`text-xs flex-shrink-0 ${hasUnread ? 'text-pink-400 font-medium' : 'text-zinc-500'}`}>
                               {formatTime(convo.lastMessage.created_at)}
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-zinc-400 truncate mt-0.5">
+                        <p className={`text-sm truncate mt-0.5 ${hasUnread ? 'text-zinc-200' : 'text-zinc-500'}`}>
                           {convo.lastMessage
-                            ? convo.lastMessage.content
+                            ? `${isFromMe ? 'You: ' : ''}${convo.lastMessage.content}`
                             : 'No messages yet'}
                         </p>
                       </div>
