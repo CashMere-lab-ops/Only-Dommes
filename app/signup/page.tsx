@@ -84,7 +84,7 @@ function SignupForm() {
             account_type: accountType,
             date_of_birth: dateOfBirth,
           },
-          emailRedirectTo: `${window.location.origin}/dashboard`,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
@@ -127,7 +127,7 @@ function SignupForm() {
         </p>
         <p className="text-pink-400 font-medium mb-6">{email}</p>
         <p className="text-sm text-zinc-500 mb-8">
-          Click the link in the email to activate your account, then you can log in.
+          Click the link in the email to activate your account and you’ll be logged in automatically.
         </p>
         <Link
           href="/login"
