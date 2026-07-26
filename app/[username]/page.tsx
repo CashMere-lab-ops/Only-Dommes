@@ -94,7 +94,6 @@ export default function PublicProfilePage() {
 
     try {
       if (isFollowing) {
-        // Unfollow
         await supabase
           .from('follows')
           .delete()
@@ -104,7 +103,6 @@ export default function PublicProfilePage() {
         setIsFollowing(false);
         setFollowersCount((prev) => Math.max(0, prev - 1));
       } else {
-        // Follow
         await supabase.from('follows').insert({
           follower_id: currentUser.id,
           following_id: profile.id,
@@ -121,13 +119,45 @@ export default function PublicProfilePage() {
     }
   };
 
-  const handleMessage = () => {
+  const handleMessage = async () => {
     if (!currentUser) {
       router.push('/login');
       return;
     }
-    // For now go to messages page (we can make proper DMs later)
-    router.push(`/messages?user=${profile.username}`);
+    if (!profile) return;
+
+    try {
+      // Check if a conversation already exists between these two users
+      const { data: existing } = await supabase
+        .from('conversations')
+        .select('id')
+        .or(
+          `and(participant_1.eq.${currentUser.id},participant_2.eq.${profile.id}),and(participant_1.eq.${profile.id},participant_2.eq.${currentUser.id})`
+        )
+        .maybeSingle();
+
+      if (existing) {
+        router.push(`/messages/${existing.id}`);
+        return;
+      }
+
+      // Create a new conversation
+      const { data: newConvo, error } = await supabase
+        .from('conversations')
+        .insert({
+          participant_1: currentUser.id,
+          participant_2: profile.id,
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+
+      router.push(`/messages/${newConvo.id}`);
+    } catch (err) {
+      console.error('Message error:', err);
+      alert('Could not start conversation');
+    }
   };
 
   if (loading) {
