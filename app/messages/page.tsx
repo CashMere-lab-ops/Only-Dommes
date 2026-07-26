@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MessageCircle, ArrowLeft } from 'lucide-react';
@@ -14,6 +14,7 @@ export default function MessagesPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
 
   const loadConversations = useCallback(async (userId: string) => {
     const { data: convos, error } = await supabase
@@ -77,44 +78,53 @@ export default function MessagesPage() {
         return;
       }
       setCurrentUserId(user.id);
+      userIdRef.current = user.id;
       await loadConversations(user.id);
     };
 
     init();
   }, [loadConversations, router]);
 
-  // Live update when new messages arrive
+  // Realtime + backup refresh
   useEffect(() => {
     if (!currentUserId) return;
 
+    const refresh = () => {
+      if (userIdRef.current) {
+        loadConversations(userIdRef.current);
+      }
+    };
+
     const channel = supabase
-      .channel('messages-list-live')
+      .channel(`messages-list-${currentUserId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-        },
-        () => {
-          loadConversations(currentUserId);
-        }
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        refresh
       )
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'conversations',
-        },
-        () => {
-          loadConversations(currentUserId);
-        }
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        refresh
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'conversations' },
+        refresh
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'conversations' },
+        refresh
       )
       .subscribe();
 
+    // Backup: refresh every 8 seconds while on this page
+    const interval = setInterval(refresh, 8000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [currentUserId, loadConversations]);
 
@@ -133,9 +143,7 @@ export default function MessagesPage() {
 
   const previewText = (msg: any, isFromMe: boolean) => {
     if (!msg) return 'No messages yet';
-    if (msg.media_type === 'image') {
-      return `${isFromMe ? 'You: ' : ''}📷 Photo`;
-    }
+    if (msg.media_type === 'image') return `${isFromMe ? 'You: ' : ''}📷 Photo`;
     if (msg.media_type === 'tip' || (msg.content || '').includes('💸')) {
       return msg.content || 'Tip';
     }
@@ -147,7 +155,6 @@ export default function MessagesPage() {
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-          {/* Mobile header */}
           <div className="lg:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
             <Link href="/" className="text-zinc-400">
               <ArrowLeft size={22} />
