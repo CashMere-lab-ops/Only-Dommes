@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Send } from 'lucide-react';
+import { ArrowLeft, Send, ImagePlus, X } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import AuthGuard from '../../../components/AuthGuard';
 import { createClient } from '../../../lib/supabase';
@@ -21,11 +21,14 @@ export default function ChatPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const mobileScrollRef = useRef<HTMLDivElement>(null);
   const desktopScrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     const scroll = (el: HTMLDivElement | null) => {
@@ -33,7 +36,6 @@ export default function ChatPage() {
       el.scrollTop = el.scrollHeight;
     };
 
-    // Run a few times so iPhone catches it
     scroll(mobileScrollRef.current);
     scroll(desktopScrollRef.current);
 
@@ -110,11 +112,8 @@ export default function ChatPage() {
     if (conversationId) loadChat();
   }, [conversationId]);
 
-  // When messages finish loading → go to bottom
   useEffect(() => {
-    if (!loading) {
-      scrollToBottom();
-    }
+    if (!loading) scrollToBottom();
   }, [loading, messages.length]);
 
   useEffect(() => {
@@ -172,9 +171,29 @@ export default function ChatPage() {
     }, 3000);
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Image must be under 10MB');
+      return;
+    }
+
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const clearSelectedImage = () => {
+    setSelectedImage(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !currentUserId || sending) return;
+    if ((!newMessage.trim() && !selectedImage) || !currentUserId || sending) return;
 
     setSending(true);
     const content = newMessage.trim();
@@ -184,12 +203,37 @@ export default function ChatPage() {
     sendTyping(false);
 
     try {
+      let mediaUrl: string | null = null;
+      let mediaType: string | null = null;
+
+      // Upload image if selected
+      if (selectedImage) {
+        const fileExt = selectedImage.name.split('.').pop();
+        const fileName = `${currentUserId}/${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('chat-media')
+          .upload(fileName, selectedImage);
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrl } = supabase.storage
+          .from('chat-media')
+          .getPublicUrl(fileName);
+
+        mediaUrl = publicUrl.publicUrl;
+        mediaType = 'image';
+        clearSelectedImage();
+      }
+
       const { data, error } = await supabase
         .from('messages')
         .insert({
           conversation_id: conversationId,
           sender_id: currentUserId,
-          content,
+          content: content || (mediaUrl ? '' : ''),
+          media_url: mediaUrl,
+          media_type: mediaType,
         })
         .select()
         .single();
@@ -208,7 +252,6 @@ export default function ChatPage() {
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      // Always go to bottom after sending
       setTimeout(scrollToBottom, 50);
     } catch (err) {
       console.error('Send error:', err);
@@ -294,22 +337,45 @@ export default function ChatPage() {
                     className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[80%] lg:max-w-[60%] px-3.5 py-2 rounded-2xl ${
+                      className={`max-w-[85%] sm:max-w-[70%] rounded-2xl overflow-hidden ${
                         isMine
                           ? 'bg-pink-600 text-white rounded-br-md'
                           : 'bg-zinc-800 text-white rounded-bl-md'
                       }`}
                     >
-                      <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
-                        {msg.content}
-                      </p>
-                      <p
-                        className={`text-[10px] mt-1 ${
-                          isMine ? 'text-pink-200/80' : 'text-zinc-500'
+                      {/* Image */}
+                      {msg.media_url && msg.media_type === 'image' && (
+                        <img
+                          src={msg.media_url}
+                          alt="Shared"
+                          className="w-full max-h-72 object-cover cursor-pointer"
+                          onClick={() => window.open(msg.media_url, '_blank')}
+                        />
+                      )}
+
+                      {/* Text */}
+                      {msg.content && (
+                        <div className="px-3.5 py-2">
+                          <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
+                            {msg.content}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Time */}
+                      <div
+                        className={`px-3.5 pb-2 ${
+                          !msg.content && msg.media_url ? 'pt-1.5' : ''
                         }`}
                       >
-                        {formatTime(msg.created_at)}
-                      </p>
+                        <p
+                          className={`text-[10px] ${
+                            isMine ? 'text-pink-200/80' : 'text-zinc-500'
+                          }`}
+                        >
+                          {formatTime(msg.created_at)}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 );
@@ -328,6 +394,67 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+
+  const InputBar = ({ isMobile = false }: { isMobile?: boolean }) => (
+    <div className="flex-shrink-0 border-t border-zinc-800 px-3 lg:px-6 py-2 lg:py-4">
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="mb-3 relative inline-block">
+          <img
+            src={imagePreview}
+            alt="Preview"
+            className="h-24 w-24 object-cover rounded-xl border border-zinc-700"
+          />
+          <button
+            type="button"
+            onClick={clearSelectedImage}
+            className="absolute -top-2 -right-2 w-6 h-6 bg-zinc-900 border border-zinc-700 rounded-full flex items-center justify-center"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={handleSend} className="flex items-center gap-2 lg:gap-3">
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          onChange={handleImageSelect}
+          className="hidden"
+        />
+
+        {/* Image button */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-400 hover:text-pink-400 hover:border-pink-500 transition flex-shrink-0"
+        >
+          <ImagePlus size={20} />
+        </button>
+
+        <input
+          type="text"
+          value={newMessage}
+          onChange={handleInputChange}
+          placeholder="Message..."
+          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 lg:py-3 outline-none focus:border-pink-500"
+          style={{ fontSize: isMobile ? '16px' : '14px' }}
+        />
+
+        <button
+          type="submit"
+          disabled={(!newMessage.trim() && !selectedImage) || sending}
+          className={`${
+            isMobile ? 'w-10 h-10' : 'w-12 h-12'
+          } rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40 flex-shrink-0`}
+        >
+          <Send size={18} />
+        </button>
+      </form>
     </div>
   );
 
@@ -369,29 +496,9 @@ export default function ChatPage() {
             <MessageList />
           </div>
 
-          <form
-            onSubmit={handleSend}
-            className="flex-shrink-0 border-t border-zinc-800 px-3 py-2"
-            style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newMessage}
-                onChange={handleInputChange}
-                placeholder="Message..."
-                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 outline-none focus:border-pink-500"
-                style={{ fontSize: '16px' }}
-              />
-              <button
-                type="submit"
-                disabled={!newMessage.trim() || sending}
-                className="w-10 h-10 rounded-full bg-pink-600 flex items-center justify-center disabled:opacity-40 flex-shrink-0"
-              >
-                <Send size={18} />
-              </button>
-            </div>
-          </form>
+          <div style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom))' }}>
+            <InputBar isMobile />
+          </div>
         </div>
 
         {/* DESKTOP */}
@@ -419,29 +526,14 @@ export default function ChatPage() {
 
           <div
             ref={desktopScrollRef}
-            className="flex-1 overflow-y-scroll px-6"
+            className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto"
           >
             <MessageList />
           </div>
 
-          <form onSubmit={handleSend} className="flex-shrink-0 border-t border-zinc-800 px-6 py-4">
-            <div className="flex items-center gap-3 max-w-3xl">
-              <input
-                type="text"
-                value={newMessage}
-                onChange={handleInputChange}
-                placeholder="Type a message..."
-                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-5 py-3 text-sm outline-none focus:border-pink-500"
-              />
-              <button
-                type="submit"
-                disabled={!newMessage.trim() || sending}
-                className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40"
-              >
-                <Send size={18} />
-              </button>
-            </div>
-          </form>
+          <div className="max-w-3xl w-full mx-auto">
+            <InputBar />
+          </div>
         </main>
       </div>
     </AuthGuard>
