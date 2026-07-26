@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send, ImagePlus, X } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
-import AuthGuard from '../../../components/AuthGuard';
 import { createClient } from '../../../lib/supabase';
 
 export default function ChatPage() {
@@ -28,6 +27,7 @@ export default function ChatPage() {
   const mobileRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<any>(null);
 
@@ -231,6 +231,8 @@ export default function ChatPage() {
         .eq('id', conversationId);
 
       setTimeout(scrollBottom, 80);
+      // Keep keyboard ready on phone
+      setTimeout(() => inputRef.current?.focus(), 100);
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Failed to send');
@@ -245,11 +247,9 @@ export default function ChatPage() {
 
   if (loading) {
     return (
-      <AuthGuard>
-        <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-          <p className="text-zinc-400">Loading chat...</p>
-        </div>
-      </AuthGuard>
+      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+        <p className="text-zinc-400">Loading chat...</p>
+      </div>
     );
   }
 
@@ -257,293 +257,292 @@ export default function ChatPage() {
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
-    <AuthGuard>
-      <div className="min-h-screen bg-zinc-950 text-white flex">
-        <div className="hidden lg:block">
-          <Sidebar />
-        </div>
+    <div className="min-h-screen bg-zinc-950 text-white flex">
+      <div className="hidden lg:block">
+        <Sidebar />
+      </div>
 
-        {viewer && (
-          <div
-            className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-3"
+      {viewer && (
+        <div
+          className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-3"
+          onClick={() => setViewer(null)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
             onClick={() => setViewer(null)}
           >
-            <button
-              type="button"
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
-              onClick={() => setViewer(null)}
-            >
-              <X size={20} />
-            </button>
-            <img
-              src={viewer}
-              alt=""
-              className="max-w-full max-h-full object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
+            <X size={20} />
+          </button>
+          <img
+            src={viewer}
+            alt=""
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
 
-        {/* MOBILE */}
-        <div className="lg:hidden fixed inset-0 z-50 bg-zinc-950 flex flex-col">
-          <div className="border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => router.push('/messages')}
-              className="text-zinc-400 p-1"
-            >
-              <ArrowLeft size={24} />
-            </button>
-            <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold flex-shrink-0">
-                {otherUser?.avatar_url ? (
-                  <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  initial
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-sm truncate">{displayName}</p>
-                <p className="text-xs text-zinc-400 truncate">
-                  {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
-                </p>
-              </div>
-            </Link>
-          </div>
-
-          <div
-            ref={mobileRef}
-            className="flex-1 overflow-y-scroll px-3"
-            style={{ WebkitOverflowScrolling: 'touch' }}
+      {/* MOBILE */}
+      <div className="lg:hidden fixed inset-0 z-50 bg-zinc-950 flex flex-col">
+        <div className="border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.push('/messages')}
+            className="text-zinc-400 p-1"
           >
-            <div className="min-h-full flex flex-col justify-end py-3 space-y-2">
-              {messages.length === 0 && (
-                <div className="text-center text-zinc-500 py-16">
-                  <p>No messages yet</p>
-                  <p className="text-sm mt-1">Say hello 👋</p>
-                </div>
-              )}
-
-              {messages.map((msg) => {
-                const mine = msg.sender_id === userId;
-                return (
-                  <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-2xl overflow-hidden ${mine ? 'rounded-br-md' : 'rounded-bl-md'}`}>
-                      {msg.media_url && (
-                        <button
-                          type="button"
-                          onClick={() => setViewer(msg.media_url)}
-                          className="block w-full"
-                        >
-                          <img
-                            src={msg.media_url}
-                            alt=""
-                            className="w-full max-h-[320px] object-cover"
-                          />
-                        </button>
-                      )}
-                      <div className={`px-3.5 py-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
-                        {!!msg.content && (
-                          <p className="text-[15px] whitespace-pre-wrap break-words">{msg.content}</p>
-                        )}
-                        <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
-                          {time(msg.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {isOtherTyping && (
-                <div className="flex justify-start">
-                  <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
+            <ArrowLeft size={24} />
+          </button>
+          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold flex-shrink-0">
+              {otherUser?.avatar_url ? (
+                <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                initial
               )}
             </div>
-          </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm truncate">{displayName}</p>
+              <p className="text-xs text-zinc-400 truncate">
+                {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
+              </p>
+            </div>
+          </Link>
+        </div>
 
-          <div
-            className="border-t border-zinc-800 px-3 py-2"
-            style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
-          >
-            {preview && (
-              <div className="mb-2 relative inline-block">
-                <img src={preview} alt="" className="h-20 w-20 object-cover rounded-xl border border-zinc-700" />
-                <button
-                  type="button"
-                  onClick={clearImage}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
-                >
-                  <X size={14} />
-                </button>
+        <div
+          ref={mobileRef}
+          className="flex-1 overflow-y-scroll px-3"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
+          <div className="min-h-full flex flex-col justify-end py-3 space-y-2">
+            {messages.length === 0 && (
+              <div className="text-center text-zinc-500 py-16">
+                <p>No messages yet</p>
+                <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
 
-            <div className="flex items-center gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={pickImage}
-              />
+            {messages.map((msg) => {
+              const mine = msg.sender_id === userId;
+              return (
+                <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl overflow-hidden ${mine ? 'rounded-br-md' : 'rounded-bl-md'}`}>
+                    {msg.media_url && (
+                      <button
+                        type="button"
+                        onClick={() => setViewer(msg.media_url)}
+                        className="block w-full"
+                      >
+                        <img
+                          src={msg.media_url}
+                          alt=""
+                          className="w-full max-h-[320px] object-cover"
+                        />
+                      </button>
+                    )}
+                    <div className={`px-3.5 py-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+                      {!!msg.content && (
+                        <p className="text-[15px] whitespace-pre-wrap break-words">{msg.content}</p>
+                      )}
+                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
+                        {time(msg.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
 
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
-              >
-                <ImagePlus size={20} />
-              </button>
-
-              <input
-                value={text}
-                onChange={(e) => onType(e.target.value)}
-                placeholder="Message..."
-                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 outline-none focus:border-pink-500"
-                style={{ fontSize: 16 }}
-              />
-
-              <button
-                type="button"
-                onClick={send}
-                disabled={sending || (!text.trim() && !file)}
-                className="w-10 h-10 rounded-full bg-pink-600 disabled:opacity-40 flex items-center justify-center flex-shrink-0"
-              >
-                <Send size={18} />
-              </button>
-            </div>
+            {isOtherTyping && (
+              <div className="flex justify-start">
+                <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* DESKTOP */}
-        <main className="hidden lg:flex flex-1 flex-col h-screen">
-          <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
-            <Link href="/messages" className="text-zinc-400 hover:text-white">
-              <ArrowLeft size={22} />
-            </Link>
-            <Link href={`/${otherUser?.username}`} className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
-                {otherUser?.avatar_url ? (
-                  <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  initial
-                )}
-              </div>
-              <div>
-                <p className="font-semibold text-sm">{displayName}</p>
-                <p className="text-xs text-zinc-400">
-                  {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
-                </p>
-              </div>
-            </Link>
+        <div
+          className="border-t border-zinc-800 px-3 py-2"
+          style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
+        >
+          {preview && (
+            <div className="mb-2 relative inline-block">
+              <img src={preview} alt="" className="h-20 w-20 object-cover rounded-xl border border-zinc-700" />
+              <button
+                type="button"
+                onClick={clearImage}
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={pickImage}
+            />
+
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
+            >
+              <ImagePlus size={20} />
+            </button>
+
+            <input
+              ref={inputRef}
+              value={text}
+              onChange={(e) => onType(e.target.value)}
+              placeholder="Message..."
+              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 outline-none focus:border-pink-500"
+              style={{ fontSize: 16 }}
+            />
+
+            <button
+              type="button"
+              onClick={send}
+              disabled={sending || (!text.trim() && !file)}
+              className="w-10 h-10 rounded-full bg-pink-600 disabled:opacity-40 flex items-center justify-center flex-shrink-0"
+            >
+              <Send size={18} />
+            </button>
           </div>
+        </div>
+      </div>
 
-          <div ref={desktopRef} className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto">
-            <div className="min-h-full flex flex-col justify-end py-3 space-y-2">
-              {messages.length === 0 && (
-                <div className="text-center text-zinc-500 py-16">
-                  <p>No messages yet</p>
-                  <p className="text-sm mt-1">Say hello 👋</p>
-                </div>
-              )}
-
-              {messages.map((msg) => {
-                const mine = msg.sender_id === userId;
-                return (
-                  <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-2xl overflow-hidden ${mine ? 'rounded-br-md' : 'rounded-bl-md'}`}>
-                      {msg.media_url && (
-                        <button
-                          type="button"
-                          onClick={() => setViewer(msg.media_url)}
-                          className="block w-full"
-                        >
-                          <img
-                            src={msg.media_url}
-                            alt=""
-                            className="w-full max-h-[320px] object-cover"
-                          />
-                        </button>
-                      )}
-                      <div className={`px-3.5 py-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
-                        {!!msg.content && (
-                          <p className="text-[15px] whitespace-pre-wrap break-words">{msg.content}</p>
-                        )}
-                        <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
-                          {time(msg.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {isOtherTyping && (
-                <div className="flex justify-start">
-                  <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
+      {/* DESKTOP */}
+      <main className="hidden lg:flex flex-1 flex-col h-screen">
+        <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
+          <Link href="/messages" className="text-zinc-400 hover:text-white">
+            <ArrowLeft size={22} />
+          </Link>
+          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
+              {otherUser?.avatar_url ? (
+                <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                initial
               )}
             </div>
-          </div>
+            <div>
+              <p className="font-semibold text-sm">{displayName}</p>
+              <p className="text-xs text-zinc-400">
+                {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
+              </p>
+            </div>
+          </Link>
+        </div>
 
-          <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
-            {preview && (
-              <div className="mb-2 relative inline-block">
-                <img src={preview} alt="" className="h-20 w-20 object-cover rounded-xl border border-zinc-700" />
-                <button
-                  type="button"
-                  onClick={clearImage}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
-                >
-                  <X size={14} />
-                </button>
+        <div ref={desktopRef} className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto">
+          <div className="min-h-full flex flex-col justify-end py-3 space-y-2">
+            {messages.length === 0 && (
+              <div className="text-center text-zinc-500 py-16">
+                <p>No messages yet</p>
+                <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            {messages.map((msg) => {
+              const mine = msg.sender_id === userId;
+              return (
+                <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl overflow-hidden ${mine ? 'rounded-br-md' : 'rounded-bl-md'}`}>
+                    {msg.media_url && (
+                      <button
+                        type="button"
+                        onClick={() => setViewer(msg.media_url)}
+                        className="block w-full"
+                      >
+                        <img
+                          src={msg.media_url}
+                          alt=""
+                          className="w-full max-h-[320px] object-cover"
+                        />
+                      </button>
+                    )}
+                    <div className={`px-3.5 py-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+                      {!!msg.content && (
+                        <p className="text-[15px] whitespace-pre-wrap break-words">{msg.content}</p>
+                      )}
+                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
+                        {time(msg.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {isOtherTyping && (
+              <div className="flex justify-start">
+                <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
+          {preview && (
+            <div className="mb-2 relative inline-block">
+              <img src={preview} alt="" className="h-20 w-20 object-cover rounded-xl border border-zinc-700" />
               <button
                 type="button"
-                onClick={() => fileRef.current?.click()}
-                className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
+                onClick={clearImage}
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
               >
-                <ImagePlus size={20} />
-              </button>
-
-              <input
-                value={text}
-                onChange={(e) => onType(e.target.value)}
-                placeholder="Message..."
-                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-3 text-sm outline-none focus:border-pink-500"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-              />
-
-              <button
-                type="button"
-                onClick={send}
-                disabled={sending || (!text.trim() && !file)}
-                className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0"
-              >
-                <Send size={18} />
+                <X size={14} />
               </button>
             </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
+            >
+              <ImagePlus size={20} />
+            </button>
+
+            <input
+              value={text}
+              onChange={(e) => onType(e.target.value)}
+              placeholder="Message..."
+              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-3 text-sm outline-none focus:border-pink-500"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={send}
+              disabled={sending || (!text.trim() && !file)}
+              className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0"
+            >
+              <Send size={18} />
+            </button>
           </div>
-        </main>
-      </div>
-    </AuthGuard>
+        </div>
+      </main>
+    </div>
   );
 }
