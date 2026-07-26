@@ -3,9 +3,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Send, ImagePlus, X } from 'lucide-react';
+import { ArrowLeft, Send, ImagePlus, X, DollarSign } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
+
+const TIP_AMOUNTS = [5, 10, 20, 50];
 
 export default function ChatPage() {
   const params = useParams();
@@ -19,10 +21,17 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
+  const [otherUserId, setOtherUserId] = useState<string | null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
+
+  // Tip modal
+  const [showTip, setShowTip] = useState(false);
+  const [tipAmount, setTipAmount] = useState<number | null>(10);
+  const [customTip, setCustomTip] = useState('');
+  const [tipping, setTipping] = useState(false);
 
   const mobileRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
@@ -68,6 +77,8 @@ export default function ChatPage() {
         convo.participant_1 === user.id
           ? convo.participant_2
           : convo.participant_1;
+
+      setOtherUserId(otherId);
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -231,7 +242,6 @@ export default function ChatPage() {
         .eq('id', conversationId);
 
       setTimeout(scrollBottom, 80);
-      // Keep keyboard ready on phone
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (err: any) {
       console.error(err);
@@ -239,6 +249,67 @@ export default function ChatPage() {
       setText(messageText);
     } finally {
       setSending(false);
+    }
+  };
+
+  const sendTip = async () => {
+    if (!userId || !otherUserId || tipping) return;
+
+    const amount = customTip ? parseFloat(customTip) : tipAmount;
+    if (!amount || amount <= 0) {
+      alert('Enter a valid tip amount');
+      return;
+    }
+
+    setTipping(true);
+
+    try {
+      // Save tip
+      const { error: tipError } = await supabase.from('tips').insert({
+        from_user_id: userId,
+        to_user_id: otherUserId,
+        amount,
+        conversation_id: conversationId,
+        message: `Tip in chat`,
+      });
+
+      if (tipError) throw tipError;
+
+      // Post a message in the chat so both people see it
+      const { data, error: msgError } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          sender_id: userId,
+          content: `💸 tipped £${amount.toFixed(2)}`,
+          media_type: 'tip',
+        })
+        .select()
+        .single();
+
+      if (msgError) throw msgError;
+
+      if (data) {
+        setMessages((prev) => {
+          if (prev.find((m) => m.id === data.id)) return prev;
+          return [...prev, data];
+        });
+      }
+
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversationId);
+
+      setShowTip(false);
+      setCustomTip('');
+      setTipAmount(10);
+      setTimeout(scrollBottom, 80);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Tip failed');
+    } finally {
+      setTipping(false);
     }
   };
 
@@ -262,6 +333,7 @@ export default function ChatPage() {
         <Sidebar />
       </div>
 
+      {/* Image viewer */}
       {viewer && (
         <div
           className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-3"
@@ -283,6 +355,68 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* Tip modal */}
+      {showTip && (
+        <div className="fixed inset-0 z-[90] bg-black/70 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Send a tip</h3>
+              <button type="button" onClick={() => setShowTip(false)} className="text-zinc-400">
+                <X size={22} />
+              </button>
+            </div>
+
+            <p className="text-sm text-zinc-400 mb-4">
+              Tip {displayName}
+            </p>
+
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {TIP_AMOUNTS.map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => {
+                    setTipAmount(amt);
+                    setCustomTip('');
+                  }}
+                  className={`py-3 rounded-xl text-sm font-semibold transition ${
+                    tipAmount === amt && !customTip
+                      ? 'bg-pink-600 text-white'
+                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                  }`}
+                >
+                  £{amt}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="number"
+              min="1"
+              step="0.01"
+              placeholder="Custom amount"
+              value={customTip}
+              onChange={(e) => {
+                setCustomTip(e.target.value);
+                setTipAmount(null);
+              }}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 mb-4 outline-none focus:border-pink-500"
+            />
+
+            <button
+              type="button"
+              onClick={sendTip}
+              disabled={tipping}
+              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3.5 rounded-xl font-semibold transition"
+            >
+              {tipping
+                ? 'Sending...'
+                : `Send £${(customTip ? parseFloat(customTip) || 0 : tipAmount || 0).toFixed(2)} tip`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE */}
       <div className="lg:hidden fixed inset-0 z-50 bg-zinc-950 flex flex-col">
         <div className="border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
@@ -293,7 +427,7 @@ export default function ChatPage() {
           >
             <ArrowLeft size={24} />
           </button>
-          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 min-w-0">
+          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 min-w-0 flex-1">
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold flex-shrink-0">
               {otherUser?.avatar_url ? (
                 <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -308,6 +442,15 @@ export default function ChatPage() {
               </p>
             </div>
           </Link>
+
+          {/* Tip button */}
+          <button
+            type="button"
+            onClick={() => setShowTip(true)}
+            className="w-9 h-9 rounded-full bg-pink-600/20 border border-pink-500/40 text-pink-400 flex items-center justify-center flex-shrink-0"
+          >
+            <DollarSign size={18} />
+          </button>
         </div>
 
         <div
@@ -325,10 +468,16 @@ export default function ChatPage() {
 
             {messages.map((msg) => {
               const mine = msg.sender_id === userId;
+              const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
+
               return (
                 <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl overflow-hidden ${mine ? 'rounded-br-md' : 'rounded-bl-md'}`}>
-                    {msg.media_url && (
+                  <div
+                    className={`max-w-[80%] rounded-2xl overflow-hidden ${
+                      mine ? 'rounded-br-md' : 'rounded-bl-md'
+                    } ${isTip ? 'bg-gradient-to-r from-pink-600 to-rose-500' : ''}`}
+                  >
+                    {msg.media_url && msg.media_type === 'image' && (
                       <button
                         type="button"
                         onClick={() => setViewer(msg.media_url)}
@@ -341,11 +490,13 @@ export default function ChatPage() {
                         />
                       </button>
                     )}
-                    <div className={`px-3.5 py-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+                    <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                       {!!msg.content && (
-                        <p className="text-[15px] whitespace-pre-wrap break-words">{msg.content}</p>
+                        <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
+                          {msg.content}
+                        </p>
                       )}
-                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
+                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
                         {time(msg.created_at)}
                       </p>
                     </div>
@@ -427,7 +578,7 @@ export default function ChatPage() {
           <Link href="/messages" className="text-zinc-400 hover:text-white">
             <ArrowLeft size={22} />
           </Link>
-          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3">
+          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 flex-1">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
               {otherUser?.avatar_url ? (
                 <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -442,6 +593,15 @@ export default function ChatPage() {
               </p>
             </div>
           </Link>
+
+          <button
+            type="button"
+            onClick={() => setShowTip(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600/20 border border-pink-500/40 text-pink-400 hover:bg-pink-600/30 transition text-sm font-medium"
+          >
+            <DollarSign size={16} />
+            Tip
+          </button>
         </div>
 
         <div ref={desktopRef} className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto">
@@ -455,10 +615,16 @@ export default function ChatPage() {
 
             {messages.map((msg) => {
               const mine = msg.sender_id === userId;
+              const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
+
               return (
                 <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl overflow-hidden ${mine ? 'rounded-br-md' : 'rounded-bl-md'}`}>
-                    {msg.media_url && (
+                  <div
+                    className={`max-w-[80%] rounded-2xl overflow-hidden ${
+                      mine ? 'rounded-br-md' : 'rounded-bl-md'
+                    } ${isTip ? 'bg-gradient-to-r from-pink-600 to-rose-500' : ''}`}
+                  >
+                    {msg.media_url && msg.media_type === 'image' && (
                       <button
                         type="button"
                         onClick={() => setViewer(msg.media_url)}
@@ -471,11 +637,13 @@ export default function ChatPage() {
                         />
                       </button>
                     )}
-                    <div className={`px-3.5 py-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+                    <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                       {!!msg.content && (
-                        <p className="text-[15px] whitespace-pre-wrap break-words">{msg.content}</p>
+                        <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
+                          {msg.content}
+                        </p>
                       )}
-                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
+                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
                         {time(msg.created_at)}
                       </p>
                     </div>
