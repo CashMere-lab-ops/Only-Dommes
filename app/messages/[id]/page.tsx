@@ -21,6 +21,7 @@ export default function ChatPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const loadChat = async () => {
@@ -31,7 +32,6 @@ export default function ChatPage() {
       }
       setCurrentUserId(user.id);
 
-      // Get conversation
       const { data: convo, error } = await supabase
         .from('conversations')
         .select('*')
@@ -43,13 +43,11 @@ export default function ChatPage() {
         return;
       }
 
-      // Make sure user is part of this conversation
       if (convo.participant_1 !== user.id && convo.participant_2 !== user.id) {
         router.push('/messages');
         return;
       }
 
-      // Get the other user
       const otherId =
         convo.participant_1 === user.id
           ? convo.participant_2
@@ -63,7 +61,6 @@ export default function ChatPage() {
 
       setOtherUser(profile);
 
-      // Load messages
       const { data: msgs } = await supabase
         .from('messages')
         .select('*')
@@ -73,7 +70,7 @@ export default function ChatPage() {
       setMessages(msgs || []);
       setLoading(false);
 
-      // Mark messages as read
+      // Mark as read
       await supabase
         .from('messages')
         .update({ is_read: true })
@@ -81,17 +78,15 @@ export default function ChatPage() {
         .neq('sender_id', user.id);
     };
 
-    if (conversationId) {
-      loadChat();
-    }
+    if (conversationId) loadChat();
   }, [conversationId]);
 
-  // Real-time new messages
+  // Real-time messages
   useEffect(() => {
     if (!conversationId) return;
 
     const channel = supabase
-      .channel(`chat:${conversationId}`)
+      .channel(`messages-chat-${conversationId}`)
       .on(
         'postgres_changes',
         {
@@ -101,7 +96,11 @@ export default function ChatPage() {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
+          setMessages((prev) => {
+            // Avoid duplicates
+            if (prev.some((m) => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new];
+          });
         }
       )
       .subscribe();
@@ -111,7 +110,7 @@ export default function ChatPage() {
     };
   }, [conversationId]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -125,15 +124,26 @@ export default function ChatPage() {
     setNewMessage('');
 
     try {
-      const { error } = await supabase.from('messages').insert({
-        conversation_id: conversationId,
-        sender_id: currentUserId,
-        content,
-      });
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          sender_id: currentUserId,
+          content,
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
-      // Update last_message_at
+      // Optimistic update (shows instantly for sender)
+      if (data) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.id)) return prev;
+          return [...prev, data];
+        });
+      }
+
       await supabase
         .from('conversations')
         .update({ last_message_at: new Date().toISOString() })
@@ -144,6 +154,7 @@ export default function ChatPage() {
       setNewMessage(content);
     } finally {
       setSending(false);
+      inputRef.current?.focus();
     }
   };
 
@@ -174,10 +185,12 @@ export default function ChatPage() {
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-        <main className="flex-1 flex flex-col h-screen overflow-hidden">
-          {/* Chat header */}
-          <div className="sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
-            <Link href="/messages" className="text-zinc-400 hover:text-white lg:hidden">
+
+        {/* Chat container - fixed height so input stays at bottom */}
+        <main className="flex-1 flex flex-col h-[100dvh] lg:h-screen overflow-hidden">
+          {/* Header */}
+          <div className="flex-shrink-0 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
+            <Link href="/messages" className="text-zinc-400 hover:text-white">
               <ArrowLeft size={22} />
             </Link>
             <Link
@@ -202,7 +215,7 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          {/* Messages */}
+          {/* Messages area */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
             {messages.length === 0 ? (
               <div className="text-center py-20 text-zinc-500">
@@ -218,13 +231,13 @@ export default function ChatPage() {
                     className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[75%] px-4 py-2.5 rounded-2xl ${
+                      className={`max-w-[80%] px-4 py-2.5 rounded-2xl ${
                         isMine
                           ? 'bg-pink-600 text-white rounded-br-md'
                           : 'bg-zinc-800 text-white rounded-bl-md'
                       }`}
                     >
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
                         {msg.content}
                       </p>
                       <p
@@ -242,13 +255,14 @@ export default function ChatPage() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
+          {/* Input - fixed at bottom with safe area for phones */}
           <form
             onSubmit={handleSend}
-            className="border-t border-zinc-800 p-4 bg-zinc-950"
+            className="flex-shrink-0 border-t border-zinc-800 bg-zinc-950 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
           >
-            <div className="flex items-center gap-3 max-w-3xl mx-auto">
+            <div className="flex items-center gap-3">
               <input
+                ref={inputRef}
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
@@ -258,7 +272,7 @@ export default function ChatPage() {
               <button
                 type="submit"
                 disabled={!newMessage.trim() || sending}
-                className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40"
+                className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40 flex-shrink-0"
               >
                 <Send size={18} />
               </button>
