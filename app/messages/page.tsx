@@ -15,6 +15,7 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const userIdRef = useRef<string | null>(null);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadConversations = useCallback(async (userId: string) => {
     const { data: convos, error } = await supabase
@@ -70,6 +71,16 @@ export default function MessagesPage() {
     setLoading(false);
   }, []);
 
+  // Debounced refresh so we don't spam requests
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (userIdRef.current) {
+        loadConversations(userIdRef.current);
+      }
+    }, 300); // almost instant
+  }, [loadConversations]);
+
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -85,48 +96,44 @@ export default function MessagesPage() {
     init();
   }, [loadConversations, router]);
 
-  // Realtime + backup refresh
   useEffect(() => {
     if (!currentUserId) return;
 
-    const refresh = () => {
-      if (userIdRef.current) {
-        loadConversations(userIdRef.current);
-      }
-    };
-
     const channel = supabase
-      .channel(`messages-list-${currentUserId}`)
+      .channel(`messages-list-fast-${currentUserId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
-        refresh
+        () => scheduleRefresh()
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'messages' },
-        refresh
+        () => scheduleRefresh()
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'conversations' },
-        refresh
+        () => scheduleRefresh()
       )
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'conversations' },
-        refresh
+        () => scheduleRefresh()
       )
       .subscribe();
 
-    // Backup: refresh every 8 seconds while on this page
-    const interval = setInterval(refresh, 8000);
+    // Short backup in case realtime misses one
+    const interval = setInterval(() => {
+      if (userIdRef.current) loadConversations(userIdRef.current);
+    }, 4000);
 
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };
-  }, [currentUserId, loadConversations]);
+  }, [currentUserId, loadConversations, scheduleRefresh]);
 
   const formatTime = (dateString: string) => {
     if (!dateString) return '';
