@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -15,6 +16,7 @@ export default function MyAccountPage() {
   const supabase = createClient();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [followersCount, setFollowersCount] = useState(0);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -23,14 +25,25 @@ export default function MyAccountPage() {
         router.push('/login');
         return;
       }
+
       const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
+
       setProfile(data);
+
+      // Real followers count
+      const { count } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('following_id', user.id);
+
+      setFollowersCount(count || 0);
       setLoading(false);
     };
+
     loadProfile();
   }, []);
 
@@ -87,8 +100,7 @@ export default function MyAccountPage() {
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
             {/* Profile Header */}
             <div className="flex flex-col sm:flex-row gap-6 mb-6">
-             
-              {/* Left column - Avatar + X (centred) */}
+              {/* Left column - Avatar + X */}
               <div className="flex flex-col items-center gap-3 flex-shrink-0">
                 <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden">
                   {profile?.avatar_url ? (
@@ -112,7 +124,7 @@ export default function MyAccountPage() {
                 )}
               </div>
 
-              {/* Right column - Text aligned flush left */}
+              {/* Right column */}
               <div className="flex-1 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="space-y-1">
@@ -149,7 +161,7 @@ export default function MyAccountPage() {
                   <Users size={16} />
                   <span>Followers</span>
                 </div>
-                <div className="text-3xl font-semibold">0</div>
+                <div className="text-3xl font-semibold">{followersCount}</div>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
