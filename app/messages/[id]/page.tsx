@@ -20,8 +20,19 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<any>(null);
+
+  const scrollToBottom = (smooth = false) => {
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }, 50);
+  };
 
   useEffect(() => {
     const loadChat = async () => {
@@ -70,6 +81,9 @@ export default function ChatPage() {
       setMessages(msgs || []);
       setLoading(false);
 
+      // Jump straight to bottom when opening chat
+      setTimeout(() => scrollToBottom(false), 100);
+
       await supabase
         .from('messages')
         .update({ is_read: true })
@@ -80,11 +94,15 @@ export default function ChatPage() {
     if (conversationId) loadChat();
   }, [conversationId]);
 
+  // Realtime messages + typing
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId || !currentUserId) return;
 
-    const channel = supabase
-      .channel(`messages-chat-${conversationId}`)
+    const channel = supabase.channel(`chat-room-${conversationId}`, {
+      config: { broadcast: { self: false } },
+    });
+
+    channel
       .on(
         'postgres_changes',
         {
@@ -98,18 +116,51 @@ export default function ChatPage() {
             if (prev.some((m) => m.id === payload.new.id)) return prev;
             return [...prev, payload.new];
           });
+          scrollToBottom(true);
         }
       )
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        if (payload.payload?.userId !== currentUserId) {
+          setIsOtherTyping(!!payload.payload?.isTyping);
+          if (payload.payload?.isTyping) {
+            // Auto-hide after 3 seconds if no update
+            setTimeout(() => setIsOtherTyping(false), 3000);
+          }
+        }
+      })
       .subscribe();
+
+    channelRef.current = channel;
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [conversationId]);
+  }, [conversationId, currentUserId]);
 
+  // Scroll when messages change
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!loading) scrollToBottom(true);
+  }, [messages, isOtherTyping]);
+
+  const sendTyping = (isTyping: boolean) => {
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { userId: currentUserId, isTyping },
+    });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewMessage(e.target.value);
+
+    // Tell the other person you're typing
+    sendTyping(true);
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      sendTyping(false);
+    }, 1500);
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +169,7 @@ export default function ChatPage() {
     setSending(true);
     const content = newMessage.trim();
     setNewMessage('');
+    sendTyping(false);
 
     try {
       const { data, error } = await supabase
@@ -174,7 +226,6 @@ export default function ChatPage() {
     });
   };
 
-  // Group messages by date
   const groupedMessages: { label: string; messages: any[] }[] = [];
   messages.forEach((msg) => {
     const label = formatDateLabel(msg.created_at);
@@ -214,13 +265,11 @@ export default function ChatPage() {
       ) : (
         groupedMessages.map((group) => (
           <div key={group.label}>
-            {/* Date separator */}
             <div className="flex items-center justify-center my-4">
               <span className="text-[11px] font-medium text-zinc-500 bg-zinc-900/80 px-3 py-1 rounded-full">
                 {group.label}
               </span>
             </div>
-
             <div className="space-y-1.5">
               {group.messages.map((msg) => {
                 const isMine = msg.sender_id === currentUserId;
@@ -254,6 +303,18 @@ export default function ChatPage() {
           </div>
         ))
       )}
+
+      {/* Typing indicator */}
+      {isOtherTyping && (
+        <div className="flex justify-start mt-2">
+          <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </div>
+      )}
+
       <div ref={bottomRef} />
     </>
   );
@@ -261,12 +322,11 @@ export default function ChatPage() {
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
-        {/* Desktop sidebar */}
         <div className="hidden lg:block">
           <Sidebar />
         </div>
 
-        {/* ================= MOBILE ================= */}
+        {/* MOBILE */}
         <div className="lg:hidden fixed inset-0 bg-zinc-950 flex flex-col z-50">
           <div className="flex-shrink-0 border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
             <button onClick={() => router.push('/messages')} className="text-zinc-400 p-1">
@@ -282,7 +342,9 @@ export default function ChatPage() {
               </div>
               <div className="min-w-0">
                 <p className="font-semibold text-sm truncate">{name}</p>
-                <p className="text-xs text-zinc-400 truncate">@{otherUser?.username}</p>
+                <p className="text-xs text-zinc-400 truncate">
+                  {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
+                </p>
               </div>
             </Link>
           </div>
@@ -301,7 +363,7 @@ export default function ChatPage() {
                 ref={inputRef}
                 type="text"
                 value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
+                onChange={handleInputChange}
                 placeholder="Message..."
                 className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 outline-none focus:border-pink-500"
                 style={{ fontSize: '16px' }}
@@ -317,7 +379,7 @@ export default function ChatPage() {
           </form>
         </div>
 
-        {/* ================= DESKTOP ================= */}
+        {/* DESKTOP */}
         <main className="hidden lg:flex flex-1 flex-col h-screen overflow-hidden">
           <div className="flex-shrink-0 border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
             <Link href="/messages" className="text-zinc-400 hover:text-white">
@@ -333,7 +395,9 @@ export default function ChatPage() {
               </div>
               <div>
                 <p className="font-semibold text-sm">{name}</p>
-                <p className="text-xs text-zinc-400">@{otherUser?.username}</p>
+                <p className="text-xs text-zinc-400">
+                  {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
+                </p>
               </div>
             </Link>
           </div>
@@ -347,7 +411,7 @@ export default function ChatPage() {
               <input
                 type="text"
                 value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
+                onChange={handleInputChange}
                 placeholder="Type a message..."
                 className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-5 py-3 text-sm outline-none focus:border-pink-500"
               />
