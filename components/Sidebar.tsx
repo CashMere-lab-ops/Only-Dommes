@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -19,35 +20,100 @@ export default function Sidebar() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [profile, setProfile] = useState<any>(cachedProfile);
   const [profileLoaded, setProfileLoaded] = useState(!!cachedProfile);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    // If we already have the profile cached, don't fetch again
     if (cachedProfile) {
       setProfile(cachedProfile);
       setProfileLoaded(true);
-      return;
     }
 
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      if (!user) {
+        setProfileLoaded(true);
+        return;
+      }
+
+      if (!cachedProfile) {
         const { data } = await supabase
           .from('profiles')
           .select('username, display_name, avatar_url')
           .eq('id', user.id)
           .single();
         if (data) {
-          cachedProfile = data; // save to cache
+          cachedProfile = data;
           setProfile(data);
         }
       }
+
       setProfileLoaded(true);
+
+      // Count unread messages (from other people)
+      const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_read', false)
+        .neq('sender_id', user.id);
+
+      setUnreadCount(count || 0);
     };
+
     getUser();
+
+    // Live update when new messages arrive
+    const channel = supabase
+      .channel('sidebar-unread')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+        },
+        async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_read', false)
+            .neq('sender_id', user.id);
+
+          setUnreadCount(count || 0);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
+  // Clear badge when you're on the messages page
+  useEffect(() => {
+    if (pathname?.startsWith('/messages')) {
+      // small delay so chat can mark messages as read first
+      const t = setTimeout(async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { count } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_read', false)
+          .neq('sender_id', user.id);
+
+        setUnreadCount(count || 0);
+      }, 800);
+
+      return () => clearTimeout(t);
+    }
+  }, [pathname]);
+
   const handleLogout = async () => {
-    cachedProfile = null; // clear cache on logout
+    cachedProfile = null;
     await supabase.auth.signOut();
     router.push('/login');
   };
@@ -88,6 +154,15 @@ export default function Sidebar() {
 
   const isActive = (href: string) => pathname === href;
 
+  const UnreadBadge = ({ count }: { count: number }) => {
+    if (count <= 0) return null;
+    return (
+      <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-pink-500 text-white text-[10px] font-bold flex items-center justify-center">
+        {count > 99 ? '99+' : count}
+      </span>
+    );
+  };
+
   return (
     <>
       {/* Desktop Sidebar */}
@@ -105,6 +180,7 @@ export default function Sidebar() {
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isMessages = item.href === '/messages';
               return (
                 <Link
                   key={item.href}
@@ -117,6 +193,7 @@ export default function Sidebar() {
                 >
                   <Icon size={20} />
                   {item.label}
+                  {isMessages && <UnreadBadge count={unreadCount} />}
                 </Link>
               );
             })}
@@ -146,7 +223,6 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Bottom section - Profile + Logout */}
         <div className="p-4 border-t border-zinc-800 space-y-3">
           {profileLoaded && profile ? (
             <Link
@@ -200,6 +276,7 @@ export default function Sidebar() {
             <Home size={22} />
             <span className="text-[10px] mt-1">Home</span>
           </Link>
+
           <Link
             href="/live"
             className={`flex flex-col items-center justify-center flex-1 ${
@@ -209,6 +286,7 @@ export default function Sidebar() {
             <Radio size={22} />
             <span className="text-[10px] mt-1">Live</span>
           </Link>
+
           <Link
             href="/dashboard"
             className={`flex flex-col items-center justify-center flex-1 ${
@@ -218,15 +296,24 @@ export default function Sidebar() {
             <LayoutDashboard size={22} />
             <span className="text-[10px] mt-1">Dashboard</span>
           </Link>
+
           <Link
             href="/messages"
-            className={`flex flex-col items-center justify-center flex-1 ${
+            className={`relative flex flex-col items-center justify-center flex-1 ${
               isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'
             }`}
           >
-            <MessageCircle size={22} />
+            <div className="relative">
+              <MessageCircle size={22} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-pink-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] mt-1">Messages</span>
           </Link>
+
           <button
             onClick={() => setShowMoreMenu(true)}
             className="flex flex-col items-center justify-center flex-1 text-zinc-400"
@@ -244,7 +331,7 @@ export default function Sidebar() {
             className="lg:hidden fixed inset-0 z-40 bg-black/50"
             onClick={() => setShowMoreMenu(false)}
           />
-          <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-3xl p-4 animate-in slide-in-from-bottom duration-200">
+          <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-3xl p-4">
             <div className="flex justify-between items-center mb-4 px-2">
               <h2 className="text-xl font-semibold">More</h2>
               <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400">
