@@ -21,8 +21,37 @@ export default function ChatPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+
+  const mobileScrollRef = useRef<HTMLDivElement>(null);
+  const desktopScrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<any>(null);
+
+  const scrollToBottom = () => {
+    const scroll = (el: HTMLDivElement | null) => {
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
+    };
+
+    // Run a few times so iPhone catches it
+    scroll(mobileScrollRef.current);
+    scroll(desktopScrollRef.current);
+
+    requestAnimationFrame(() => {
+      scroll(mobileScrollRef.current);
+      scroll(desktopScrollRef.current);
+    });
+
+    setTimeout(() => {
+      scroll(mobileScrollRef.current);
+      scroll(desktopScrollRef.current);
+    }, 50);
+
+    setTimeout(() => {
+      scroll(mobileScrollRef.current);
+      scroll(desktopScrollRef.current);
+    }, 200);
+  };
 
   useEffect(() => {
     const loadChat = async () => {
@@ -80,6 +109,13 @@ export default function ChatPage() {
 
     if (conversationId) loadChat();
   }, [conversationId]);
+
+  // When messages finish loading → go to bottom
+  useEffect(() => {
+    if (!loading) {
+      scrollToBottom();
+    }
+  }, [loading, messages.length]);
 
   useEffect(() => {
     if (!conversationId || !currentUserId) return;
@@ -171,6 +207,9 @@ export default function ChatPage() {
         .from('conversations')
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
+
+      // Always go to bottom after sending
+      setTimeout(scrollToBottom, 50);
     } catch (err) {
       console.error('Send error:', err);
       alert('Failed to send message');
@@ -202,7 +241,6 @@ export default function ChatPage() {
     });
   };
 
-  // Group messages by date
   const groupedMessages: { label: string; messages: any[] }[] = [];
   messages.forEach((msg) => {
     const label = formatDateLabel(msg.created_at);
@@ -233,7 +271,7 @@ export default function ChatPage() {
   const initial = name.charAt(0).toUpperCase();
 
   const MessageList = () => (
-    <div className="flex flex-col justify-end min-h-full py-2">
+    <div className="min-h-full flex flex-col justify-end py-2">
       {groupedMessages.length === 0 ? (
         <div className="text-center py-20 text-zinc-500">
           <p className="text-base">No messages yet</p>
@@ -300,9 +338,8 @@ export default function ChatPage() {
           <Sidebar />
         </div>
 
-        {/* ================= MOBILE ================= */}
+        {/* MOBILE */}
         <div className="lg:hidden fixed inset-0 bg-zinc-950 flex flex-col z-50">
-          {/* Header */}
           <div className="flex-shrink-0 border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
             <button onClick={() => router.push('/messages')} className="text-zinc-400 p-1">
               <ArrowLeft size={24} />
@@ -324,12 +361,14 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          {/* Messages - flex-col-reverse keeps latest at bottom */}
-          <div className="flex-1 overflow-y-auto px-3 flex flex-col-reverse">
+          <div
+            ref={mobileScrollRef}
+            className="flex-1 overflow-y-scroll px-3"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
             <MessageList />
           </div>
 
-          {/* Input */}
           <form
             onSubmit={handleSend}
             className="flex-shrink-0 border-t border-zinc-800 px-3 py-2"
@@ -355,7 +394,7 @@ export default function ChatPage() {
           </form>
         </div>
 
-        {/* ================= DESKTOP ================= */}
+        {/* DESKTOP */}
         <main className="hidden lg:flex flex-1 flex-col h-screen overflow-hidden">
           <div className="flex-shrink-0 border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
             <Link href="/messages" className="text-zinc-400 hover:text-white">
@@ -378,7 +417,10 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 flex flex-col-reverse">
+          <div
+            ref={desktopScrollRef}
+            className="flex-1 overflow-y-scroll px-6"
+          >
             <MessageList />
           </div>
 
