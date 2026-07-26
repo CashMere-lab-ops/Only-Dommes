@@ -23,6 +23,7 @@ export default function ChatPage() {
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
 
   const mobileScrollRef = useRef<HTMLDivElement>(null);
   const desktopScrollRef = useRef<HTMLDivElement>(null);
@@ -35,24 +36,16 @@ export default function ChatPage() {
       if (!el) return;
       el.scrollTop = el.scrollHeight;
     };
-
     scroll(mobileScrollRef.current);
     scroll(desktopScrollRef.current);
-
     requestAnimationFrame(() => {
       scroll(mobileScrollRef.current);
       scroll(desktopScrollRef.current);
     });
-
     setTimeout(() => {
       scroll(mobileScrollRef.current);
       scroll(desktopScrollRef.current);
-    }, 50);
-
-    setTimeout(() => {
-      scroll(mobileScrollRef.current);
-      scroll(desktopScrollRef.current);
-    }, 200);
+    }, 80);
   };
 
   useEffect(() => {
@@ -164,22 +157,17 @@ export default function ChatPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value);
     sendTyping(true);
-
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      sendTyping(false);
-    }, 3000);
+    typingTimeoutRef.current = setTimeout(() => sendTyping(false), 3000);
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (file.size > 10 * 1024 * 1024) {
       alert('Image must be under 10MB');
       return;
     }
-
     setSelectedImage(file);
     setImagePreview(URL.createObjectURL(file));
   };
@@ -196,9 +184,13 @@ export default function ChatPage() {
     if ((!newMessage.trim() && !selectedImage) || !currentUserId || sending) return;
 
     setSending(true);
-    const content = newMessage.trim();
-    setNewMessage('');
 
+    const content = newMessage.trim();
+    const imageFile = selectedImage;
+
+    // Clear UI immediately so it doesn't feel frozen
+    setNewMessage('');
+    clearSelectedImage();
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     sendTyping(false);
 
@@ -206,14 +198,16 @@ export default function ChatPage() {
       let mediaUrl: string | null = null;
       let mediaType: string | null = null;
 
-      // Upload image if selected
-      if (selectedImage) {
-        const fileExt = selectedImage.name.split('.').pop();
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop() || 'jpg';
         const fileName = `${currentUserId}/${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
           .from('chat-media')
-          .upload(fileName, selectedImage);
+          .upload(fileName, imageFile, {
+            cacheControl: '3600',
+            upsert: false,
+          });
 
         if (uploadError) throw uploadError;
 
@@ -223,7 +217,6 @@ export default function ChatPage() {
 
         mediaUrl = publicUrl.publicUrl;
         mediaType = 'image';
-        clearSelectedImage();
       }
 
       const { data, error } = await supabase
@@ -231,7 +224,7 @@ export default function ChatPage() {
         .insert({
           conversation_id: conversationId,
           sender_id: currentUserId,
-          content: content || (mediaUrl ? '' : ''),
+          content: content || '',
           media_url: mediaUrl,
           media_type: mediaType,
         })
@@ -252,11 +245,12 @@ export default function ChatPage() {
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      setTimeout(scrollToBottom, 50);
-    } catch (err) {
+      setTimeout(scrollToBottom, 80);
+    } catch (err: any) {
       console.error('Send error:', err);
-      alert('Failed to send message');
-      setNewMessage(content);
+      alert(err?.message || 'Failed to send message');
+      // Put text back if it failed
+      if (content) setNewMessage(content);
     } finally {
       setSending(false);
     }
@@ -328,7 +322,7 @@ export default function ChatPage() {
                 {group.label}
               </span>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {group.messages.map((msg) => {
                 const isMine = msg.sender_id === currentUserId;
                 return (
@@ -343,39 +337,45 @@ export default function ChatPage() {
                           : 'bg-zinc-800 text-white rounded-bl-md'
                       }`}
                     >
-                      {/* Image */}
+                      {/* Image - object-contain so full photo is visible */}
                       {msg.media_url && msg.media_type === 'image' && (
-                        <img
-                          src={msg.media_url}
-                          alt="Shared"
-                          className="w-full max-h-72 object-cover cursor-pointer"
-                          onClick={() => window.open(msg.media_url, '_blank')}
-                        />
+                        <button
+                          type="button"
+                          onClick={() => setViewerImage(msg.media_url)}
+                          className="block w-full"
+                        >
+                          <img
+                            src={msg.media_url}
+                            alt="Shared"
+                            className="w-full max-h-[320px] object-contain bg-black/40"
+                          />
+                        </button>
                       )}
 
-                      {/* Text */}
-                      {msg.content && (
+                      {msg.content ? (
                         <div className="px-3.5 py-2">
                           <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
                             {msg.content}
                           </p>
+                          <p
+                            className={`text-[10px] mt-1 ${
+                              isMine ? 'text-pink-200/80' : 'text-zinc-500'
+                            }`}
+                          >
+                            {formatTime(msg.created_at)}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="px-3.5 py-1.5">
+                          <p
+                            className={`text-[10px] ${
+                              isMine ? 'text-pink-200/80' : 'text-zinc-500'
+                            }`}
+                          >
+                            {formatTime(msg.created_at)}
+                          </p>
                         </div>
                       )}
-
-                      {/* Time */}
-                      <div
-                        className={`px-3.5 pb-2 ${
-                          !msg.content && msg.media_url ? 'pt-1.5' : ''
-                        }`}
-                      >
-                        <p
-                          className={`text-[10px] ${
-                            isMine ? 'text-pink-200/80' : 'text-zinc-500'
-                          }`}
-                        >
-                          {formatTime(msg.created_at)}
-                        </p>
-                      </div>
                     </div>
                   </div>
                 );
@@ -399,7 +399,6 @@ export default function ChatPage() {
 
   const InputBar = ({ isMobile = false }: { isMobile?: boolean }) => (
     <div className="flex-shrink-0 border-t border-zinc-800 px-3 lg:px-6 py-2 lg:py-4">
-      {/* Image preview */}
       {imagePreview && (
         <div className="mb-3 relative inline-block">
           <img
@@ -418,7 +417,6 @@ export default function ChatPage() {
       )}
 
       <form onSubmit={handleSend} className="flex items-center gap-2 lg:gap-3">
-        {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
@@ -427,11 +425,11 @@ export default function ChatPage() {
           className="hidden"
         />
 
-        {/* Image button */}
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-400 hover:text-pink-400 hover:border-pink-500 transition flex-shrink-0"
+          disabled={sending}
+          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-400 hover:text-pink-400 hover:border-pink-500 transition flex-shrink-0 disabled:opacity-40"
         >
           <ImagePlus size={20} />
         </button>
@@ -440,17 +438,16 @@ export default function ChatPage() {
           type="text"
           value={newMessage}
           onChange={handleInputChange}
-          placeholder="Message..."
-          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 lg:py-3 outline-none focus:border-pink-500"
+          placeholder={sending ? 'Sending...' : 'Message...'}
+          disabled={sending}
+          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 lg:py-3 outline-none focus:border-pink-500 disabled:opacity-60"
           style={{ fontSize: isMobile ? '16px' : '14px' }}
         />
 
         <button
           type="submit"
           disabled={(!newMessage.trim() && !selectedImage) || sending}
-          className={`${
-            isMobile ? 'w-10 h-10' : 'w-12 h-12'
-          } rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40 flex-shrink-0`}
+          className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12'} rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40 flex-shrink-0`}
         >
           <Send size={18} />
         </button>
@@ -464,6 +461,28 @@ export default function ChatPage() {
         <div className="hidden lg:block">
           <Sidebar />
         </div>
+
+        {/* Fullscreen image viewer */}
+        {viewerImage && (
+          <div
+            className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4"
+            onClick={() => setViewerImage(null)}
+          >
+            <button
+              type="button"
+              onClick={() => setViewerImage(null)}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
+            >
+              <X size={20} />
+            </button>
+            <img
+              src={viewerImage}
+              alt="Full size"
+              className="max-w-full max-h-full object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
 
         {/* MOBILE */}
         <div className="lg:hidden fixed inset-0 bg-zinc-950 flex flex-col z-50">
