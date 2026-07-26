@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MessageCircle, ArrowLeft } from 'lucide-react';
@@ -15,71 +15,108 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
+  const loadConversations = useCallback(async (userId: string) => {
+    const { data: convos, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
+      .order('last_message_at', { ascending: false });
+
+    if (error || !convos) {
+      setConversations([]);
+      setLoading(false);
+      return;
+    }
+
+    const enriched = await Promise.all(
+      convos.map(async (convo) => {
+        const otherId =
+          convo.participant_1 === userId
+            ? convo.participant_2
+            : convo.participant_1;
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url')
+          .eq('id', otherId)
+          .single();
+
+        const { data: lastMsg } = await supabase
+          .from('messages')
+          .select('content, created_at, sender_id, is_read, media_type')
+          .eq('conversation_id', convo.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const { count: unreadCount } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('conversation_id', convo.id)
+          .eq('is_read', false)
+          .neq('sender_id', userId);
+
+        return {
+          ...convo,
+          otherUser: profile,
+          lastMessage: lastMsg,
+          unreadCount: unreadCount || 0,
+        };
+      })
+    );
+
+    setConversations(enriched);
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
-    const loadConversations = async () => {
+    const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
       }
       setCurrentUserId(user.id);
-
-      const { data: convos, error } = await supabase
-        .from('conversations')
-        .select('*')
-        .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
-        .order('last_message_at', { ascending: false });
-
-      if (error || !convos) {
-        setConversations([]);
-        setLoading(false);
-        return;
-      }
-
-      const enriched = await Promise.all(
-        convos.map(async (convo) => {
-          const otherId =
-            convo.participant_1 === user.id
-              ? convo.participant_2
-              : convo.participant_1;
-
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('username, display_name, avatar_url')
-            .eq('id', otherId)
-            .single();
-
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('content, created_at, sender_id, is_read')
-            .eq('conversation_id', convo.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          // Unread count (messages from the other person that aren't read)
-          const { count: unreadCount } = await supabase
-            .from('messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('conversation_id', convo.id)
-            .eq('is_read', false)
-            .neq('sender_id', user.id);
-
-          return {
-            ...convo,
-            otherUser: profile,
-            lastMessage: lastMsg,
-            unreadCount: unreadCount || 0,
-          };
-        })
-      );
-
-      setConversations(enriched);
-      setLoading(false);
+      await loadConversations(user.id);
     };
 
-    loadConversations();
-  }, []);
+    init();
+  }, [loadConversations, router]);
+
+  // Live update when new messages arrive
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase
+      .channel('messages-list-live')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+        },
+        () => {
+          loadConversations(currentUserId);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+        },
+        () => {
+          loadConversations(currentUserId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, loadConversations]);
 
   const formatTime = (dateString: string) => {
     if (!dateString) return '';
@@ -92,6 +129,17 @@ export default function MessagesPage() {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
     return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+
+  const previewText = (msg: any, isFromMe: boolean) => {
+    if (!msg) return 'No messages yet';
+    if (msg.media_type === 'image') {
+      return `${isFromMe ? 'You: ' : ''}📷 Photo`;
+    }
+    if (msg.media_type === 'tip' || (msg.content || '').includes('💸')) {
+      return msg.content || 'Tip';
+    }
+    return `${isFromMe ? 'You: ' : ''}${msg.content || ''}`;
   };
 
   return (
@@ -158,7 +206,6 @@ export default function MessagesPage() {
                       href={`/messages/${convo.id}`}
                       className="flex items-center gap-3.5 p-3.5 hover:bg-zinc-900/80 rounded-2xl transition group"
                     >
-                      {/* Avatar */}
                       <div className="relative flex-shrink-0">
                         <div className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-lg font-bold overflow-hidden">
                           {convo.otherUser?.avatar_url ? (
@@ -178,7 +225,6 @@ export default function MessagesPage() {
                         )}
                       </div>
 
-                      {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p className={`truncate ${hasUnread ? 'font-bold text-white' : 'font-semibold text-zinc-100'}`}>
@@ -191,9 +237,7 @@ export default function MessagesPage() {
                           )}
                         </div>
                         <p className={`text-sm truncate mt-0.5 ${hasUnread ? 'text-zinc-200' : 'text-zinc-500'}`}>
-                          {convo.lastMessage
-                            ? `${isFromMe ? 'You: ' : ''}${convo.lastMessage.content}`
-                            : 'No messages yet'}
+                          {previewText(convo.lastMessage, isFromMe)}
                         </p>
                       </div>
                     </Link>
