@@ -30,6 +30,7 @@ export default function ChatPage() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sendingRef = useRef(false);
 
   const scrollToBottom = () => {
     const scroll = (el: HTMLDivElement | null) => {
@@ -38,14 +39,10 @@ export default function ChatPage() {
     };
     scroll(mobileScrollRef.current);
     scroll(desktopScrollRef.current);
-    requestAnimationFrame(() => {
-      scroll(mobileScrollRef.current);
-      scroll(desktopScrollRef.current);
-    });
     setTimeout(() => {
       scroll(mobileScrollRef.current);
       scroll(desktopScrollRef.current);
-    }, 80);
+    }, 100);
   };
 
   useEffect(() => {
@@ -164,33 +161,47 @@ export default function ChatPage() {
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image');
+      return;
+    }
     if (file.size > 10 * 1024 * 1024) {
       alert('Image must be under 10MB');
       return;
     }
+
+    // Clear old preview first
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+
     setSelectedImage(file);
     setImagePreview(URL.createObjectURL(file));
   };
 
   const clearSelectedImage = () => {
-    setSelectedImage(null);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setSelectedImage(null);
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if ((!newMessage.trim() && !selectedImage) || !currentUserId || sending) return;
+  const handleSend = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (sendingRef.current) return;
+    if ((!newMessage.trim() && !selectedImage) || !currentUserId) return;
 
+    sendingRef.current = true;
     setSending(true);
 
     const content = newMessage.trim();
     const imageFile = selectedImage;
+    const previewToClear = imagePreview;
 
-    // Clear UI immediately so it doesn't feel frozen
+    // Clear input immediately (stops freeze feeling)
     setNewMessage('');
-    clearSelectedImage();
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     sendTyping(false);
 
@@ -199,25 +210,28 @@ export default function ChatPage() {
       let mediaType: string | null = null;
 
       if (imageFile) {
-        const fileExt = imageFile.name.split('.').pop() || 'jpg';
-        const fileName = `${currentUserId}/${Date.now()}.${fileExt}`;
+        const ext = imageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const fileName = `${currentUserId}/${Date.now()}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
           .from('chat-media')
           .upload(fileName, imageFile, {
+            contentType: imageFile.type,
             cacheControl: '3600',
             upsert: false,
           });
 
         if (uploadError) throw uploadError;
 
-        const { data: publicUrl } = supabase.storage
+        const { data: urlData } = supabase.storage
           .from('chat-media')
           .getPublicUrl(fileName);
 
-        mediaUrl = publicUrl.publicUrl;
+        mediaUrl = urlData.publicUrl;
         mediaType = 'image';
       }
+
+      if (previewToClear) URL.revokeObjectURL(previewToClear);
 
       const { data, error } = await supabase
         .from('messages')
@@ -245,57 +259,43 @@ export default function ChatPage() {
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      setTimeout(scrollToBottom, 80);
+      setTimeout(scrollToBottom, 100);
     } catch (err: any) {
       console.error('Send error:', err);
-      alert(err?.message || 'Failed to send message');
-      // Put text back if it failed
+      alert(err?.message || 'Failed to send. Please try again.');
       if (content) setNewMessage(content);
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const formatTime = (dateString: string) =>
+    new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const formatDateLabel = (dateString: string) => {
     const date = new Date(dateString);
     const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-
     if (date.toDateString() === today.toDateString()) return 'Today';
     if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return date.toLocaleDateString('en-GB', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    });
+    return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   };
 
   const groupedMessages: { label: string; messages: any[] }[] = [];
   messages.forEach((msg) => {
     const label = formatDateLabel(msg.created_at);
-    const lastGroup = groupedMessages[groupedMessages.length - 1];
-    if (lastGroup && lastGroup.label === label) {
-      lastGroup.messages.push(msg);
-    } else {
-      groupedMessages.push({ label, messages: [msg] });
-    }
+    const last = groupedMessages[groupedMessages.length - 1];
+    if (last && last.label === label) last.messages.push(msg);
+    else groupedMessages.push({ label, messages: [msg] });
   });
 
   if (loading) {
     return (
       <AuthGuard>
         <div className="min-h-screen bg-zinc-950 text-white flex">
-          <div className="hidden lg:block">
-            <Sidebar />
-          </div>
+          <div className="hidden lg:block"><Sidebar /></div>
           <main className="flex-1 flex items-center justify-center">
             <p className="text-zinc-400">Loading chat...</p>
           </main>
@@ -311,34 +311,31 @@ export default function ChatPage() {
     <div className="min-h-full flex flex-col justify-end py-2">
       {groupedMessages.length === 0 ? (
         <div className="text-center py-20 text-zinc-500">
-          <p className="text-base">No messages yet</p>
+          <p>No messages yet</p>
           <p className="text-sm mt-1 text-zinc-600">Say hello 👋</p>
         </div>
       ) : (
         groupedMessages.map((group) => (
           <div key={group.label}>
-            <div className="flex items-center justify-center my-4">
-              <span className="text-[11px] font-medium text-zinc-500 bg-zinc-900/80 px-3 py-1 rounded-full">
+            <div className="flex justify-center my-4">
+              <span className="text-[11px] text-zinc-500 bg-zinc-900/80 px-3 py-1 rounded-full">
                 {group.label}
               </span>
             </div>
             <div className="space-y-2">
               {group.messages.map((msg) => {
                 const isMine = msg.sender_id === currentUserId;
+                const hasImage = msg.media_url && msg.media_type === 'image';
+                const hasText = !!msg.content;
+
                 return (
-                  <div
-                    key={msg.id}
-                    className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
-                  >
+                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                     <div
-                      className={`max-w-[85%] sm:max-w-[70%] rounded-2xl overflow-hidden ${
-                        isMine
-                          ? 'bg-pink-600 text-white rounded-br-md'
-                          : 'bg-zinc-800 text-white rounded-bl-md'
-                      }`}
+                      className={`max-w-[80%] rounded-2xl overflow-hidden ${
+                        isMine ? 'rounded-br-md' : 'rounded-bl-md'
+                      } ${hasImage && !hasText ? '' : isMine ? 'bg-pink-600' : 'bg-zinc-800'}`}
                     >
-                      {/* Image - object-contain so full photo is visible */}
-                      {msg.media_url && msg.media_type === 'image' && (
+                      {hasImage && (
                         <button
                           type="button"
                           onClick={() => setViewerImage(msg.media_url)}
@@ -346,32 +343,28 @@ export default function ChatPage() {
                         >
                           <img
                             src={msg.media_url}
-                            alt="Shared"
-                            className="w-full max-h-[320px] object-contain bg-black/40"
+                            alt=""
+                            className="w-full max-h-[340px] object-cover"
                           />
                         </button>
                       )}
 
-                      {msg.content ? (
-                        <div className="px-3.5 py-2">
-                          <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
-                            {msg.content}
-                          </p>
-                          <p
-                            className={`text-[10px] mt-1 ${
-                              isMine ? 'text-pink-200/80' : 'text-zinc-500'
-                            }`}
-                          >
+                      {(hasText || !hasImage) && (
+                        <div className={`px-3.5 py-2 ${hasImage ? (isMine ? 'bg-pink-600' : 'bg-zinc-800') : ''}`}>
+                          {hasText && (
+                            <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
+                              {msg.content}
+                            </p>
+                          )}
+                          <p className={`text-[10px] mt-1 ${isMine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
                             {formatTime(msg.created_at)}
                           </p>
                         </div>
-                      ) : (
-                        <div className="px-3.5 py-1.5">
-                          <p
-                            className={`text-[10px] ${
-                              isMine ? 'text-pink-200/80' : 'text-zinc-500'
-                            }`}
-                          >
+                      )}
+
+                      {hasImage && !hasText && (
+                        <div className={`px-3 py-1.5 ${isMine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+                          <p className={`text-[10px] ${isMine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
                             {formatTime(msg.created_at)}
                           </p>
                         </div>
@@ -387,7 +380,7 @@ export default function ChatPage() {
 
       {isOtherTyping && (
         <div className="flex justify-start mt-2">
-          <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
+          <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
             <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
             <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
             <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
@@ -401,11 +394,7 @@ export default function ChatPage() {
     <div className="flex-shrink-0 border-t border-zinc-800 px-3 lg:px-6 py-2 lg:py-4">
       {imagePreview && (
         <div className="mb-3 relative inline-block">
-          <img
-            src={imagePreview}
-            alt="Preview"
-            className="h-24 w-24 object-cover rounded-xl border border-zinc-700"
-          />
+          <img src={imagePreview} alt="" className="h-20 w-20 object-cover rounded-xl border border-zinc-700" />
           <button
             type="button"
             onClick={clearSelectedImage}
@@ -416,11 +405,11 @@ export default function ChatPage() {
         </div>
       )}
 
-      <form onSubmit={handleSend} className="flex items-center gap-2 lg:gap-3">
+      <div className="flex items-center gap-2">
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
+          accept="image/*"
           onChange={handleImageSelect}
           className="hidden"
         />
@@ -429,7 +418,7 @@ export default function ChatPage() {
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={sending}
-          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-400 hover:text-pink-400 hover:border-pink-500 transition flex-shrink-0 disabled:opacity-40"
+          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-400 flex-shrink-0 disabled:opacity-40"
         >
           <ImagePlus size={20} />
         </button>
@@ -440,44 +429,48 @@ export default function ChatPage() {
           onChange={handleInputChange}
           placeholder={sending ? 'Sending...' : 'Message...'}
           disabled={sending}
-          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 lg:py-3 outline-none focus:border-pink-500 disabled:opacity-60"
+          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 outline-none focus:border-pink-500 disabled:opacity-50"
           style={{ fontSize: isMobile ? '16px' : '14px' }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
         />
 
         <button
-          type="submit"
+          type="button"
+          onClick={() => handleSend()}
           disabled={(!newMessage.trim() && !selectedImage) || sending}
-          className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12'} rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center transition disabled:opacity-40 flex-shrink-0`}
+          className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12'} rounded-full bg-pink-600 flex items-center justify-center disabled:opacity-40 flex-shrink-0`}
         >
           <Send size={18} />
         </button>
-      </form>
+      </div>
     </div>
   );
 
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
-        <div className="hidden lg:block">
-          <Sidebar />
-        </div>
+        <div className="hidden lg:block"><Sidebar /></div>
 
-        {/* Fullscreen image viewer */}
         {viewerImage && (
           <div
-            className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-3"
             onClick={() => setViewerImage(null)}
           >
             <button
               type="button"
-              onClick={() => setViewerImage(null)}
               className="absolute top-4 right-4 w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
+              onClick={() => setViewerImage(null)}
             >
               <X size={20} />
             </button>
             <img
               src={viewerImage}
-              alt="Full size"
+              alt=""
               className="max-w-full max-h-full object-contain"
               onClick={(e) => e.stopPropagation()}
             />
@@ -543,10 +536,7 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div
-            ref={desktopScrollRef}
-            className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto"
-          >
+          <div ref={desktopScrollRef} className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto">
             <MessageList />
           </div>
 
