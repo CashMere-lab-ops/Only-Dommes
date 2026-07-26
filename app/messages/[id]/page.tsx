@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send } from 'lucide-react';
@@ -21,27 +21,8 @@ export default function ChatPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<any>(null);
-
-  const scrollToBottom = (smooth = false) => {
-    const run = () => {
-      if (messagesContainerRef.current) {
-        messagesContainerRef.current.scrollTop =
-          messagesContainerRef.current.scrollHeight;
-      }
-      bottomRef.current?.scrollIntoView({
-        behavior: smooth ? 'smooth' : 'auto',
-        block: 'end',
-      });
-    };
-    run();
-    setTimeout(run, 50);
-    setTimeout(run, 150);
-    setTimeout(run, 300);
-  };
 
   useEffect(() => {
     const loadChat = async () => {
@@ -100,34 +81,6 @@ export default function ChatPage() {
     if (conversationId) loadChat();
   }, [conversationId]);
 
-  // Force scroll to bottom when chat opens / messages load (especially mobile)
-  useLayoutEffect(() => {
-    if (loading) return;
-
-    const forceBottom = () => {
-      if (messagesContainerRef.current) {
-        messagesContainerRef.current.scrollTop =
-          messagesContainerRef.current.scrollHeight;
-      }
-      bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
-    };
-
-    forceBottom();
-    const t1 = setTimeout(forceBottom, 50);
-    const t2 = setTimeout(forceBottom, 150);
-    const t3 = setTimeout(forceBottom, 350);
-    const t4 = setTimeout(forceBottom, 600);
-    const t5 = setTimeout(forceBottom, 1000);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
-      clearTimeout(t5);
-    };
-  }, [loading, conversationId, messages.length]);
-
   useEffect(() => {
     if (!conversationId || !currentUserId) return;
 
@@ -149,7 +102,6 @@ export default function ChatPage() {
             if (prev.some((m) => m.id === payload.new.id)) return prev;
             return [...prev, payload.new];
           });
-          scrollToBottom(true);
         }
       )
       .on('broadcast', { event: 'typing' }, (payload) => {
@@ -165,10 +117,6 @@ export default function ChatPage() {
       supabase.removeChannel(channel);
     };
   }, [conversationId, currentUserId]);
-
-  useEffect(() => {
-    if (!loading) scrollToBottom(true);
-  }, [messages, isOtherTyping]);
 
   const sendTyping = (isTyping: boolean) => {
     channelRef.current?.send({
@@ -254,6 +202,7 @@ export default function ChatPage() {
     });
   };
 
+  // Group messages by date
   const groupedMessages: { label: string; messages: any[] }[] = [];
   messages.forEach((msg) => {
     const label = formatDateLabel(msg.created_at);
@@ -284,7 +233,7 @@ export default function ChatPage() {
   const initial = name.charAt(0).toUpperCase();
 
   const MessageList = () => (
-    <>
+    <div className="flex flex-col justify-end min-h-full py-2">
       {groupedMessages.length === 0 ? (
         <div className="text-center py-20 text-zinc-500">
           <p className="text-base">No messages yet</p>
@@ -341,9 +290,7 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-
-      <div ref={bottomRef} />
-    </>
+    </div>
   );
 
   return (
@@ -353,8 +300,9 @@ export default function ChatPage() {
           <Sidebar />
         </div>
 
-        {/* MOBILE */}
+        {/* ================= MOBILE ================= */}
         <div className="lg:hidden fixed inset-0 bg-zinc-950 flex flex-col z-50">
+          {/* Header */}
           <div className="flex-shrink-0 border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
             <button onClick={() => router.push('/messages')} className="text-zinc-400 p-1">
               <ArrowLeft size={24} />
@@ -376,13 +324,12 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div
-            ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto px-3 py-2"
-          >
+          {/* Messages - flex-col-reverse keeps latest at bottom */}
+          <div className="flex-1 overflow-y-auto px-3 flex flex-col-reverse">
             <MessageList />
           </div>
 
+          {/* Input */}
           <form
             onSubmit={handleSend}
             className="flex-shrink-0 border-t border-zinc-800 px-3 py-2"
@@ -408,7 +355,7 @@ export default function ChatPage() {
           </form>
         </div>
 
-        {/* DESKTOP */}
+        {/* ================= DESKTOP ================= */}
         <main className="hidden lg:flex flex-1 flex-col h-screen overflow-hidden">
           <div className="flex-shrink-0 border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
             <Link href="/messages" className="text-zinc-400 hover:text-white">
@@ -431,10 +378,7 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div
-            ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto px-6 py-4"
-          >
+          <div className="flex-1 overflow-y-auto px-6 flex flex-col-reverse">
             <MessageList />
           </div>
 
