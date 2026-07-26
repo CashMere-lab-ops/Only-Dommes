@@ -22,16 +22,26 @@ export default function ChatPage() {
   const [otherUser, setOtherUser] = useState<any>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<any>(null);
 
   const scrollToBottom = (smooth = false) => {
-    setTimeout(() => {
+    // Try multiple times so mobile always lands at the bottom
+    const run = () => {
       bottomRef.current?.scrollIntoView({
         behavior: smooth ? 'smooth' : 'auto',
+        block: 'end',
       });
-    }, 50);
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop =
+          messagesContainerRef.current.scrollHeight;
+      }
+    };
+    run();
+    setTimeout(run, 50);
+    setTimeout(run, 150);
+    setTimeout(run, 300);
   };
 
   useEffect(() => {
@@ -81,8 +91,9 @@ export default function ChatPage() {
       setMessages(msgs || []);
       setLoading(false);
 
-      // Jump straight to bottom when opening chat
+      // Force scroll to bottom after render
       setTimeout(() => scrollToBottom(false), 100);
+      setTimeout(() => scrollToBottom(false), 400);
 
       await supabase
         .from('messages')
@@ -94,7 +105,6 @@ export default function ChatPage() {
     if (conversationId) loadChat();
   }, [conversationId]);
 
-  // Realtime messages + typing
   useEffect(() => {
     if (!conversationId || !currentUserId) return;
 
@@ -122,10 +132,6 @@ export default function ChatPage() {
       .on('broadcast', { event: 'typing' }, (payload) => {
         if (payload.payload?.userId !== currentUserId) {
           setIsOtherTyping(!!payload.payload?.isTyping);
-          if (payload.payload?.isTyping) {
-            // Auto-hide after 3 seconds if no update
-            setTimeout(() => setIsOtherTyping(false), 3000);
-          }
         }
       })
       .subscribe();
@@ -137,10 +143,9 @@ export default function ChatPage() {
     };
   }, [conversationId, currentUserId]);
 
-  // Scroll when messages change
   useEffect(() => {
     if (!loading) scrollToBottom(true);
-  }, [messages, isOtherTyping]);
+  }, [messages, isOtherTyping, loading]);
 
   const sendTyping = (isTyping: boolean) => {
     channelRef.current?.send({
@@ -153,13 +158,13 @@ export default function ChatPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value);
 
-    // Tell the other person you're typing
+    // Show typing + reset 3 second timer on every key press
     sendTyping(true);
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       sendTyping(false);
-    }, 1500);
+    }, 3000); // 3 seconds after last key press
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -169,6 +174,9 @@ export default function ChatPage() {
     setSending(true);
     const content = newMessage.trim();
     setNewMessage('');
+
+    // Stop typing immediately when sending
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     sendTyping(false);
 
     try {
@@ -304,7 +312,6 @@ export default function ChatPage() {
         ))
       )}
 
-      {/* Typing indicator */}
       {isOtherTyping && (
         <div className="flex justify-start mt-2">
           <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-1">
@@ -349,7 +356,7 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-2">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-2">
             <MessageList />
           </div>
 
@@ -360,7 +367,6 @@ export default function ChatPage() {
           >
             <div className="flex items-center gap-2">
               <input
-                ref={inputRef}
                 type="text"
                 value={newMessage}
                 onChange={handleInputChange}
@@ -402,7 +408,7 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4">
             <MessageList />
           </div>
 
