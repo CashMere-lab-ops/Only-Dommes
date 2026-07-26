@@ -159,6 +159,33 @@ export default function ChatPage() {
     });
   };
 
+  const formatDateLabel = (dateString: string) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+  };
+
+  // Group messages by date
+  const groupedMessages: { label: string; messages: any[] }[] = [];
+  messages.forEach((msg) => {
+    const label = formatDateLabel(msg.created_at);
+    const lastGroup = groupedMessages[groupedMessages.length - 1];
+    if (lastGroup && lastGroup.label === label) {
+      lastGroup.messages.push(msg);
+    } else {
+      groupedMessages.push({ label, messages: [msg] });
+    }
+  });
+
   if (loading) {
     return (
       <AuthGuard>
@@ -177,28 +204,75 @@ export default function ChatPage() {
   const name = otherUser?.display_name || otherUser?.username || 'User';
   const initial = name.charAt(0).toUpperCase();
 
+  const MessageList = () => (
+    <>
+      {groupedMessages.length === 0 ? (
+        <div className="text-center py-20 text-zinc-500">
+          <p className="text-base">No messages yet</p>
+          <p className="text-sm mt-1 text-zinc-600">Say hello 👋</p>
+        </div>
+      ) : (
+        groupedMessages.map((group) => (
+          <div key={group.label}>
+            {/* Date separator */}
+            <div className="flex items-center justify-center my-4">
+              <span className="text-[11px] font-medium text-zinc-500 bg-zinc-900/80 px-3 py-1 rounded-full">
+                {group.label}
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              {group.messages.map((msg) => {
+                const isMine = msg.sender_id === currentUserId;
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[80%] lg:max-w-[60%] px-3.5 py-2 rounded-2xl ${
+                        isMine
+                          ? 'bg-pink-600 text-white rounded-br-md'
+                          : 'bg-zinc-800 text-white rounded-bl-md'
+                      }`}
+                    >
+                      <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
+                        {msg.content}
+                      </p>
+                      <p
+                        className={`text-[10px] mt-1 ${
+                          isMine ? 'text-pink-200/80' : 'text-zinc-500'
+                        }`}
+                      >
+                        {formatTime(msg.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))
+      )}
+      <div ref={bottomRef} />
+    </>
+  );
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
-        {/* Desktop sidebar only */}
+        {/* Desktop sidebar */}
         <div className="hidden lg:block">
           <Sidebar />
         </div>
 
-        {/* ================= MOBILE CHAT (Instagram style) ================= */}
+        {/* ================= MOBILE ================= */}
         <div className="lg:hidden fixed inset-0 bg-zinc-950 flex flex-col z-50">
-          {/* Header */}
           <div className="flex-shrink-0 border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
-            <button
-              onClick={() => router.push('/messages')}
-              className="text-zinc-400 p-1"
-            >
+            <button onClick={() => router.push('/messages')} className="text-zinc-400 p-1">
               <ArrowLeft size={24} />
             </button>
-            <Link
-              href={`/${otherUser?.username}`}
-              className="flex items-center gap-3 flex-1 min-w-0"
-            >
+            <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
                 {otherUser?.avatar_url ? (
                   <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -213,40 +287,10 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
-            {messages.length === 0 ? (
-              <div className="text-center py-20 text-zinc-500">
-                <p>No messages yet</p>
-                <p className="text-sm mt-1">Say hello 👋</p>
-              </div>
-            ) : (
-              messages.map((msg) => {
-                const isMine = msg.sender_id === currentUserId;
-                return (
-                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[80%] px-3.5 py-2 rounded-2xl ${
-                        isMine
-                          ? 'bg-pink-600 text-white rounded-br-md'
-                          : 'bg-zinc-800 text-white rounded-bl-md'
-                      }`}
-                    >
-                      <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
-                        {msg.content}
-                      </p>
-                      <p className={`text-[10px] mt-1 ${isMine ? 'text-pink-200' : 'text-zinc-500'}`}>
-                        {formatTime(msg.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={bottomRef} />
+          <div className="flex-1 overflow-y-auto px-3 py-2">
+            <MessageList />
           </div>
 
-          {/* Input */}
           <form
             onSubmit={handleSend}
             className="flex-shrink-0 border-t border-zinc-800 px-3 py-2"
@@ -273,9 +317,8 @@ export default function ChatPage() {
           </form>
         </div>
 
-        {/* ================= DESKTOP CHAT ================= */}
+        {/* ================= DESKTOP ================= */}
         <main className="hidden lg:flex flex-1 flex-col h-screen overflow-hidden">
-          {/* Header */}
           <div className="flex-shrink-0 border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
             <Link href="/messages" className="text-zinc-400 hover:text-white">
               <ArrowLeft size={22} />
@@ -295,40 +338,10 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-            {messages.length === 0 ? (
-              <div className="text-center py-20 text-zinc-500">
-                <p>No messages yet</p>
-                <p className="text-sm mt-1">Say hello 👋</p>
-              </div>
-            ) : (
-              messages.map((msg) => {
-                const isMine = msg.sender_id === currentUserId;
-                return (
-                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[60%] px-4 py-2.5 rounded-2xl ${
-                        isMine
-                          ? 'bg-pink-600 text-white rounded-br-md'
-                          : 'bg-zinc-800 text-white rounded-bl-md'
-                      }`}
-                    >
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                        {msg.content}
-                      </p>
-                      <p className={`text-[10px] mt-1 ${isMine ? 'text-pink-200' : 'text-zinc-500'}`}>
-                        {formatTime(msg.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={bottomRef} />
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <MessageList />
           </div>
 
-          {/* Input */}
           <form onSubmit={handleSend} className="flex-shrink-0 border-t border-zinc-800 px-6 py-4">
             <div className="flex items-center gap-3 max-w-3xl">
               <input
