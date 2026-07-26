@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Send } from 'lucide-react';
@@ -27,16 +27,15 @@ export default function ChatPage() {
   const channelRef = useRef<any>(null);
 
   const scrollToBottom = (smooth = false) => {
-    // Try multiple times so mobile always lands at the bottom
     const run = () => {
-      bottomRef.current?.scrollIntoView({
-        behavior: smooth ? 'smooth' : 'auto',
-        block: 'end',
-      });
       if (messagesContainerRef.current) {
         messagesContainerRef.current.scrollTop =
           messagesContainerRef.current.scrollHeight;
       }
+      bottomRef.current?.scrollIntoView({
+        behavior: smooth ? 'smooth' : 'auto',
+        block: 'end',
+      });
     };
     run();
     setTimeout(run, 50);
@@ -91,10 +90,6 @@ export default function ChatPage() {
       setMessages(msgs || []);
       setLoading(false);
 
-      // Force scroll to bottom after render
-      setTimeout(() => scrollToBottom(false), 100);
-      setTimeout(() => scrollToBottom(false), 400);
-
       await supabase
         .from('messages')
         .update({ is_read: true })
@@ -104,6 +99,34 @@ export default function ChatPage() {
 
     if (conversationId) loadChat();
   }, [conversationId]);
+
+  // Force scroll to bottom when chat opens / messages load (especially mobile)
+  useLayoutEffect(() => {
+    if (loading) return;
+
+    const forceBottom = () => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop =
+          messagesContainerRef.current.scrollHeight;
+      }
+      bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+    };
+
+    forceBottom();
+    const t1 = setTimeout(forceBottom, 50);
+    const t2 = setTimeout(forceBottom, 150);
+    const t3 = setTimeout(forceBottom, 350);
+    const t4 = setTimeout(forceBottom, 600);
+    const t5 = setTimeout(forceBottom, 1000);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+      clearTimeout(t5);
+    };
+  }, [loading, conversationId, messages.length]);
 
   useEffect(() => {
     if (!conversationId || !currentUserId) return;
@@ -145,7 +168,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!loading) scrollToBottom(true);
-  }, [messages, isOtherTyping, loading]);
+  }, [messages, isOtherTyping]);
 
   const sendTyping = (isTyping: boolean) => {
     channelRef.current?.send({
@@ -157,14 +180,12 @@ export default function ChatPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value);
-
-    // Show typing + reset 3 second timer on every key press
     sendTyping(true);
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
       sendTyping(false);
-    }, 3000); // 3 seconds after last key press
+    }, 3000);
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -175,7 +196,6 @@ export default function ChatPage() {
     const content = newMessage.trim();
     setNewMessage('');
 
-    // Stop typing immediately when sending
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     sendTyping(false);
 
@@ -356,7 +376,10 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-2">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto px-3 py-2"
+          >
             <MessageList />
           </div>
 
@@ -408,7 +431,10 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto px-6 py-4"
+          >
             <MessageList />
           </div>
 
