@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Send, Users, Heart } from 'lucide-react';
-import Sidebar from '../../components/Sidebar';
-import { createClient } from '../../lib/supabase';
+import Sidebar from '../../../components/Sidebar';
+import { createClient } from '../../../lib/supabase';
+
 type Audience = 'followers' | 'subscribers' | 'both';
 
 export default function MassMessagePage() {
@@ -165,8 +166,7 @@ export default function MassMessagePage() {
       ? followerCount
       : audience === 'subscribers'
       ? subscriberCount
-      : // both = unique, approximate upper bound shown
-        followerCount + subscriberCount;
+      : followerCount + subscriberCount;
 
   if (loading) {
     return (
@@ -198,7 +198,6 @@ export default function MassMessagePage() {
             Send one message to many people at once
           </p>
 
-          {/* Audience */}
           <div className="mb-6">
             <p className="text-sm text-zinc-400 mb-3">Send to</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -244,7 +243,6 @@ export default function MassMessagePage() {
             </p>
           </div>
 
-          {/* Message */}
           <div className="mb-6">
             <label className="text-sm text-zinc-400 mb-1.5 block">Message</label>
             <textarea
