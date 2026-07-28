@@ -23,6 +23,9 @@ export default function PublicProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
+  const [subscribersCount, setSubscribersCount] = useState(0);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subLoading, setSubLoading] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -45,7 +48,6 @@ export default function PublicProfilePage() {
 
       setProfile(profileData);
 
-      // Load posts
       const { data: postsData } = await supabase
         .from('posts')
         .select('*')
@@ -55,15 +57,21 @@ export default function PublicProfilePage() {
 
       setPosts(postsData || []);
 
-      // Load followers count
-      const { count } = await supabase
+      const { count: fCount } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', profileData.id);
 
-      setFollowersCount(count || 0);
+      setFollowersCount(fCount || 0);
 
-      // Check if current user is following this profile
+      const { count: sCount } = await supabase
+        .from('subscriptions')
+        .select('*', { count: 'exact', head: true })
+        .eq('creator_id', profileData.id)
+        .eq('status', 'active');
+
+      setSubscribersCount(sCount || 0);
+
       if (user) {
         const { data: followData } = await supabase
           .from('follows')
@@ -73,14 +81,22 @@ export default function PublicProfilePage() {
           .maybeSingle();
 
         setIsFollowing(!!followData);
+
+        const { data: subData } = await supabase
+          .from('subscriptions')
+          .select('id')
+          .eq('subscriber_id', user.id)
+          .eq('creator_id', profileData.id)
+          .eq('status', 'active')
+          .maybeSingle();
+
+        setIsSubscribed(!!subData);
       }
 
       setLoading(false);
     };
 
-    if (username) {
-      loadProfile();
-    }
+    if (username) loadProfile();
   }, [username]);
 
   const handleFollow = async () => {
@@ -91,7 +107,6 @@ export default function PublicProfilePage() {
     if (!profile || followLoading) return;
 
     setFollowLoading(true);
-
     try {
       if (isFollowing) {
         await supabase
@@ -99,7 +114,6 @@ export default function PublicProfilePage() {
           .delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', profile.id);
-
         setIsFollowing(false);
         setFollowersCount((prev) => Math.max(0, prev - 1));
       } else {
@@ -107,7 +121,6 @@ export default function PublicProfilePage() {
           follower_id: currentUser.id,
           following_id: profile.id,
         });
-
         setIsFollowing(true);
         setFollowersCount((prev) => prev + 1);
       }
@@ -119,6 +132,53 @@ export default function PublicProfilePage() {
     }
   };
 
+  const handleSubscribe = async () => {
+    if (!currentUser) {
+      router.push('/login');
+      return;
+    }
+    if (!profile || subLoading) return;
+
+    setSubLoading(true);
+    try {
+      if (isSubscribed) {
+        // Cancel
+        await supabase
+          .from('subscriptions')
+          .update({ status: 'cancelled' })
+          .eq('subscriber_id', currentUser.id)
+          .eq('creator_id', profile.id);
+
+        setIsSubscribed(false);
+        setSubscribersCount((prev) => Math.max(0, prev - 1));
+      } else {
+        // Subscribe
+        const price = profile.subscription_price ?? 9.99;
+
+        const { error } = await supabase.from('subscriptions').upsert(
+          {
+            subscriber_id: currentUser.id,
+            creator_id: profile.id,
+            price,
+            status: 'active',
+            started_at: new Date().toISOString(),
+          },
+          { onConflict: 'subscriber_id,creator_id' }
+        );
+
+        if (error) throw error;
+
+        setIsSubscribed(true);
+        setSubscribersCount((prev) => prev + 1);
+      }
+    } catch (err: any) {
+      console.error('Subscribe error:', err);
+      alert(err.message || 'Something went wrong');
+    } finally {
+      setSubLoading(false);
+    }
+  };
+
   const handleMessage = async () => {
     if (!currentUser) {
       router.push('/login');
@@ -127,7 +187,6 @@ export default function PublicProfilePage() {
     if (!profile) return;
 
     try {
-      // Check if a conversation already exists between these two users
       const { data: existing } = await supabase
         .from('conversations')
         .select('id')
@@ -141,7 +200,6 @@ export default function PublicProfilePage() {
         return;
       }
 
-      // Create a new conversation
       const { data: newConvo, error } = await supabase
         .from('conversations')
         .insert({
@@ -152,7 +210,6 @@ export default function PublicProfilePage() {
         .single();
 
       if (error) throw error;
-
       router.push(`/messages/${newConvo.id}`);
     } catch (err) {
       console.error('Message error:', err);
@@ -196,14 +253,18 @@ export default function PublicProfilePage() {
         year: 'numeric',
       })
     : '';
-
   const isOwnProfile = currentUser?.id === profile.id;
+  const showSubscribe =
+    profile.account_type === 'creator' &&
+    profile.subscriptions_enabled &&
+    !isOwnProfile;
+
+  const subPrice = Number(profile.subscription_price ?? 9.99).toFixed(2);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        {/* Mobile Top Bar */}
+      <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
         <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
           <button onClick={() => router.back()} className="text-zinc-400 hover:text-white">
             <ArrowLeft size={22} />
@@ -212,9 +273,7 @@ export default function PublicProfilePage() {
         </div>
 
         <div className="max-w-3xl mx-auto px-4 lg:px-8 py-8">
-          {/* Profile Header */}
           <div className="flex flex-col sm:flex-row gap-6 mb-8">
-            {/* Avatar */}
             <div className="flex flex-col items-center gap-3 flex-shrink-0">
               <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden">
                 {profile.avatar_url ? (
@@ -227,7 +286,6 @@ export default function PublicProfilePage() {
                   initial
                 )}
               </div>
-
               {profile.x_username && (
                 <a
                   href={`https://x.com/${profile.x_username}`}
@@ -243,7 +301,6 @@ export default function PublicProfilePage() {
               )}
             </div>
 
-            {/* Info */}
             <div className="flex-1 min-w-0">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="space-y-1">
@@ -263,7 +320,6 @@ export default function PublicProfilePage() {
                   </div>
                 </div>
 
-                {/* Buttons */}
                 {isOwnProfile ? (
                   <Link
                     href="/account"
@@ -272,14 +328,32 @@ export default function PublicProfilePage() {
                     Edit Profile
                   </Link>
                 ) : (
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {showSubscribe && (
+                      <button
+                        onClick={handleSubscribe}
+                        disabled={subLoading}
+                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50 ${
+                          isSubscribed
+                            ? 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white'
+                            : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white'
+                        }`}
+                      >
+                        {subLoading
+                          ? '...'
+                          : isSubscribed
+                          ? 'Subscribed'
+                          : `Subscribe · £${subPrice}/mo`}
+                      </button>
+                    )}
+
                     <button
                       onClick={handleFollow}
                       disabled={followLoading}
-                      className={`px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit disabled:opacity-50 ${
+                      className={`px-5 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50 ${
                         isFollowing
                           ? 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white'
-                          : 'bg-pink-600 hover:bg-pink-700 text-white'
+                          : 'bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white'
                       }`}
                     >
                       {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
@@ -287,7 +361,7 @@ export default function PublicProfilePage() {
 
                     <button
                       onClick={handleMessage}
-                      className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit"
+                      className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition"
                     >
                       <MessageCircle size={16} />
                       Message
@@ -304,7 +378,6 @@ export default function PublicProfilePage() {
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
@@ -318,7 +391,7 @@ export default function PublicProfilePage() {
                 <Heart size={16} />
                 <span>Subscribers</span>
               </div>
-              <div className="text-3xl font-semibold">0</div>
+              <div className="text-3xl font-semibold">{subscribersCount}</div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
@@ -336,10 +409,8 @@ export default function PublicProfilePage() {
             </div>
           </div>
 
-          {/* Posts */}
           <div>
             <h2 className="text-xl font-semibold mb-4">Posts</h2>
-
             {posts.length === 0 ? (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
                 <p className="text-zinc-400">No posts yet</p>
@@ -358,7 +429,6 @@ export default function PublicProfilePage() {
                         </p>
                       </div>
                     )}
-
                     {post.media_type === 'photo' && post.media_url && (
                       <div className="max-h-[420px] overflow-hidden">
                         <img
@@ -368,7 +438,6 @@ export default function PublicProfilePage() {
                         />
                       </div>
                     )}
-
                     {post.media_type === 'video' && post.media_url && (
                       <div className="max-h-[420px] overflow-hidden">
                         <video
@@ -378,7 +447,6 @@ export default function PublicProfilePage() {
                         />
                       </div>
                     )}
-
                     <div className="px-4 py-3 flex items-center gap-4 text-sm text-zinc-400">
                       <span>{post.likes_count || 0} likes</span>
                       <span>{post.comments_count || 0} comments</span>
