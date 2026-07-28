@@ -4,9 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Send, Users, Heart } from 'lucide-react';
-import Sidebar from '../../../components/Sidebar';
-import { createClient } from '../../../lib/supabase';
-
+import Sidebar from '../../components/Sidebar';
+import { createClient } from '../../lib/supabase';
 type Audience = 'followers' | 'subscribers' | 'both';
 
 export default function MassMessagePage() {
