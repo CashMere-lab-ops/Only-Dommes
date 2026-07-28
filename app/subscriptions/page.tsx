@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Heart, X } from 'lucide-react';
+import { ArrowLeft, Heart } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
 
@@ -23,7 +23,18 @@ export default function SubscriptionsPage() {
         return;
       }
 
-      // Get active subscriptions + creator profile
+      // Creators don't use this page
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('account_type')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.account_type === 'creator') {
+        router.push('/dashboard');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('subscriptions')
         .select('*')
@@ -31,20 +42,12 @@ export default function SubscriptionsPage() {
         .eq('status', 'active')
         .order('started_at', { ascending: false });
 
-      if (error) {
-        console.error(error);
+      if (error || !data || data.length === 0) {
         setSubs([]);
         setLoading(false);
         return;
       }
 
-      if (!data || data.length === 0) {
-        setSubs([]);
-        setLoading(false);
-        return;
-      }
-
-      // Load creator profiles
       const creatorIds = data.map((s) => s.creator_id);
       const { data: profiles } = await supabase
         .from('profiles')
@@ -77,7 +80,6 @@ export default function SubscriptionsPage() {
         .eq('id', sub.id);
 
       if (error) throw error;
-
       setSubs((prev) => prev.filter((s) => s.id !== sub.id));
     } catch (err: any) {
       alert(err.message || 'Could not cancel');
@@ -97,7 +99,6 @@ export default function SubscriptionsPage() {
     <div className="min-h-screen bg-zinc-950 text-white flex">
       <Sidebar />
       <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-        {/* Mobile header */}
         <div className="lg:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
           <Link href="/account" className="text-zinc-400">
             <ArrowLeft size={22} />
@@ -150,7 +151,9 @@ export default function SubscriptionsPage() {
                   sub.creator?.username ||
                   'Creator';
                 const initial = name.charAt(0).toUpperCase();
-                const price = Number(sub.price ?? sub.creator?.subscription_price ?? 0).toFixed(2);
+                const price = Number(
+                  sub.price ?? sub.creator?.subscription_price ?? 0
+                ).toFixed(2);
 
                 return (
                   <div

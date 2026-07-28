@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 
-// Simple cache so the profile doesn't flash on every navigation
 let cachedProfile: any = null;
 
 export default function Sidebar() {
@@ -38,7 +37,18 @@ export default function Sidebar() {
       if (!cachedProfile) {
         const { data } = await supabase
           .from('profiles')
-          .select('username, display_name, avatar_url')
+          .select('username, display_name, avatar_url, account_type')
+          .eq('id', user.id)
+          .single();
+        if (data) {
+          cachedProfile = data;
+          setProfile(data);
+        }
+      } else if (!cachedProfile.account_type) {
+        // refresh cache if account_type missing
+        const { data } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url, account_type')
           .eq('id', user.id)
           .single();
         if (data) {
@@ -49,7 +59,6 @@ export default function Sidebar() {
 
       setProfileLoaded(true);
 
-      // Count unread messages (from other people)
       const { count } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
@@ -61,26 +70,19 @@ export default function Sidebar() {
 
     getUser();
 
-    // Live update when new messages arrive
     const channel = supabase
       .channel('sidebar-unread')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-        },
+        { event: '*', schema: 'public', table: 'messages' },
         async () => {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) return;
-
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
             .eq('is_read', false)
             .neq('sender_id', user.id);
-
           setUnreadCount(count || 0);
         }
       )
@@ -91,23 +93,18 @@ export default function Sidebar() {
     };
   }, []);
 
-  // Clear badge when you're on the messages page
   useEffect(() => {
     if (pathname?.startsWith('/messages')) {
-      // small delay so chat can mark messages as read first
       const t = setTimeout(async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-
         const { count } = await supabase
           .from('messages')
           .select('*', { count: 'exact', head: true })
           .eq('is_read', false)
           .neq('sender_id', user.id);
-
         setUnreadCount(count || 0);
       }, 800);
-
       return () => clearTimeout(t);
     }
   }, [pathname]);
@@ -118,6 +115,8 @@ export default function Sidebar() {
     router.push('/login');
   };
 
+  const isCreator = profile?.account_type === 'creator';
+
   const navItems = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/live', label: 'Live', icon: Radio },
@@ -127,11 +126,14 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
+  // Subscriptions only for subs (not creators)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
-    { href: '/subscriptions', label: 'Subscriptions', icon: Heart },
+    ...(!isCreator
+      ? [{ href: '/subscriptions', label: 'Subscriptions', icon: Heart }]
+      : []),
     { href: '/library', label: 'My Library', icon: BookOpen },
     { href: '/notifications', label: 'Notifications', icon: Bell },
     { href: '/settings', label: 'Settings', icon: Settings },
@@ -144,7 +146,9 @@ export default function Sidebar() {
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
-    { href: '/subscriptions', label: 'Subscriptions', icon: Heart },
+    ...(!isCreator
+      ? [{ href: '/subscriptions', label: 'Subscriptions', icon: Heart }]
+      : []),
     { href: '/library', label: 'My Library', icon: BookOpen },
     { href: '/notifications', label: 'Notifications', icon: Bell },
     { href: '/blocked', label: 'Blocked', icon: Ban },
