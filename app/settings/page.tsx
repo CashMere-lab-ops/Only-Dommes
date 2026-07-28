@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, User, Lock, Bell, Shield, Camera, Save, Eye, EyeOff, Link2, Unlink
+  ArrowLeft, User, Lock, Bell, Shield, Camera, Save, Eye, EyeOff, Link2, Unlink, Heart
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -23,7 +23,6 @@ export default function SettingsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  // Form states
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -33,7 +32,10 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Notification toggles
+  // Subscriptions (creators)
+  const [subscriptionsEnabled, setSubscriptionsEnabled] = useState(false);
+  const [subscriptionPrice, setSubscriptionPrice] = useState('9.99');
+
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
   const [emailLives, setEmailLives] = useState(true);
@@ -60,7 +62,14 @@ export default function SettingsPage() {
         setUsername(data.username || '');
         setBio(data.bio || '');
         setXUsername(data.x_username || '');
+        setSubscriptionsEnabled(!!data.subscriptions_enabled);
+        setSubscriptionPrice(
+          data.subscription_price != null
+            ? String(data.subscription_price)
+            : '9.99'
+        );
       }
+
       setLoading(false);
     };
 
@@ -146,6 +155,43 @@ export default function SettingsPage() {
       setProfile({ ...profile, ...updates });
     } catch (err: any) {
       setError(err.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveSubscriptions = async () => {
+    setSaving(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const price = parseFloat(subscriptionPrice);
+      if (isNaN(price) || price < 0) {
+        setError('Enter a valid subscription price');
+        setSaving(false);
+        return;
+      }
+
+      const updates = {
+        subscriptions_enabled: subscriptionsEnabled,
+        subscription_price: price,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile({ ...profile, ...updates });
+      setMessage('Subscription settings saved');
+    } catch (err: any) {
+      setError(err.message || 'Failed to save subscription settings');
     } finally {
       setSaving(false);
     }
@@ -265,9 +311,7 @@ export default function SettingsPage() {
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-
-        <main className="flex-1 overflow-y-auto">
-          {/* Mobile Top Bar */}
+        <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
           <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
             <Link href="/account" className="text-zinc-400 hover:text-white">
               <ArrowLeft size={22} />
@@ -276,7 +320,6 @@ export default function SettingsPage() {
           </div>
 
           <div className="max-w-3xl mx-auto px-4 lg:px-8 py-8">
-
             <div className="mb-8">
               <h1 className="text-3xl font-bold hidden lg:block">Settings</h1>
               <p className="text-zinc-400 mt-1">Manage your profile and account preferences</p>
@@ -293,14 +336,13 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* ==================== PROFILE SECTION ==================== */}
+            {/* PROFILE */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 mb-6">
                 <User size={20} className="text-pink-400" />
                 <h2 className="text-lg font-semibold">Profile</h2>
               </div>
 
-              {/* Avatar */}
               <div className="flex items-center gap-5 mb-6">
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-3xl font-bold overflow-hidden">
                   {profile?.avatar_url ? (
@@ -329,7 +371,6 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Display Name */}
               <div className="mb-4">
                 <label className="text-sm text-zinc-400 mb-1.5 block">Display Name</label>
                 <input
@@ -341,7 +382,6 @@ export default function SettingsPage() {
                 <p className="text-xs text-zinc-500 mt-1.5">You can change this once every 24 hours</p>
               </div>
 
-              {/* Username */}
               <div className="mb-4">
                 <label className="text-sm text-zinc-400 mb-1.5 block">Username</label>
                 <div className="relative">
@@ -349,14 +389,15 @@ export default function SettingsPage() {
                   <input
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    onChange={(e) =>
+                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+                    }
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 pl-8 pr-4 outline-none focus:border-pink-500"
                   />
                 </div>
                 <p className="text-xs text-zinc-500 mt-1.5">You can change this once every 30 days</p>
               </div>
 
-              {/* Bio */}
               <div className="mb-4">
                 <label className="text-sm text-zinc-400 mb-1.5 block">Bio</label>
                 <textarea
@@ -368,13 +409,11 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* Linked X Account - Creators only */}
               {isCreator && (
                 <div className="mb-6">
                   <label className="text-sm text-zinc-400 mb-2 block">Linked Accounts</label>
-                  
+
                   {xUsername ? (
-                    // Already linked
                     <div className="flex items-center justify-between bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-black flex items-center justify-center">
@@ -394,7 +433,6 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   ) : (
-                    // Not linked yet
                     <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4">
                       <div className="flex items-center gap-3 mb-3">
                         <div className="w-9 h-9 rounded-full bg-black flex items-center justify-center">
@@ -429,7 +467,6 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* Date of Birth (Locked) */}
               <div className="mb-6">
                 <label className="text-sm text-zinc-400 mb-1.5 block">Date of Birth</label>
                 <input
@@ -451,7 +488,62 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {/* ==================== ACCOUNT SECTION ==================== */}
+            {/* SUBSCRIPTIONS — creators only */}
+            {isCreator && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
+                <div className="flex items-center gap-2 mb-6">
+                  <Heart size={20} className="text-pink-400" />
+                  <h2 className="text-lg font-semibold">Subscriptions</h2>
+                </div>
+
+                <p className="text-sm text-zinc-400 mb-5">
+                  Let fans pay a monthly fee to subscribe to you. You can use this for exclusive content and mass messages later.
+                </p>
+
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <p className="font-medium">Enable subscriptions</p>
+                    <p className="text-sm text-zinc-400">Show a Subscribe button on your profile</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={subscriptionsEnabled}
+                      onChange={() => setSubscriptionsEnabled(!subscriptionsEnabled)}
+                    />
+                    <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
+                  </label>
+                </div>
+
+                <div className="mb-5">
+                  <label className="text-sm text-zinc-400 mb-1.5 block">Monthly price (£)</label>
+                  <div className="relative max-w-xs">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">£</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={subscriptionPrice}
+                      onChange={(e) => setSubscriptionPrice(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 pl-8 pr-4 outline-none focus:border-pink-500"
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1.5">Fans will pay this amount per month</p>
+                </div>
+
+                <button
+                  onClick={handleSaveSubscriptions}
+                  disabled={saving}
+                  className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 px-5 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50"
+                >
+                  <Save size={16} />
+                  {saving ? 'Saving...' : 'Save Subscription Settings'}
+                </button>
+              </div>
+            )}
+
+            {/* ACCOUNT */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 mb-6">
                 <Lock size={20} className="text-pink-400" />
@@ -479,10 +571,8 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* Change Password */}
               <div className="border-t border-zinc-800 pt-5 mt-5">
                 <h3 className="font-medium mb-4">Change Password</h3>
-
                 <div className="mb-4">
                   <label className="text-sm text-zinc-400 mb-1.5 block">New Password</label>
                   <div className="relative">
@@ -502,7 +592,6 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
-
                 <div className="mb-4">
                   <label className="text-sm text-zinc-400 mb-1.5 block">Confirm New Password</label>
                   <input
@@ -513,7 +602,6 @@ export default function SettingsPage() {
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
                   />
                 </div>
-
                 <button
                   onClick={handleChangePassword}
                   disabled={saving || !newPassword}
@@ -524,13 +612,12 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* ==================== PRIVACY SECTION ==================== */}
+            {/* PRIVACY */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 mb-6">
                 <Shield size={20} className="text-pink-400" />
                 <h2 className="text-lg font-semibold">Privacy & Safety</h2>
               </div>
-
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -543,7 +630,6 @@ export default function SettingsPage() {
                     <option>Nobody</option>
                   </select>
                 </div>
-
                 <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
                   <div>
                     <p className="font-medium">Show online status</p>
@@ -557,13 +643,12 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* ==================== NOTIFICATIONS ==================== */}
+            {/* NOTIFICATIONS */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 mb-6">
                 <Bell size={20} className="text-pink-400" />
                 <h2 className="text-lg font-semibold">Notifications</h2>
               </div>
-
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -575,7 +660,6 @@ export default function SettingsPage() {
                     <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
                   </label>
                 </div>
-
                 <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
                   <div>
                     <p className="font-medium">New Messages</p>
@@ -586,7 +670,6 @@ export default function SettingsPage() {
                     <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
                   </label>
                 </div>
-
                 <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
                   <div>
                     <p className="font-medium">Live Stream Alerts</p>
@@ -599,7 +682,6 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-
           </div>
         </main>
       </div>
