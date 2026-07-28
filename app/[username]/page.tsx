@@ -142,19 +142,15 @@ export default function PublicProfilePage() {
     setSubLoading(true);
     try {
       if (isSubscribed) {
-        // Cancel
         await supabase
           .from('subscriptions')
           .update({ status: 'cancelled' })
           .eq('subscriber_id', currentUser.id)
           .eq('creator_id', profile.id);
-
         setIsSubscribed(false);
         setSubscribersCount((prev) => Math.max(0, prev - 1));
       } else {
-        // Subscribe
         const price = profile.subscription_price ?? 9.99;
-
         const { error } = await supabase.from('subscriptions').upsert(
           {
             subscriber_id: currentUser.id,
@@ -165,9 +161,7 @@ export default function PublicProfilePage() {
           },
           { onConflict: 'subscriber_id,creator_id' }
         );
-
         if (error) throw error;
-
         setIsSubscribed(true);
         setSubscribersCount((prev) => prev + 1);
       }
@@ -179,12 +173,35 @@ export default function PublicProfilePage() {
     }
   };
 
+  const canMessage = () => {
+    if (!profile) return false;
+    if (currentUser?.id === profile.id) return true;
+
+    const privacy = profile.message_privacy || 'everyone';
+
+    if (privacy === 'nobody') return false;
+    if (privacy === 'subscribers') return isSubscribed;
+    return true; // everyone
+  };
+
   const handleMessage = async () => {
     if (!currentUser) {
       router.push('/login');
       return;
     }
     if (!profile) return;
+
+    const privacy = profile.message_privacy || 'everyone';
+
+    if (privacy === 'nobody') {
+      alert('This user is not accepting messages.');
+      return;
+    }
+
+    if (privacy === 'subscribers' && !isSubscribed) {
+      alert('Only subscribers can message this user.');
+      return;
+    }
 
     try {
       const { data: existing } = await supabase
@@ -258,8 +275,8 @@ export default function PublicProfilePage() {
     profile.account_type === 'creator' &&
     profile.subscriptions_enabled &&
     !isOwnProfile;
-
   const subPrice = Number(profile.subscription_price ?? 9.99).toFixed(2);
+  const messagingAllowed = canMessage();
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -359,13 +376,31 @@ export default function PublicProfilePage() {
                       {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
                     </button>
 
-                    <button
-                      onClick={handleMessage}
-                      className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition"
-                    >
-                      <MessageCircle size={16} />
-                      Message
-                    </button>
+                    {messagingAllowed ? (
+                      <button
+                        onClick={handleMessage}
+                        className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition"
+                      >
+                        <MessageCircle size={16} />
+                        Message
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 px-5 py-2.5 rounded-xl text-sm font-medium text-zinc-500 cursor-not-allowed"
+                        title={
+                          (profile.message_privacy || 'everyone') === 'subscribers'
+                            ? 'Subscribers only'
+                            : 'Not accepting messages'
+                        }
+                      >
+                        <MessageCircle size={16} />
+                        {(profile.message_privacy || 'everyone') === 'subscribers'
+                          ? 'Subscribers only'
+                          : 'Messages off'}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
