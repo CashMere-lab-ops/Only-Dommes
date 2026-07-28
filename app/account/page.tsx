@@ -17,6 +17,7 @@ export default function MyAccountPage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [followersCount, setFollowersCount] = useState(0);
+  const [subscribersCount, setSubscribersCount] = useState(0);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -34,13 +35,23 @@ export default function MyAccountPage() {
 
       setProfile(data);
 
-      // Real followers count
-      const { count } = await supabase
+      // Followers
+      const { count: fCount } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', user.id);
 
-      setFollowersCount(count || 0);
+      setFollowersCount(fCount || 0);
+
+      // Active subscribers (people subscribed TO you)
+      const { count: sCount } = await supabase
+        .from('subscriptions')
+        .select('*', { count: 'exact', head: true })
+        .eq('creator_id', user.id)
+        .eq('status', 'active');
+
+      setSubscribersCount(sCount || 0);
+
       setLoading(false);
     };
 
@@ -74,13 +85,13 @@ export default function MyAccountPage() {
         year: 'numeric',
       })
     : 'Recently';
+  const isCreator = profile?.account_type === 'creator';
 
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-        <main className="flex-1">
-          {/* Mobile Top Bar */}
+        <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
           <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Link href="/" className="text-zinc-400 hover:text-white">
@@ -98,9 +109,7 @@ export default function MyAccountPage() {
           </div>
 
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
-            {/* Profile Header */}
             <div className="flex flex-col sm:flex-row gap-6 mb-6">
-              {/* Left column - Avatar + X */}
               <div className="flex flex-col items-center gap-3 flex-shrink-0">
                 <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden">
                   {profile?.avatar_url ? (
@@ -124,7 +133,6 @@ export default function MyAccountPage() {
                 )}
               </div>
 
-              {/* Right column */}
               <div className="flex-1 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="space-y-1">
@@ -154,7 +162,7 @@ export default function MyAccountPage() {
               </div>
             </div>
 
-            {/* Stats Cards */}
+            {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-8">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
@@ -168,7 +176,7 @@ export default function MyAccountPage() {
                   <Heart size={16} />
                   <span>Subscribers</span>
                 </div>
-                <div className="text-3xl font-semibold">0</div>
+                <div className="text-3xl font-semibold">{subscribersCount}</div>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
@@ -190,22 +198,45 @@ export default function MyAccountPage() {
             <div className="mb-10">
               <h2 className="text-xl font-semibold mb-4 px-1">Quick Actions</h2>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Link href="/settings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
+                <Link
+                  href="/settings"
+                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
+                >
                   <Edit3 className="text-pink-400 mb-3" size={24} />
                   <div className="font-semibold">Edit Profile</div>
                   <div className="text-sm text-zinc-400">Update bio, photos & links</div>
                 </Link>
-                <Link href="/earnings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
+                <Link
+                  href="/earnings"
+                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
+                >
                   <TrendingUp className="text-pink-400 mb-3" size={24} />
                   <div className="font-semibold">View Earnings</div>
                   <div className="text-sm text-zinc-400">Payouts & analytics</div>
                 </Link>
-                <Link href="/subscriptions" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
-                  <Users className="text-pink-400 mb-3" size={24} />
-                  <div className="font-semibold">Manage Subscribers</div>
-                  <div className="text-sm text-zinc-400">View & message fans</div>
-                </Link>
-                <Link href="/settings" className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition">
+                {isCreator ? (
+                  <Link
+                    href="/dashboard"
+                    className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
+                  >
+                    <Users className="text-pink-400 mb-3" size={24} />
+                    <div className="font-semibold">Manage Subscribers</div>
+                    <div className="text-sm text-zinc-400">View your fans</div>
+                  </Link>
+                ) : (
+                  <Link
+                    href="/subscriptions"
+                    className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
+                  >
+                    <Users className="text-pink-400 mb-3" size={24} />
+                    <div className="font-semibold">My Subscriptions</div>
+                    <div className="text-sm text-zinc-400">Creators you support</div>
+                  </Link>
+                )}
+                <Link
+                  href="/settings"
+                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
+                >
                   <DollarSign className="text-pink-400 mb-3" size={24} />
                   <div className="font-semibold">Payout Settings</div>
                   <div className="text-sm text-zinc-400">Bank & crypto details</div>
@@ -213,41 +244,65 @@ export default function MyAccountPage() {
               </div>
             </div>
 
-            {/* Settings Sections */}
             <div className="space-y-8">
               <div>
                 <h2 className="text-xl font-semibold mb-4 px-1">Account</h2>
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
-                  <Link href="/settings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl">
-                    <div className="flex items-center gap-3"><Settings size={20} /> Account Settings</div>
+                  <Link
+                    href="/settings"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Settings size={20} /> Account Settings
+                    </div>
                     <span className="text-zinc-400">→</span>
                   </Link>
-                  <Link href="/settings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition">
-                    <div className="flex items-center gap-3"><Bell size={20} /> Notifications</div>
+                  <Link
+                    href="/settings"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Bell size={20} /> Notifications
+                    </div>
                     <span className="text-zinc-400">→</span>
                   </Link>
-                  <Link href="/settings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl">
-                    <div className="flex items-center gap-3"><Shield size={20} /> Privacy & Safety</div>
+                  <Link
+                    href="/settings"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Shield size={20} /> Privacy & Safety
+                    </div>
                     <span className="text-zinc-400">→</span>
                   </Link>
                 </div>
               </div>
+
               <div>
                 <h2 className="text-xl font-semibold mb-4 px-1">Billing & Support</h2>
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
-                  <Link href="/earnings" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl">
-                    <div className="flex items-center gap-3"><DollarSign size={20} /> Payout History</div>
+                  <Link
+                    href="/earnings"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <DollarSign size={20} /> Payout History
+                    </div>
                     <span className="text-zinc-400">→</span>
                   </Link>
-                  <Link href="/support" className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl">
-                    <div className="flex items-center gap-3"><Heart size={20} /> Contact Support</div>
+                  <Link
+                    href="/support"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Heart size={20} /> Contact Support
+                    </div>
                     <span className="text-zinc-400">→</span>
                   </Link>
                 </div>
               </div>
             </div>
 
-            {/* Logout */}
             <div className="mt-10">
               <button
                 onClick={handleLogout}
