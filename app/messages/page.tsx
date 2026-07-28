@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { MessageCircle, ArrowLeft } from 'lucide-react';
+import { MessageCircle, ArrowLeft, Megaphone } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
 
@@ -13,6 +13,7 @@ export default function MessagesPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isCreator, setIsCreator] = useState(false);
   const userIdRef = useRef<string | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -86,8 +87,18 @@ export default function MessagesPage() {
         router.push('/login');
         return;
       }
+
       setCurrentUserId(user.id);
       userIdRef.current = user.id;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('account_type')
+        .eq('id', user.id)
+        .single();
+
+      setIsCreator(profile?.account_type === 'creator');
+
       await loadConversations(user.id);
     };
 
@@ -158,18 +169,42 @@ export default function MessagesPage() {
     <div className="min-h-screen bg-zinc-950 text-white flex">
       <Sidebar />
       <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-        <div className="lg:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
-          <Link href="/" className="text-zinc-400">
-            <ArrowLeft size={22} />
-          </Link>
-          <h1 className="text-xl font-semibold">Messages</h1>
+        {/* Mobile top bar */}
+        <div className="lg:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-zinc-400">
+              <ArrowLeft size={22} />
+            </Link>
+            <h1 className="text-xl font-semibold">Messages</h1>
+          </div>
+          {isCreator && (
+            <Link
+              href="/messages/mass-message"
+              className="text-pink-400 text-sm font-medium flex items-center gap-1"
+            >
+              <Megaphone size={16} />
+              Mass
+            </Link>
+          )}
         </div>
 
         <div className="max-w-2xl mx-auto px-4 py-6">
-          <h1 className="hidden lg:flex text-3xl font-bold mb-8 items-center gap-3">
-            <MessageCircle className="text-pink-500" size={30} />
-            Messages
-          </h1>
+          {/* Desktop header */}
+          <div className="hidden lg:flex items-center justify-between mb-8">
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              <MessageCircle className="text-pink-500" size={30} />
+              Messages
+            </h1>
+            {isCreator && (
+              <Link
+                href="/messages/mass-message"
+                className="inline-flex items-center gap-2 bg-pink-600 hover:bg-pink-700 px-4 py-2.5 rounded-xl text-sm font-medium transition"
+              >
+                <Megaphone size={16} />
+                Mass Message
+              </Link>
+            )}
+          </div>
 
           {loading ? (
             <div className="space-y-3">
@@ -234,19 +269,30 @@ export default function MessagesPage() {
                         </div>
                       )}
                     </div>
-
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className={`truncate ${hasUnread ? 'font-bold text-white' : 'font-semibold text-zinc-100'}`}>
+                        <p
+                          className={`truncate ${
+                            hasUnread ? 'font-bold text-white' : 'font-semibold text-zinc-100'
+                          }`}
+                        >
                           {name}
                         </p>
                         {convo.lastMessage && (
-                          <span className={`text-xs flex-shrink-0 ${hasUnread ? 'text-pink-400 font-medium' : 'text-zinc-500'}`}>
+                          <span
+                            className={`text-xs flex-shrink-0 ${
+                              hasUnread ? 'text-pink-400 font-medium' : 'text-zinc-500'
+                            }`}
+                          >
                             {formatTime(convo.lastMessage.created_at)}
                           </span>
                         )}
                       </div>
-                      <p className={`text-sm truncate mt-0.5 ${hasUnread ? 'text-zinc-200' : 'text-zinc-500'}`}>
+                      <p
+                        className={`text-sm truncate mt-0.5 ${
+                          hasUnread ? 'text-zinc-200' : 'text-zinc-500'
+                        }`}
+                      >
                         {previewText(convo.lastMessage, isFromMe)}
                       </p>
                     </div>

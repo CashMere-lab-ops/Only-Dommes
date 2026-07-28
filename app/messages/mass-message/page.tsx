@@ -24,13 +24,7 @@ export default function MassMessagePage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
-
+    const continueInit = async (user: any) => {
       const { data: profile } = await supabase
         .from('profiles')
         .select('account_type')
@@ -58,6 +52,23 @@ export default function MassMessagePage() {
       setFollowerCount(fCount || 0);
       setSubscriberCount(sCount || 0);
       setLoading(false);
+    };
+
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      let user = session?.user ?? null;
+
+      if (!user) {
+        const { data: { user: user2 } } = await supabase.auth.getUser();
+        user = user2;
+      }
+
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      await continueInit(user);
     };
 
     init();
