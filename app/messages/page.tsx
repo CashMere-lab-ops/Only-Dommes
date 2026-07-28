@@ -27,13 +27,11 @@ export default function ChatPage() {
   const [preview, setPreview] = useState<string | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
 
-  // Lock photo
   const [lockPhoto, setLockPhoto] = useState(false);
   const [lockPrice, setLockPrice] = useState('5');
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [myUnlocks, setMyUnlocks] = useState<Set<string>>(new Set());
 
-  // Tip modal
   const [showTip, setShowTip] = useState(false);
   const [tipAmount, setTipAmount] = useState<number | null>(10);
   const [customTip, setCustomTip] = useState('');
@@ -98,7 +96,6 @@ export default function ChatPage() {
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
 
-      // Load which locked messages this user has unlocked
       const { data: unlocks } = await supabase
         .from('message_unlocks')
         .select('message_id')
@@ -273,20 +270,16 @@ export default function ChatPage() {
 
   const unlockMessage = async (msg: any) => {
     if (!userId || unlockingId) return;
-
     setUnlockingId(msg.id);
 
     try {
       const amount = msg.unlock_price || 0;
-
       const { error } = await supabase.from('message_unlocks').insert({
         message_id: msg.id,
         user_id: userId,
         amount,
       });
-
       if (error) throw error;
-
       setMyUnlocks((prev) => new Set(prev).add(msg.id));
     } catch (err: any) {
       console.error(err);
@@ -298,19 +291,17 @@ export default function ChatPage() {
 
   const canSeeMedia = (msg: any) => {
     if (!msg.is_locked) return true;
-    if (msg.sender_id === userId) return true; // sender always sees
+    if (msg.sender_id === userId) return true;
     return myUnlocks.has(msg.id);
   };
 
   const sendTip = async () => {
     if (!userId || !otherUserId || tipping) return;
-
     const amount = customTip ? parseFloat(customTip) : tipAmount;
     if (!amount || amount <= 0) {
       alert('Enter a valid tip amount');
       return;
     }
-
     setTipping(true);
 
     try {
@@ -319,9 +310,8 @@ export default function ChatPage() {
         to_user_id: otherUserId,
         amount,
         conversation_id: conversationId,
-        message: `Tip in chat`,
+        message: 'Tip in chat',
       });
-
       if (tipError) throw tipError;
 
       const { data, error: msgError } = await supabase
@@ -334,7 +324,6 @@ export default function ChatPage() {
         })
         .select()
         .single();
-
       if (msgError) throw msgError;
 
       if (data) {
@@ -364,6 +353,59 @@ export default function ChatPage() {
   const time = (d: string) =>
     new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  const PhotoPreviewBox = () => (
+    <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl">
+      <div className="flex items-start gap-3">
+        <div className="relative flex-shrink-0">
+          <img
+            src={preview!}
+            alt=""
+            className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+          />
+          <button
+            type="button"
+            onClick={clearImage}
+            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-2">
+          <p className="text-xs text-zinc-400">Photo ready to send</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setLockPhoto(!lockPhoto)}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border font-medium transition ${
+                lockPhoto
+                  ? 'bg-pink-600 border-pink-500 text-white'
+                  : 'bg-zinc-800 border-zinc-600 text-zinc-300 hover:border-pink-500 hover:text-pink-400'
+              }`}
+            >
+              <Lock size={12} />
+              {lockPhoto ? 'Locked' : 'Lock photo'}
+            </button>
+
+            {lockPhoto && (
+              <div className="flex items-center gap-1 bg-zinc-800 border border-zinc-600 rounded-full px-2 py-1">
+                <span className="text-xs text-zinc-400">£</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  value={lockPrice}
+                  onChange={(e) => setLockPrice(e.target.value)}
+                  className="w-14 bg-transparent text-sm outline-none text-white"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
@@ -380,6 +422,8 @@ export default function ChatPage() {
       <div className="hidden lg:block">
         <Sidebar />
       </div>
+
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
 
       {viewer && (
         <div
@@ -587,50 +631,9 @@ export default function ChatPage() {
           className="border-t border-zinc-800 px-3 py-2"
           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
         >
-          {preview && (
-            <div className="mb-2 space-y-2">
-              <div className="relative inline-block">
-                <img src={preview} alt="" className="h-20 w-20 object-cover rounded-xl border border-zinc-700" />
-                <button
-                  type="button"
-                  onClick={clearImage}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setLockPhoto(!lockPhoto)}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition ${
-                    lockPhoto
-                      ? 'bg-pink-600/20 border-pink-500 text-pink-400'
-                      : 'bg-zinc-900 border-zinc-700 text-zinc-400'
-                  }`}
-                >
-                  <Lock size={12} />
-                  {lockPhoto ? 'Locked' : 'Lock photo'}
-                </button>
-                {lockPhoto && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-zinc-400">£</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="0.5"
-                      value={lockPrice}
-                      onChange={(e) => setLockPrice(e.target.value)}
-                      className="w-16 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-sm outline-none focus:border-pink-500"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          {preview && <PhotoPreviewBox />}
 
           <div className="flex items-center gap-2">
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
@@ -782,47 +785,7 @@ export default function ChatPage() {
         </div>
 
         <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
-          {preview && (
-            <div className="mb-3 space-y-2">
-              <div className="relative inline-block">
-                <img src={preview} alt="" className="h-20 w-20 object-cover rounded-xl border border-zinc-700" />
-                <button
-                  type="button"
-                  onClick={clearImage}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setLockPhoto(!lockPhoto)}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition ${
-                    lockPhoto
-                      ? 'bg-pink-600/20 border-pink-500 text-pink-400'
-                      : 'bg-zinc-900 border-zinc-700 text-zinc-400'
-                  }`}
-                >
-                  <Lock size={12} />
-                  {lockPhoto ? 'Locked' : 'Lock photo'}
-                </button>
-                {lockPhoto && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-zinc-400">£</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="0.5"
-                      value={lockPrice}
-                      onChange={(e) => setLockPrice(e.target.value)}
-                      className="w-16 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-sm outline-none focus:border-pink-500"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          {preview && <PhotoPreviewBox />}
 
           <div className="flex items-center gap-2">
             <button
