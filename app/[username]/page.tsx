@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
+import { createNotification } from '../../lib/notifications';
 
 export default function PublicProfilePage() {
   const params = useParams();
@@ -112,24 +113,6 @@ export default function PublicProfilePage() {
   const actorName = () =>
     myProfile?.display_name || myProfile?.username || 'Someone';
 
-  const createNotification = async (
-    userId: string,
-    type: string,
-    title: string,
-    body: string | null,
-    link: string
-  ) => {
-    if (!currentUser || userId === currentUser.id) return;
-    await supabase.from('notifications').insert({
-      user_id: userId,
-      actor_id: currentUser.id,
-      type,
-      title,
-      body,
-      link,
-    });
-  };
-
   const handleFollow = async () => {
     if (!currentUser) {
       router.push('/login');
@@ -155,13 +138,14 @@ export default function PublicProfilePage() {
         setIsFollowing(true);
         setFollowersCount((prev) => prev + 1);
 
-        await createNotification(
-          profile.id,
-          'follow',
-          `${actorName()} started following you`,
-          null,
-          `/${myProfile?.username || ''}`
-        );
+        await createNotification({
+          userId: profile.id,
+          actorId: currentUser.id,
+          type: 'follow',
+          title: `${actorName()} started following you`,
+          body: null,
+          link: `/${myProfile?.username || ''}`,
+        });
       }
     } catch (err) {
       console.error('Follow error:', err);
@@ -204,13 +188,14 @@ export default function PublicProfilePage() {
         setIsSubscribed(true);
         setSubscribersCount((prev) => prev + 1);
 
-        await createNotification(
-          profile.id,
-          'subscribe',
-          `${actorName()} subscribed to you`,
-          `£${Number(price).toFixed(2)}/mo`,
-          `/${myProfile?.username || ''}`
-        );
+        await createNotification({
+          userId: profile.id,
+          actorId: currentUser.id,
+          type: 'subscribe',
+          title: `${actorName()} subscribed to you`,
+          body: `£${Number(price).toFixed(2)}/mo`,
+          link: `/${myProfile?.username || ''}`,
+        });
       }
     } catch (err: any) {
       console.error('Subscribe error:', err);
