@@ -16,10 +16,12 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [profile, setProfile] = useState<any>(cachedProfile);
   const [profileLoaded, setProfileLoaded] = useState(!!cachedProfile);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0); // messages
+  const [notifCount, setNotifCount] = useState(0); // notifications
 
   useEffect(() => {
     if (cachedProfile) {
@@ -45,7 +47,6 @@ export default function Sidebar() {
           setProfile(data);
         }
       } else if (!cachedProfile.account_type) {
-        // refresh cache if account_type missing
         const { data } = await supabase
           .from('profiles')
           .select('username, display_name, avatar_url, account_type')
@@ -59,19 +60,27 @@ export default function Sidebar() {
 
       setProfileLoaded(true);
 
-      const { count } = await supabase
+      // Message unread
+      const { count: msgCount } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
         .eq('is_read', false)
         .neq('sender_id', user.id);
+      setUnreadCount(msgCount || 0);
 
-      setUnreadCount(count || 0);
+      // Notification unread
+      const { count: nCount } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+      setNotifCount(nCount || 0);
     };
 
     getUser();
 
     const channel = supabase
-      .channel('sidebar-unread')
+      .channel('sidebar-badges')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'messages' },
@@ -84,6 +93,20 @@ export default function Sidebar() {
             .eq('is_read', false)
             .neq('sender_id', user.id);
           setUnreadCount(count || 0);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
+        async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+          const { count } = await supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('is_read', false);
+          setNotifCount(count || 0);
         }
       )
       .subscribe();
@@ -109,6 +132,22 @@ export default function Sidebar() {
     }
   }, [pathname]);
 
+  useEffect(() => {
+    if (pathname?.startsWith('/notifications')) {
+      const t = setTimeout(async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { count } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('is_read', false);
+        setNotifCount(count || 0);
+      }, 500);
+      return () => clearTimeout(t);
+    }
+  }, [pathname]);
+
   const handleLogout = async () => {
     cachedProfile = null;
     await supabase.auth.signOut();
@@ -126,7 +165,6 @@ export default function Sidebar() {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
 
-  // Subscriptions only for subs (not creators)
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -208,6 +246,7 @@ export default function Sidebar() {
             <div className="space-y-1">
               {desktopMoreItems.map((item) => {
                 const Icon = item.icon;
+                const isNotif = item.href === '/notifications';
                 return (
                   <Link
                     key={item.href}
@@ -220,6 +259,7 @@ export default function Sidebar() {
                   >
                     <Icon size={20} />
                     {item.label}
+                    {isNotif && <UnreadBadge count={notifCount} />}
                   </Link>
                 );
               })}
@@ -258,7 +298,6 @@ export default function Sidebar() {
           ) : (
             <div className="h-[52px]" />
           )}
-
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 w-full px-4 py-3 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-xl transition"
@@ -280,7 +319,6 @@ export default function Sidebar() {
             <Home size={22} />
             <span className="text-[10px] mt-1">Home</span>
           </Link>
-
           <Link
             href="/live"
             className={`flex flex-col items-center justify-center flex-1 ${
@@ -290,7 +328,6 @@ export default function Sidebar() {
             <Radio size={22} />
             <span className="text-[10px] mt-1">Live</span>
           </Link>
-
           <Link
             href="/dashboard"
             className={`flex flex-col items-center justify-center flex-1 ${
@@ -300,7 +337,6 @@ export default function Sidebar() {
             <LayoutDashboard size={22} />
             <span className="text-[10px] mt-1">Dashboard</span>
           </Link>
-
           <Link
             href="/messages"
             className={`relative flex flex-col items-center justify-center flex-1 ${
@@ -317,12 +353,18 @@ export default function Sidebar() {
             </div>
             <span className="text-[10px] mt-1">Messages</span>
           </Link>
-
           <button
             onClick={() => setShowMoreMenu(true)}
-            className="flex flex-col items-center justify-center flex-1 text-zinc-400"
+            className="relative flex flex-col items-center justify-center flex-1 text-zinc-400"
           >
-            <Menu size={22} />
+            <div className="relative">
+              <Menu size={22} />
+              {notifCount > 0 && (
+                <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-pink-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {notifCount > 9 ? '9+' : notifCount}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] mt-1">More</span>
           </button>
         </div>
@@ -345,14 +387,22 @@ export default function Sidebar() {
             <div className="grid grid-cols-4 gap-3">
               {mobileMoreItems.map((item) => {
                 const Icon = item.icon;
+                const isNotif = item.href === '/notifications';
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     onClick={() => setShowMoreMenu(false)}
-                    className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
+                    className="relative flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
                   >
-                    <Icon size={26} className="text-white mb-2" />
+                    <div className="relative">
+                      <Icon size={26} className="text-white mb-2" />
+                      {isNotif && notifCount > 0 && (
+                        <span className="absolute -top-1 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-pink-500 text-white text-[9px] font-bold flex items-center justify-center">
+                          {notifCount > 9 ? '9+' : notifCount}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-xs text-white text-center font-medium leading-tight">
                       {item.label}
                     </span>
