@@ -20,6 +20,7 @@ export default function PublicProfilePage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [myProfile, setMyProfile] = useState<any>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
@@ -33,6 +34,15 @@ export default function PublicProfilePage() {
 
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
+
+      if (user) {
+        const { data: me } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url')
+          .eq('id', user.id)
+          .single();
+        setMyProfile(me);
+      }
 
       const { data: profileData, error } = await supabase
         .from('profiles')
@@ -99,6 +109,27 @@ export default function PublicProfilePage() {
     if (username) loadProfile();
   }, [username]);
 
+  const actorName = () =>
+    myProfile?.display_name || myProfile?.username || 'Someone';
+
+  const createNotification = async (
+    userId: string,
+    type: string,
+    title: string,
+    body: string | null,
+    link: string
+  ) => {
+    if (!currentUser || userId === currentUser.id) return;
+    await supabase.from('notifications').insert({
+      user_id: userId,
+      actor_id: currentUser.id,
+      type,
+      title,
+      body,
+      link,
+    });
+  };
+
   const handleFollow = async () => {
     if (!currentUser) {
       router.push('/login');
@@ -123,6 +154,14 @@ export default function PublicProfilePage() {
         });
         setIsFollowing(true);
         setFollowersCount((prev) => prev + 1);
+
+        await createNotification(
+          profile.id,
+          'follow',
+          `${actorName()} started following you`,
+          null,
+          `/${myProfile?.username || ''}`
+        );
       }
     } catch (err) {
       console.error('Follow error:', err);
@@ -164,6 +203,14 @@ export default function PublicProfilePage() {
         if (error) throw error;
         setIsSubscribed(true);
         setSubscribersCount((prev) => prev + 1);
+
+        await createNotification(
+          profile.id,
+          'subscribe',
+          `${actorName()} subscribed to you`,
+          `£${Number(price).toFixed(2)}/mo`,
+          `/${myProfile?.username || ''}`
+        );
       }
     } catch (err: any) {
       console.error('Subscribe error:', err);
@@ -176,12 +223,10 @@ export default function PublicProfilePage() {
   const canMessage = () => {
     if (!profile) return false;
     if (currentUser?.id === profile.id) return true;
-
     const privacy = profile.message_privacy || 'everyone';
-
     if (privacy === 'nobody') return false;
     if (privacy === 'subscribers') return isSubscribed;
-    return true; // everyone
+    return true;
   };
 
   const handleMessage = async () => {
@@ -192,12 +237,10 @@ export default function PublicProfilePage() {
     if (!profile) return;
 
     const privacy = profile.message_privacy || 'everyone';
-
     if (privacy === 'nobody') {
       alert('This user is not accepting messages.');
       return;
     }
-
     if (privacy === 'subscribers' && !isSubscribed) {
       alert('Only subscribers can message this user.');
       return;
