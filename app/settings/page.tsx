@@ -4,11 +4,77 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, User, Lock, Bell, Shield, Camera, Save, Eye, EyeOff, Link2, Unlink, Heart
+  ArrowLeft, User, Lock, Bell, Shield, Camera, Save, Eye, EyeOff, Link2, Unlink, Heart, Volume2
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
+
+const DEFAULT_PREFS = {
+  sounds_enabled: true,
+  message: { enabled: true, sound: 'default' },
+  tip: { enabled: true, sound: 'money' },
+  follow: { enabled: true, sound: 'soft' },
+  subscribe: { enabled: true, sound: 'money' },
+  like: { enabled: true, sound: 'soft' },
+  comment: { enabled: true, sound: 'soft' },
+  unlock: { enabled: true, sound: 'money' },
+};
+
+const SOUND_OPTIONS = [
+  { value: 'off', label: 'Off' },
+  { value: 'default', label: 'Default' },
+  { value: 'soft', label: 'Soft' },
+  { value: 'alert', label: 'Alert' },
+  { value: 'money', label: 'Money' },
+];
+
+const NOTIF_TYPES = [
+  { key: 'message', label: 'Messages', desc: 'New direct messages' },
+  { key: 'tip', label: 'Tips', desc: 'When someone tips you' },
+  { key: 'follow', label: 'Follows', desc: 'New followers' },
+  { key: 'subscribe', label: 'Subscriptions', desc: 'New subscribers' },
+  { key: 'like', label: 'Likes', desc: 'Someone liked your post' },
+  { key: 'comment', label: 'Comments', desc: 'Comments on your posts' },
+  { key: 'unlock', label: 'Unlocks', desc: 'Someone unlocked your media' },
+];
+
+function playTone(sound: string) {
+  if (sound === 'off' || typeof window === 'undefined') return;
+
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const now = ctx.currentTime;
+
+    const beep = (freq: number, start: number, duration: number, volume = 0.15) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(volume, now + start);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + start + duration);
+      osc.start(now + start);
+      osc.stop(now + start + duration);
+    };
+
+    if (sound === 'soft') {
+      beep(520, 0, 0.18, 0.08);
+    } else if (sound === 'alert') {
+      beep(880, 0, 0.12, 0.18);
+      beep(1100, 0.14, 0.12, 0.16);
+    } else if (sound === 'money') {
+      beep(660, 0, 0.1, 0.14);
+      beep(880, 0.12, 0.15, 0.16);
+    } else {
+      // default
+      beep(740, 0, 0.15, 0.14);
+    }
+  } catch (e) {
+    console.error('Sound error', e);
+  }
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -34,13 +100,9 @@ export default function SettingsPage() {
 
   const [subscriptionsEnabled, setSubscriptionsEnabled] = useState(false);
   const [subscriptionPrice, setSubscriptionPrice] = useState('9.99');
-
-  // Message privacy: everyone | subscribers | nobody
   const [messagePrivacy, setMessagePrivacy] = useState('everyone');
 
-  const [emailTips, setEmailTips] = useState(true);
-  const [emailMessages, setEmailMessages] = useState(true);
-  const [emailLives, setEmailLives] = useState(true);
+  const [notifPrefs, setNotifPrefs] = useState<any>(DEFAULT_PREFS);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -71,6 +133,10 @@ export default function SettingsPage() {
             : '9.99'
         );
         setMessagePrivacy(data.message_privacy || 'everyone');
+
+        if (data.notification_prefs) {
+          setNotifPrefs({ ...DEFAULT_PREFS, ...data.notification_prefs });
+        }
       }
 
       setLoading(false);
@@ -78,6 +144,41 @@ export default function SettingsPage() {
 
     loadProfile();
   }, []);
+
+  const updatePref = (key: string, field: 'enabled' | 'sound', value: any) => {
+    setNotifPrefs((prev: any) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSaveNotifPrefs = async () => {
+    setSaving(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ notification_prefs: notifPrefs })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile({ ...profile, notification_prefs: notifPrefs });
+      setMessage('Notification settings saved');
+    } catch (err: any) {
+      setError(err.message || 'Failed to save notification settings');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -364,7 +465,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* PROFILE — same as before, shortened in mind: keep full structure */}
+            {/* PROFILE */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 mb-6">
                 <User size={20} className="text-pink-400" />
@@ -614,7 +715,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* PRIVACY — wired up */}
+            {/* PRIVACY */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 mb-6">
                 <Shield size={20} className="text-pink-400" />
@@ -647,44 +748,103 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* NOTIFICATIONS */}
+            {/* NOTIFICATION PREFERENCES */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-6">
               <div className="flex items-center gap-2 mb-6">
                 <Bell size={20} className="text-pink-400" />
-                <h2 className="text-lg font-semibold">Notifications</h2>
+                <h2 className="text-lg font-semibold">Notification Preferences</h2>
               </div>
+
+              {/* Master sounds */}
+              <div className="flex items-center justify-between mb-6 pb-5 border-b border-zinc-800">
+                <div>
+                  <p className="font-medium">Notification sounds</p>
+                  <p className="text-sm text-zinc-400">Play a sound when a notification arrives</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={!!notifPrefs.sounds_enabled}
+                    onChange={() =>
+                      setNotifPrefs((prev: any) => ({
+                        ...prev,
+                        sounds_enabled: !prev.sounds_enabled,
+                      }))
+                    }
+                  />
+                  <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
+                </label>
+              </div>
+
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Tips & Purchases</p>
-                    <p className="text-sm text-zinc-400">Get notified when you receive tips</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={emailTips} onChange={() => setEmailTips(!emailTips)} />
-                    <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
-                  </label>
-                </div>
-                <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
-                  <div>
-                    <p className="font-medium">New Messages</p>
-                    <p className="text-sm text-zinc-400">Email me when I receive a message</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={emailMessages} onChange={() => setEmailMessages(!emailMessages)} />
-                    <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
-                  </label>
-                </div>
-                <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
-                  <div>
-                    <p className="font-medium">Live Stream Alerts</p>
-                    <p className="text-sm text-zinc-400">Notify me when creators I follow go live</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={emailLives} onChange={() => setEmailLives(!emailLives)} />
-                    <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
-                  </label>
-                </div>
+                {NOTIF_TYPES.map((item) => {
+                  const pref = notifPrefs[item.key] || { enabled: true, sound: 'default' };
+                  return (
+                    <div
+                      key={item.key}
+                      className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 border-b border-zinc-800 last:border-0"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium">{item.label}</p>
+                        <p className="text-sm text-zinc-400">{item.desc}</p>
+                      </div>
+
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        {/* Enable toggle */}
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={!!pref.enabled}
+                            onChange={() =>
+                              updatePref(item.key, 'enabled', !pref.enabled)
+                            }
+                          />
+                          <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
+                        </label>
+
+                        {/* Sound picker */}
+                        <select
+                          value={pref.sound || 'default'}
+                          onChange={(e) => {
+                            updatePref(item.key, 'sound', e.target.value);
+                            if (e.target.value !== 'off') playTone(e.target.value);
+                          }}
+                          disabled={!pref.enabled || !notifPrefs.sounds_enabled}
+                          className="bg-zinc-800 border border-zinc-700 rounded-xl py-2 px-3 text-sm outline-none focus:border-pink-500 disabled:opacity-40 min-w-[110px]"
+                        >
+                          {SOUND_OPTIONS.map((s) => (
+                            <option key={s.value} value={s.value}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Preview */}
+                        <button
+                          type="button"
+                          onClick={() => playTone(pref.sound || 'default')}
+                          disabled={!pref.enabled || !notifPrefs.sounds_enabled || pref.sound === 'off'}
+                          className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition disabled:opacity-30"
+                          title="Preview sound"
+                        >
+                          <Volume2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+
+              <button
+                onClick={handleSaveNotifPrefs}
+                disabled={saving}
+                className="mt-6 flex items-center gap-2 bg-pink-600 hover:bg-pink-700 px-5 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50"
+              >
+                <Save size={16} />
+                {saving ? 'Saving...' : 'Save Notification Settings'}
+              </button>
             </div>
           </div>
         </main>
