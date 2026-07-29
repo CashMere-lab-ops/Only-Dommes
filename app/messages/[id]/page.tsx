@@ -20,18 +20,17 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [myProfile, setMyProfile] = useState<any>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
-
   const [lockPhoto, setLockPhoto] = useState(false);
   const [lockPrice, setLockPrice] = useState('5');
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [myUnlocks, setMyUnlocks] = useState<Set<string>>(new Set());
-
   const [showTip, setShowTip] = useState(false);
   const [tipAmount, setTipAmount] = useState<number | null>(10);
   const [customTip, setCustomTip] = useState('');
@@ -43,6 +42,31 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<any>(null);
+
+  const actorName = () =>
+    myProfile?.display_name || myProfile?.username || 'Someone';
+
+  const createNotification = async (
+    toUserId: string,
+    type: string,
+    title: string,
+    body: string | null,
+    link: string
+  ) => {
+    if (!userId || !toUserId || toUserId === userId) return;
+    try {
+      await supabase.from('notifications').insert({
+        user_id: toUserId,
+        actor_id: userId,
+        type,
+        title,
+        body,
+        link,
+      });
+    } catch (err) {
+      console.error('Notification error:', err);
+    }
+  };
 
   const scrollBottom = () => {
     if (mobileRef.current) mobileRef.current.scrollTop = mobileRef.current.scrollHeight;
@@ -59,7 +83,15 @@ export default function ChatPage() {
         return;
       }
       if (!alive) return;
+
       setUserId(user.id);
+
+      const { data: me } = await supabase
+        .from('profiles')
+        .select('username, display_name, avatar_url')
+        .eq('id', user.id)
+        .single();
+      setMyProfile(me);
 
       const { data: convo } = await supabase
         .from('conversations')
@@ -102,6 +134,7 @@ export default function ChatPage() {
         .eq('user_id', user.id);
 
       if (!alive) return;
+
       setOtherUser(profile);
       setMessages(msgs || []);
       setMyUnlocks(new Set((unlocks || []).map((u) => u.message_id)));
@@ -126,7 +159,6 @@ export default function ChatPage() {
     if (!conversationId || !userId) return;
 
     const channel = supabase.channel(`room-${conversationId}`);
-
     channel
       .on(
         'postgres_changes',
@@ -218,13 +250,10 @@ export default function ChatPage() {
       if (imageFile) {
         const ext = imageFile.name.split('.').pop() || 'jpg';
         const path = `${userId}/${Date.now()}.${ext}`;
-
         const { error: upError } = await supabase.storage
           .from('chat-media')
           .upload(path, imageFile, { contentType: imageFile.type });
-
         if (upError) throw upError;
-
         const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
         mediaUrl = data.publicUrl;
       }
@@ -257,6 +286,23 @@ export default function ChatPage() {
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
 
+      // Notify the other person
+      if (otherUserId) {
+        const previewText = messageText
+          ? messageText.slice(0, 80)
+          : mediaUrl
+          ? 'Sent a photo'
+          : 'Sent a message';
+
+        await createNotification(
+          otherUserId,
+          'message',
+          `${actorName()} sent you a message`,
+          previewText,
+          `/messages/${conversationId}`
+        );
+      }
+
       setTimeout(scrollBottom, 80);
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (err: any) {
@@ -271,7 +317,6 @@ export default function ChatPage() {
   const unlockMessage = async (msg: any) => {
     if (!userId || unlockingId) return;
     setUnlockingId(msg.id);
-
     try {
       const amount = msg.unlock_price || 0;
       const { error } = await supabase.from('message_unlocks').insert({
@@ -302,8 +347,8 @@ export default function ChatPage() {
       alert('Enter a valid tip amount');
       return;
     }
-    setTipping(true);
 
+    setTipping(true);
     try {
       const { error: tipError } = await supabase.from('tips').insert({
         from_user_id: userId,
@@ -324,6 +369,7 @@ export default function ChatPage() {
         })
         .select()
         .single();
+
       if (msgError) throw msgError;
 
       if (data) {
@@ -337,6 +383,14 @@ export default function ChatPage() {
         .from('conversations')
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
+
+      await createNotification(
+        otherUserId,
+        'tip',
+        `${actorName()} tipped you £${amount.toFixed(2)}`,
+        null,
+        `/messages/${conversationId}`
+      );
 
       setShowTip(false);
       setCustomTip('');
@@ -370,7 +424,6 @@ export default function ChatPage() {
             <X size={14} />
           </button>
         </div>
-
         <div className="flex-1 min-w-0 space-y-2">
           <p className="text-xs text-zinc-400">Photo ready to send</p>
           <div className="flex items-center gap-2 flex-wrap">
@@ -386,7 +439,6 @@ export default function ChatPage() {
               <Lock size={12} />
               {lockPhoto ? 'Locked' : 'Lock photo'}
             </button>
-
             {lockPhoto && (
               <div className="flex items-center gap-1 bg-zinc-800 border border-zinc-600 rounded-full px-2 py-1">
                 <span className="text-xs text-zinc-400">£</span>
@@ -543,12 +595,10 @@ export default function ChatPage() {
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
-
             {messages.map((msg) => {
               const mine = msg.sender_id === userId;
               const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
               const locked = msg.is_locked && !canSeeMedia(msg);
-
               return (
                 <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
@@ -599,7 +649,6 @@ export default function ChatPage() {
                         </button>
                       )
                     )}
-
                     <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                       {!!msg.content && (
                         <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
@@ -614,7 +663,6 @@ export default function ChatPage() {
                 </div>
               );
             })}
-
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
@@ -632,7 +680,6 @@ export default function ChatPage() {
           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
         >
           {preview && <PhotoPreviewBox />}
-
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -700,12 +747,10 @@ export default function ChatPage() {
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
-
             {messages.map((msg) => {
               const mine = msg.sender_id === userId;
               const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
               const locked = msg.is_locked && !canSeeMedia(msg);
-
               return (
                 <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
@@ -756,7 +801,6 @@ export default function ChatPage() {
                         </button>
                       )
                     )}
-
                     <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                       {!!msg.content && (
                         <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
@@ -771,7 +815,6 @@ export default function ChatPage() {
                 </div>
               );
             })}
-
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
@@ -786,7 +829,6 @@ export default function ChatPage() {
 
         <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
           {preview && <PhotoPreviewBox />}
-
           <div className="flex items-center gap-2">
             <button
               type="button"
