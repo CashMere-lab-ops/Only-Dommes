@@ -33,44 +33,55 @@ export default function DiscoverPage() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Tabs & Search
   const [activeTab, setActiveTab] = useState<'foryou' | 'following'>('foryou');
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Comments
   const [openComments, setOpenComments] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, any[]>>({});
   const [newComment, setNewComment] = useState<Record<string, string>>({});
   const [postingComment, setPostingComment] = useState<string | null>(null);
-
-  // Tip
   const [tipPost, setTipPost] = useState<any>(null);
   const [selectedAmount, setSelectedAmount] = useState<number | null>(10);
   const [customAmount, setCustomAmount] = useState('');
   const [tipMessage, setTipMessage] = useState('');
   const [sendingTip, setSendingTip] = useState(false);
   const [tipSuccess, setTipSuccess] = useState(false);
-
-  // Post menu
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [hiddenPosts, setHiddenPosts] = useState<Set<string>>(new Set());
   const menuRef = useRef<HTMLDivElement | null>(null);
-
-  // Report modal
   const [reportPostId, setReportPostId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [reporting, setReporting] = useState(false);
-
-  // Double-tap like
   const lastTap = useRef<Record<string, number>>({});
   const [likedAnimation, setLikedAnimation] = useState<string | null>(null);
-
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
-  // Close menu when clicking outside
+  const actorName = () =>
+    profile?.display_name || profile?.username || 'Someone';
+
+  const createNotification = async (
+    userId: string,
+    type: string,
+    title: string,
+    body: string | null,
+    link: string
+  ) => {
+    if (!user || !userId || userId === user.id) return;
+    try {
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        actor_id: user.id,
+        type,
+        title,
+        body,
+        link,
+      });
+    } catch (err) {
+      console.error('Notification error:', err);
+    }
+  };
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -101,7 +112,6 @@ export default function DiscoverPage() {
       .order('created_at', { ascending: false })
       .range(from, to);
 
-    // Following tab filter
     if (tab === 'following' && followingIds.size > 0) {
       query = query.in('creator_id', Array.from(followingIds));
     } else if (tab === 'following' && followingIds.size === 0) {
@@ -117,7 +127,6 @@ export default function DiscoverPage() {
     if (!error && postsData) {
       if (reset) setPosts(postsData);
       else setPosts((prev) => [...prev, ...postsData]);
-
       if (postsData.length < POSTS_PER_PAGE) setHasMore(false);
       else setHasMore(true);
     }
@@ -140,7 +149,6 @@ export default function DiscoverPage() {
           .single();
         setProfile(profileData);
 
-        // Load likes
         const { data: likesData } = await supabase
           .from('post_likes')
           .select('post_id')
@@ -149,7 +157,6 @@ export default function DiscoverPage() {
           setLikedPosts(new Set(likesData.map((like) => like.post_id)));
         }
 
-        // Load following
         const { data: followsData } = await supabase
           .from('follows')
           .select('following_id')
@@ -165,14 +172,12 @@ export default function DiscoverPage() {
     loadInitial();
   }, []);
 
-  // Reload when tab changes
   useEffect(() => {
     setPage(0);
     setHasMore(true);
     loadPosts(0, true, activeTab);
   }, [activeTab]);
 
-  // Infinite scroll
   useEffect(() => {
     if (loading) return;
 
@@ -196,7 +201,6 @@ export default function DiscoverPage() {
     };
   }, [loading, hasMore, loadingMore, page, loadPosts]);
 
-  // Pull to refresh (simple version)
   const handleRefresh = async () => {
     setRefreshing(true);
     setPage(0);
@@ -206,9 +210,10 @@ export default function DiscoverPage() {
 
   const handleLike = async (postId: string) => {
     if (!user) return;
-    const isLiked = likedPosts.has(postId);
 
-    // Animation
+    const isLiked = likedPosts.has(postId);
+    const post = posts.find((p) => p.id === postId);
+
     if (!isLiked) {
       setLikedAnimation(postId);
       setTimeout(() => setLikedAnimation(null), 600);
@@ -222,16 +227,16 @@ export default function DiscoverPage() {
     });
 
     setPosts((prev) =>
-      prev.map((post) => {
-        if (post.id === postId) {
+      prev.map((p) => {
+        if (p.id === postId) {
           return {
-            ...post,
+            ...p,
             likes_count: isLiked
-              ? Math.max(0, (post.likes_count || 0) - 1)
-              : (post.likes_count || 0) + 1,
+              ? Math.max(0, (p.likes_count || 0) - 1)
+              : (p.likes_count || 0) + 1,
           };
         }
-        return post;
+        return p;
       })
     );
 
@@ -240,6 +245,17 @@ export default function DiscoverPage() {
         await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id);
       } else {
         await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
+
+        // Notify post owner (not yourself)
+        if (post?.creator_id && post.creator_id !== user.id) {
+          await createNotification(
+            post.creator_id,
+            'like',
+            `${actorName()} liked your post`,
+            post.content ? post.content.slice(0, 80) : null,
+            '/discover'
+          );
+        }
       }
 
       const { count } = await supabase
@@ -253,17 +269,13 @@ export default function DiscoverPage() {
     }
   };
 
-  // Double-tap to like
   const handleDoubleTap = (postId: string) => {
     const now = Date.now();
     const last = lastTap.current[postId] || 0;
-
     if (now - last < 300) {
-      // Double tap detected
       if (!likedPosts.has(postId)) {
         handleLike(postId);
       } else {
-        // Already liked – still show animation
         setLikedAnimation(postId);
         setTimeout(() => setLikedAnimation(null), 600);
       }
@@ -276,9 +288,7 @@ export default function DiscoverPage() {
       setOpenComments(null);
       return;
     }
-
     setOpenComments(postId);
-
     if (!comments[postId]) {
       const { data } = await supabase
         .from('post_comments')
@@ -292,14 +302,16 @@ export default function DiscoverPage() {
         `)
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
-
       setComments((prev) => ({ ...prev, [postId]: data || [] }));
     }
   };
 
   const handleAddComment = async (postId: string) => {
     if (!user || !newComment[postId]?.trim()) return;
+
     setPostingComment(postId);
+    const post = posts.find((p) => p.id === postId);
+    const commentText = newComment[postId].trim();
 
     try {
       const { data, error } = await supabase
@@ -307,7 +319,7 @@ export default function DiscoverPage() {
         .insert({
           post_id: postId,
           user_id: user.id,
-          content: newComment[postId].trim(),
+          content: commentText,
         })
         .select(`
           *,
@@ -327,11 +339,11 @@ export default function DiscoverPage() {
       }));
 
       setPosts((prev) =>
-        prev.map((post) => {
-          if (post.id === postId) {
-            return { ...post, comments_count: (post.comments_count || 0) + 1 };
+        prev.map((p) => {
+          if (p.id === postId) {
+            return { ...p, comments_count: (p.comments_count || 0) + 1 };
           }
-          return post;
+          return p;
         })
       );
 
@@ -341,6 +353,18 @@ export default function DiscoverPage() {
         .eq('post_id', postId);
 
       await supabase.from('posts').update({ comments_count: count || 0 }).eq('id', postId);
+
+      // Notify post owner
+      if (post?.creator_id && post.creator_id !== user.id) {
+        await createNotification(
+          post.creator_id,
+          'comment',
+          `${actorName()} commented on your post`,
+          commentText.slice(0, 100),
+          '/discover'
+        );
+      }
+
       setNewComment((prev) => ({ ...prev, [postId]: '' }));
     } catch (err) {
       console.error('Comment error:', err);
@@ -349,14 +373,11 @@ export default function DiscoverPage() {
     }
   };
 
-  // ===== POST MENU ACTIONS =====
   const handleDeletePost = async (postId: string) => {
     if (!confirm('Are you sure you want to delete this post?')) return;
-
     try {
       const { error } = await supabase.from('posts').delete().eq('id', postId);
       if (error) throw error;
-
       setPosts((prev) => prev.filter((p) => p.id !== postId));
       setOpenMenu(null);
     } catch (err) {
@@ -386,8 +407,6 @@ export default function DiscoverPage() {
   const submitReport = async () => {
     if (!reportReason) return;
     setReporting(true);
-
-    // For now just show success (we can save reports to DB later)
     setTimeout(() => {
       setReporting(false);
       setReportPostId(null);
@@ -402,20 +421,21 @@ export default function DiscoverPage() {
   };
 
   const handleShare = (post: any) => {
-  const url = `${window.location.origin}/discover?post=${post.id}`;
-  if (navigator.share) {
-    navigator.share({
-      title: `Post by ${post.profiles?.display_name || 'Creator'}`,
-      text: post.content || 'Check out this post on World Of Dommes',
-      url: url,
-    }).catch(() => {});
-  } else {
-    navigator.clipboard.writeText(url);
-    alert('Link copied to clipboard');
-  }
-};
+    const url = `${window.location.origin}/discover?post=${post.id}`;
+    if (navigator.share) {
+      navigator
+        .share({
+          title: `Post by ${post.profiles?.display_name || 'Creator'}`,
+          text: post.content || 'Check out this post on World Of Dommes',
+          url: url,
+        })
+        .catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url);
+      alert('Link copied to clipboard');
+    }
+  };
 
-  // Tip functions
   const openTipModal = (post: any) => {
     setTipPost(post);
     setSelectedAmount(10);
@@ -443,8 +463,17 @@ export default function DiscoverPage() {
         amount,
         message: tipMessage.trim() || null,
       });
-
       if (error) throw error;
+
+      // Notify tip receiver
+      await createNotification(
+        tipPost.creator_id,
+        'tip',
+        `${actorName()} tipped you £${Number(amount).toFixed(2)}`,
+        tipMessage.trim() || null,
+        `/${profile?.username || ''}`
+      );
+
       setTipSuccess(true);
       setTimeout(() => closeTipModal(), 1800);
     } catch (err) {
@@ -461,7 +490,6 @@ export default function DiscoverPage() {
     const date = new Date(dateString);
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
     if (diffInSeconds < 60) return 'Just now';
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
@@ -469,20 +497,16 @@ export default function DiscoverPage() {
     return date.toLocaleDateString();
   };
 
-  // Filter posts by search
   const filteredPosts = posts.filter((post) => {
     if (hiddenPosts.has(post.id)) return false;
     if (!searchQuery.trim()) return true;
-
     const q = searchQuery.toLowerCase();
     const name = (post.profiles?.display_name || '').toLowerCase();
     const username = (post.profiles?.username || '').toLowerCase();
     const content = (post.content || '').toLowerCase();
-
     return name.includes(q) || username.includes(q) || content.includes(q);
   });
 
-  // Skeleton card
   const SkeletonCard = () => (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden animate-pulse">
       <div className="flex items-center gap-3 px-4 py-3">
@@ -509,11 +533,8 @@ export default function DiscoverPage() {
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-
         <main ref={mainRef} className="flex-1 overflow-y-auto relative">
           <div className="max-w-3xl mx-auto px-4 py-6">
-
-            {/* Header */}
             <div className="flex items-center justify-between mb-5">
               <h1 className="text-3xl font-bold flex items-center gap-3">
                 <Search className="text-pink-500" size={28} />
@@ -528,7 +549,6 @@ export default function DiscoverPage() {
               </button>
             </div>
 
-            {/* Search Bar */}
             <div className="relative mb-5">
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
               <input
@@ -540,7 +560,6 @@ export default function DiscoverPage() {
               />
             </div>
 
-            {/* Tabs */}
             <div className="flex gap-2 mb-6">
               <button
                 onClick={() => setActiveTab('foryou')}
@@ -564,7 +583,6 @@ export default function DiscoverPage() {
               </button>
             </div>
 
-            {/* Feed */}
             <div className="space-y-5 pb-24">
               {loading ? (
                 <>
@@ -602,7 +620,6 @@ export default function DiscoverPage() {
                         key={post.id}
                         className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden relative"
                       >
-                        {/* Post Header */}
                         <div className="flex items-center justify-between px-4 py-3">
                           <div className="flex items-center gap-3">
                             <Link
@@ -629,12 +646,12 @@ export default function DiscoverPage() {
                                 >
                                   @{post.profiles?.username}
                                 </Link>
-                                {' · '}{formatTime(post.created_at)}
+                                {' · '}
+                                {formatTime(post.created_at)}
                               </p>
                             </div>
                           </div>
 
-                          {/* 3 Dots Menu */}
                           <div className="relative" ref={isMenuOpen ? menuRef : null}>
                             <button
                               onClick={() => setOpenMenu(isMenuOpen ? null : post.id)}
@@ -642,7 +659,6 @@ export default function DiscoverPage() {
                             >
                               <MoreHorizontal size={18} />
                             </button>
-
                             {isMenuOpen && (
                               <div className="absolute right-0 top-9 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden">
                                 {isOwnPost ? (
@@ -699,14 +715,12 @@ export default function DiscoverPage() {
                           </div>
                         </div>
 
-                        {/* Caption */}
                         {post.content && (
                           <div className="px-4 pb-3">
                             <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
                           </div>
                         )}
 
-                        {/* Media with double-tap */}
                         {post.media_type === 'photo' && post.media_url && (
                           <div
                             className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative cursor-pointer"
@@ -734,11 +748,7 @@ export default function DiscoverPage() {
                             className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative"
                             onClick={() => handleDoubleTap(post.id)}
                           >
-                            <video
-                              src={post.media_url}
-                              controls
-                              className="w-full max-h-[420px]"
-                            />
+                            <video src={post.media_url} controls className="w-full max-h-[420px]" />
                             {showHeartAnim && (
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <Heart
@@ -751,7 +761,6 @@ export default function DiscoverPage() {
                           </div>
                         )}
 
-                        {/* Actions */}
                         <div className="px-4 py-3 flex items-center gap-5">
                           <button
                             onClick={() => handleLike(post.id)}
@@ -767,7 +776,6 @@ export default function DiscoverPage() {
                             />
                             <span className="text-sm">{post.likes_count || 0}</span>
                           </button>
-
                           <button
                             onClick={() => toggleComments(post.id)}
                             className={`flex items-center gap-1.5 transition group ${
@@ -777,7 +785,6 @@ export default function DiscoverPage() {
                             <MessageCircle size={22} className="group-hover:scale-110 transition" />
                             <span className="text-sm">{post.comments_count || 0}</span>
                           </button>
-
                           <button
                             onClick={() => openTipModal(post)}
                             className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 transition group"
@@ -785,7 +792,6 @@ export default function DiscoverPage() {
                             <DollarSign size={20} className="group-hover:scale-110 transition" />
                             <span className="text-sm">Tip</span>
                           </button>
-
                           <button
                             onClick={() => handleShare(post)}
                             className="text-zinc-400 hover:text-pink-400 transition group ml-auto"
@@ -794,7 +800,6 @@ export default function DiscoverPage() {
                           </button>
                         </div>
 
-                        {/* Comments */}
                         {isCommentsOpen && (
                           <div className="border-t border-zinc-800 px-4 py-3">
                             <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
@@ -805,7 +810,11 @@ export default function DiscoverPage() {
                                   <div key={comment.id} className="flex gap-2.5">
                                     <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden">
                                       {comment.profiles?.avatar_url ? (
-                                        <img src={comment.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                                        <img
+                                          src={comment.profiles.avatar_url}
+                                          alt=""
+                                          className="w-full h-full object-cover"
+                                        />
                                       ) : (
                                         (comment.profiles?.display_name || 'U').charAt(0)
                                       )}
@@ -825,7 +834,6 @@ export default function DiscoverPage() {
                                 ))
                               )}
                             </div>
-
                             <div className="flex items-center gap-2">
                               <input
                                 type="text"
@@ -867,7 +875,6 @@ export default function DiscoverPage() {
             </div>
           </div>
 
-          {/* Floating Create Post Button */}
           {isCreator && (
             <Link
               href="/discover/create"
@@ -877,7 +884,6 @@ export default function DiscoverPage() {
             </Link>
           )}
 
-          {/* Tip Modal */}
           {tipPost && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden">
@@ -887,7 +893,6 @@ export default function DiscoverPage() {
                     <X size={20} />
                   </button>
                 </div>
-
                 {tipSuccess ? (
                   <div className="px-5 py-10 text-center">
                     <div className="w-16 h-16 rounded-full bg-pink-500/20 flex items-center justify-center mx-auto mb-4">
@@ -903,7 +908,11 @@ export default function DiscoverPage() {
                     <div className="flex items-center gap-3 mb-6">
                       <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
                         {tipPost.profiles?.avatar_url ? (
-                          <img src={tipPost.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                          <img
+                            src={tipPost.profiles.avatar_url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
                           (tipPost.profiles?.display_name || 'U').charAt(0)
                         )}
@@ -913,7 +922,6 @@ export default function DiscoverPage() {
                         <p className="text-sm text-zinc-400">@{tipPost.profiles?.username}</p>
                       </div>
                     </div>
-
                     <div className="grid grid-cols-4 gap-2 mb-4">
                       {TIP_AMOUNTS.map((amount) => (
                         <button
@@ -932,7 +940,6 @@ export default function DiscoverPage() {
                         </button>
                       ))}
                     </div>
-
                     <div className="mb-4">
                       <label className="text-xs text-zinc-400 mb-1.5 block">Custom amount</label>
                       <div className="relative">
@@ -951,7 +958,6 @@ export default function DiscoverPage() {
                         />
                       </div>
                     </div>
-
                     <div className="mb-6">
                       <label className="text-xs text-zinc-400 mb-1.5 block">Message (optional)</label>
                       <input
@@ -962,7 +968,6 @@ export default function DiscoverPage() {
                         className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500 text-sm"
                       />
                     </div>
-
                     <button
                       onClick={handleSendTip}
                       disabled={sendingTip || (!selectedAmount && !customAmount)}
@@ -972,7 +977,6 @@ export default function DiscoverPage() {
                         ? 'Sending...'
                         : `Send £${customAmount || selectedAmount || 0} Tip`}
                     </button>
-
                     <p className="text-xs text-zinc-500 text-center mt-3">
                       Real payments will be connected with Stripe later
                     </p>
@@ -982,7 +986,6 @@ export default function DiscoverPage() {
             </div>
           )}
 
-          {/* Report Modal */}
           {reportPostId && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm overflow-hidden">
@@ -995,12 +998,8 @@ export default function DiscoverPage() {
                     <X size={20} />
                   </button>
                 </div>
-
                 <div className="px-5 py-5">
-                  <p className="text-sm text-zinc-400 mb-4">
-                    Why are you reporting this post?
-                  </p>
-
+                  <p className="text-sm text-zinc-400 mb-4">Why are you reporting this post?</p>
                   <div className="space-y-2 mb-6">
                     {REPORT_REASONS.map((reason) => (
                       <button
@@ -1016,7 +1015,6 @@ export default function DiscoverPage() {
                       </button>
                     ))}
                   </div>
-
                   <button
                     onClick={submitReport}
                     disabled={!reportReason || reporting}
