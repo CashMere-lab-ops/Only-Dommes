@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -9,6 +9,7 @@ import {
   LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle, User
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
+import { playNotificationSound, getSoundForType } from '../lib/notifications';
 
 let cachedProfile: any = null;
 
@@ -20,13 +21,17 @@ export default function Sidebar() {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [profile, setProfile] = useState<any>(cachedProfile);
   const [profileLoaded, setProfileLoaded] = useState(!!cachedProfile);
-  const [unreadCount, setUnreadCount] = useState(0); // messages
-  const [notifCount, setNotifCount] = useState(0); // notifications
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifCount, setNotifCount] = useState(0);
+  const notifPrefsRef = useRef<any>(null);
 
   useEffect(() => {
     if (cachedProfile) {
       setProfile(cachedProfile);
       setProfileLoaded(true);
+      if (cachedProfile.notification_prefs) {
+        notifPrefsRef.current = cachedProfile.notification_prefs;
+      }
     }
 
     const getUser = async () => {
@@ -36,31 +41,20 @@ export default function Sidebar() {
         return;
       }
 
-      if (!cachedProfile) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('username, display_name, avatar_url, account_type')
-          .eq('id', user.id)
-          .single();
-        if (data) {
-          cachedProfile = data;
-          setProfile(data);
-        }
-      } else if (!cachedProfile.account_type) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('username, display_name, avatar_url, account_type')
-          .eq('id', user.id)
-          .single();
-        if (data) {
-          cachedProfile = data;
-          setProfile(data);
-        }
+      const { data } = await supabase
+        .from('profiles')
+        .select('username, display_name, avatar_url, account_type, notification_prefs')
+        .eq('id', user.id)
+        .single();
+
+      if (data) {
+        cachedProfile = data;
+        setProfile(data);
+        notifPrefsRef.current = data.notification_prefs || null;
       }
 
       setProfileLoaded(true);
 
-      // Message unread
       const { count: msgCount } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
@@ -68,7 +62,6 @@ export default function Sidebar() {
         .neq('sender_id', user.id);
       setUnreadCount(msgCount || 0);
 
-      // Notification unread
       const { count: nCount } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
@@ -97,7 +90,30 @@ export default function Sidebar() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications' },
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        async (payload) => {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          // Only for this user
+          if (payload.new?.user_id !== user.id) return;
+
+          const { count } = await supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('is_read', false);
+          setNotifCount(count || 0);
+
+          // Play sound based on prefs + type
+          const type = payload.new?.type || 'message';
+          const sound = getSoundForType(notifPrefsRef.current, type);
+          playNotificationSound(sound);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications' },
         async () => {
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) return;
@@ -207,7 +223,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Desktop Sidebar */}
       <div className="hidden lg:flex w-64 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0">
         <div className="flex items-center gap-3 px-6 py-6 border-b border-zinc-800">
           <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
@@ -307,7 +322,6 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Mobile Bottom Nav */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
         <div className="flex justify-around items-center h-16 px-2 pb-safe">
           <Link
@@ -370,7 +384,6 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Mobile More Menu */}
       {showMoreMenu && (
         <>
           <div
