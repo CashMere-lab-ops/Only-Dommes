@@ -586,6 +586,31 @@ export default function ChatPage() {
     return (
       <div className={`flex ${mine ? 'justify-end' : 'justify-start'} group relative`}>
         <div className={`max-w-[80%] ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
+
+          {/* Reaction picker ABOVE the message */}
+          {showReactPicker && (
+            <div
+              className={`flex gap-1 mb-1.5 p-1.5 bg-zinc-900 border border-zinc-700 rounded-full shadow-lg ${
+                mine ? 'self-end' : 'self-start'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {REACTION_EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleReaction(msg.id, emoji);
+                  }}
+                  className="w-8 h-8 rounded-full hover:bg-zinc-800 text-lg flex items-center justify-center transition"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div
             className={`rounded-2xl overflow-hidden ${
               mine ? 'rounded-br-md' : 'rounded-bl-md'
@@ -594,16 +619,16 @@ export default function ChatPage() {
             {replied && (
               <div
                 className={`px-3 pt-2 pb-1 text-xs border-b ${
-                  mine ? 'bg-pink-700/40 border-pink-500/30 text-pink-100' : 'bg-zinc-900 border-zinc-700 text-zinc-400'
+                  mine
+                    ? 'bg-pink-700/40 border-pink-500/30 text-pink-100'
+                    : 'bg-zinc-900 border-zinc-700 text-zinc-400'
                 }`}
               >
                 <p className="font-medium opacity-80">
                   {replied.sender_id === userId ? 'You' : otherUser?.display_name || 'Them'}
                 </p>
                 <p className="truncate">
-                  {replied.media_type === 'image'
-                    ? '📷 Photo'
-                    : replied.content || 'Message'}
+                  {replied.media_type === 'image' ? '📷 Photo' : replied.content || 'Message'}
                 </p>
               </div>
             )}
@@ -658,13 +683,18 @@ export default function ChatPage() {
                   {msg.content}
                 </p>
               )}
-              <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
+              <p
+                className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${
+                  mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'
+                }`}
+              >
                 {time(msg.created_at)}
                 {mine && <ReadTicks msg={msg} />}
               </p>
             </div>
           </div>
 
+          {/* Existing reactions under message */}
           {reacts.length > 0 && (
             <div className={`flex flex-wrap gap-1 mt-1 ${mine ? 'justify-end' : 'justify-start'}`}>
               {reacts.map(([emoji, info]) => (
@@ -687,8 +717,11 @@ export default function ChatPage() {
             </div>
           )}
 
+          {/* Reply + React buttons stay under message */}
           <div
-            className={`flex items-center gap-1 mt-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition ${mine ? 'justify-end' : 'justify-start'}`}
+            className={`flex items-center gap-1 mt-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition ${
+              mine ? 'justify-end' : 'justify-start'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -716,27 +749,6 @@ export default function ChatPage() {
               <Smile size={14} />
             </button>
           </div>
-
-          {showReactPicker && (
-            <div
-              className={`flex gap-1 mt-1 p-1.5 bg-zinc-900 border border-zinc-700 rounded-full ${mine ? 'self-end' : 'self-start'}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {REACTION_EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleReaction(msg.id, emoji);
-                  }}
-                  className="w-8 h-8 rounded-full hover:bg-zinc-800 text-lg flex items-center justify-center transition"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     );
@@ -930,7 +942,11 @@ export default function ChatPage() {
             </div>
             <div className="min-w-0">
               <p className="font-semibold text-sm truncate">{displayName}</p>
-              <p className={`text-xs truncate ${isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'}`}>
+              <p
+                className={`text-xs truncate ${
+                  isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'
+                }`}
+              >
                 {statusLine()}
               </p>
             </div>
@@ -964,8 +980,14 @@ export default function ChatPage() {
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
                   <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
                 </div>
               </div>
             )}
@@ -1027,7 +1049,11 @@ export default function ChatPage() {
             </div>
             <div>
               <p className="font-semibold text-sm">{displayName}</p>
-              <p className={`text-xs ${isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'}`}>
+              <p
+                className={`text-xs ${
+                  isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'
+                }`}
+              >
                 {statusLine()}
               </p>
             </div>
@@ -1061,8 +1087,14 @@ export default function ChatPage() {
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
                   <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
                 </div>
               </div>
             )}
