@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock } from 'lucide-react';
+import { ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock, Check, CheckCheck } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
 import { createNotification } from '../../../lib/notifications';
@@ -52,6 +52,35 @@ export default function ChatPage() {
     if (desktopRef.current) desktopRef.current.scrollTop = desktopRef.current.scrollHeight;
   };
 
+  const formatLastSeen = (dateString?: string | null) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (diff < 90) return 'Online';
+    if (diff < 3600) return `Active ${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `Active ${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `Active ${Math.floor(diff / 86400)}d ago`;
+    return `Active ${date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+  };
+
+  const markAsRead = async (uid: string) => {
+    const now = new Date().toISOString();
+    await supabase
+      .from('messages')
+      .update({ is_read: true, read_at: now })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', uid)
+      .eq('is_read', false);
+  };
+
+  const bumpLastSeen = async (uid: string) => {
+    await supabase
+      .from('profiles')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', uid);
+  };
+
   useEffect(() => {
     let alive = true;
 
@@ -64,6 +93,7 @@ export default function ChatPage() {
       if (!alive) return;
 
       setUserId(user.id);
+      await bumpLastSeen(user.id);
 
       const { data: me } = await supabase
         .from('profiles')
@@ -97,7 +127,7 @@ export default function ChatPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('username, display_name, avatar_url')
+        .select('username, display_name, avatar_url, last_seen_at')
         .eq('id', otherId)
         .single();
 
@@ -119,12 +149,7 @@ export default function ChatPage() {
       setMyUnlocks(new Set((unlocks || []).map((u) => u.message_id)));
       setLoading(false);
 
-      await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('conversation_id', conversationId)
-        .neq('sender_id', user.id);
-
+      await markAsRead(user.id);
       setTimeout(scrollBottom, 150);
     };
 
@@ -133,6 +158,29 @@ export default function ChatPage() {
       alive = false;
     };
   }, [conversationId]);
+
+  // Keep last_seen fresh while in chat
+  useEffect(() => {
+    if (!userId) return;
+    const interval = setInterval(() => bumpLastSeen(userId), 30000);
+    return () => clearInterval(interval);
+  }, [userId]);
+
+  // Refresh other user's last_seen every 20s
+  useEffect(() => {
+    if (!otherUserId) return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('last_seen_at')
+        .eq('id', otherUserId)
+        .single();
+      if (data) {
+        setOtherUser((prev: any) => (prev ? { ...prev, last_seen_at: data.last_seen_at } : prev));
+      }
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [otherUserId]);
 
   useEffect(() => {
     if (!conversationId || !userId) return;
@@ -148,12 +196,31 @@ export default function ChatPage() {
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
         },
-        (payload) => {
+        async (payload) => {
           setMessages((prev) => {
             if (prev.find((m) => m.id === payload.new.id)) return prev;
             return [...prev, payload.new];
           });
           setTimeout(scrollBottom, 50);
+
+          // If the other person just sent a message, mark it read
+          if (payload.new.sender_id !== userId) {
+            await markAsRead(userId);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m))
+          );
         }
       )
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
@@ -314,7 +381,6 @@ export default function ChatPage() {
 
       setMyUnlocks((prev) => new Set(prev).add(msg.id));
 
-      // Notify the sender that their locked photo was unlocked
       if (msg.sender_id && msg.sender_id !== userId) {
         await createNotification({
           userId: msg.sender_id,
@@ -410,6 +476,21 @@ export default function ChatPage() {
   const time = (d: string) =>
     new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  const statusLine = () => {
+    if (isOtherTyping) return 'typing...';
+    return formatLastSeen(otherUser?.last_seen_at) || `@${otherUser?.username}`;
+  };
+
+  const ReadTicks = ({ msg }: { msg: any }) => {
+    if (msg.sender_id !== userId) return null;
+    const read = msg.is_read || msg.read_at;
+    return read ? (
+      <CheckCheck size={12} className="inline ml-1 text-pink-200" />
+    ) : (
+      <Check size={12} className="inline ml-1 text-pink-200/70" />
+    );
+  };
+
   const PhotoPreviewBox = () => (
     <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl">
       <div className="flex items-start gap-3">
@@ -471,6 +552,7 @@ export default function ChatPage() {
 
   const displayName = otherUser?.display_name || otherUser?.username || 'User';
   const initial = displayName.charAt(0).toUpperCase();
+  const isOnline = formatLastSeen(otherUser?.last_seen_at) === 'Online';
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -563,17 +645,22 @@ export default function ChatPage() {
             <ArrowLeft size={24} />
           </button>
           <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold flex-shrink-0">
-              {otherUser?.avatar_url ? (
-                <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                initial
+            <div className="relative flex-shrink-0">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
+                {otherUser?.avatar_url ? (
+                  <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  initial
+                )}
+              </div>
+              {isOnline && (
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-zinc-950" />
               )}
             </div>
             <div className="min-w-0">
               <p className="font-semibold text-sm truncate">{displayName}</p>
-              <p className="text-xs text-zinc-400 truncate">
-                {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
+              <p className={`text-xs truncate ${isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'}`}>
+                {statusLine()}
               </p>
             </div>
           </Link>
@@ -663,6 +750,7 @@ export default function ChatPage() {
                       )}
                       <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
                         {time(msg.created_at)}
+                        {mine && <ReadTicks msg={msg} />}
                       </p>
                     </div>
                   </div>
@@ -722,17 +810,22 @@ export default function ChatPage() {
             <ArrowLeft size={22} />
           </Link>
           <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 flex-1">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
-              {otherUser?.avatar_url ? (
-                <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                initial
+            <div className="relative">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
+                {otherUser?.avatar_url ? (
+                  <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  initial
+                )}
+              </div>
+              {isOnline && (
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-zinc-950" />
               )}
             </div>
             <div>
               <p className="font-semibold text-sm">{displayName}</p>
-              <p className="text-xs text-zinc-400">
-                {isOtherTyping ? 'typing...' : `@${otherUser?.username}`}
+              <p className={`text-xs ${isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'}`}>
+                {statusLine()}
               </p>
             </div>
           </Link>
@@ -819,6 +912,7 @@ export default function ChatPage() {
                       )}
                       <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
                         {time(msg.created_at)}
+                        {mine && <ReadTicks msg={msg} />}
                       </p>
                     </div>
                   </div>
