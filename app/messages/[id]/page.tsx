@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
+import { createNotification } from '../../../lib/notifications';
 
 const TIP_AMOUNTS = [5, 10, 20, 50];
 
@@ -45,28 +46,6 @@ export default function ChatPage() {
 
   const actorName = () =>
     myProfile?.display_name || myProfile?.username || 'Someone';
-
-  const createNotification = async (
-    toUserId: string,
-    type: string,
-    title: string,
-    body: string | null,
-    link: string
-  ) => {
-    if (!userId || !toUserId || toUserId === userId) return;
-    try {
-      await supabase.from('notifications').insert({
-        user_id: toUserId,
-        actor_id: userId,
-        type,
-        title,
-        body,
-        link,
-      });
-    } catch (err) {
-      console.error('Notification error:', err);
-    }
-  };
 
   const scrollBottom = () => {
     if (mobileRef.current) mobileRef.current.scrollTop = mobileRef.current.scrollHeight;
@@ -159,6 +138,7 @@ export default function ChatPage() {
     if (!conversationId || !userId) return;
 
     const channel = supabase.channel(`room-${conversationId}`);
+
     channel
       .on(
         'postgres_changes',
@@ -250,10 +230,13 @@ export default function ChatPage() {
       if (imageFile) {
         const ext = imageFile.name.split('.').pop() || 'jpg';
         const path = `${userId}/${Date.now()}.${ext}`;
+
         const { error: upError } = await supabase.storage
           .from('chat-media')
           .upload(path, imageFile, { contentType: imageFile.type });
+
         if (upError) throw upError;
+
         const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
         mediaUrl = data.publicUrl;
       }
@@ -286,7 +269,6 @@ export default function ChatPage() {
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      // Notify the other person
       if (otherUserId) {
         const previewText = messageText
           ? messageText.slice(0, 80)
@@ -294,13 +276,14 @@ export default function ChatPage() {
           ? 'Sent a photo'
           : 'Sent a message';
 
-        await createNotification(
-          otherUserId,
-          'message',
-          `${actorName()} sent you a message`,
-          previewText,
-          `/messages/${conversationId}`
-        );
+        await createNotification({
+          userId: otherUserId,
+          actorId: userId,
+          type: 'message',
+          title: `${actorName()} sent you a message`,
+          body: previewText,
+          link: `/messages/${conversationId}`,
+        });
       }
 
       setTimeout(scrollBottom, 80);
@@ -317,15 +300,31 @@ export default function ChatPage() {
   const unlockMessage = async (msg: any) => {
     if (!userId || unlockingId) return;
     setUnlockingId(msg.id);
+
     try {
       const amount = msg.unlock_price || 0;
+
       const { error } = await supabase.from('message_unlocks').insert({
         message_id: msg.id,
         user_id: userId,
         amount,
       });
+
       if (error) throw error;
+
       setMyUnlocks((prev) => new Set(prev).add(msg.id));
+
+      // Notify the sender that their locked photo was unlocked
+      if (msg.sender_id && msg.sender_id !== userId) {
+        await createNotification({
+          userId: msg.sender_id,
+          actorId: userId,
+          type: 'unlock',
+          title: `${actorName()} unlocked your photo`,
+          body: `£${Number(amount).toFixed(2)}`,
+          link: `/messages/${conversationId}`,
+        });
+      }
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Unlock failed');
@@ -342,6 +341,7 @@ export default function ChatPage() {
 
   const sendTip = async () => {
     if (!userId || !otherUserId || tipping) return;
+
     const amount = customTip ? parseFloat(customTip) : tipAmount;
     if (!amount || amount <= 0) {
       alert('Enter a valid tip amount');
@@ -349,6 +349,7 @@ export default function ChatPage() {
     }
 
     setTipping(true);
+
     try {
       const { error: tipError } = await supabase.from('tips').insert({
         from_user_id: userId,
@@ -357,6 +358,7 @@ export default function ChatPage() {
         conversation_id: conversationId,
         message: 'Tip in chat',
       });
+
       if (tipError) throw tipError;
 
       const { data, error: msgError } = await supabase
@@ -384,13 +386,14 @@ export default function ChatPage() {
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
 
-      await createNotification(
-        otherUserId,
-        'tip',
-        `${actorName()} tipped you £${amount.toFixed(2)}`,
-        null,
-        `/messages/${conversationId}`
-      );
+      await createNotification({
+        userId: otherUserId,
+        actorId: userId,
+        type: 'tip',
+        title: `${actorName()} tipped you £${amount.toFixed(2)}`,
+        body: null,
+        link: `/messages/${conversationId}`,
+      });
 
       setShowTip(false);
       setCustomTip('');
@@ -595,10 +598,12 @@ export default function ChatPage() {
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
+
             {messages.map((msg) => {
               const mine = msg.sender_id === userId;
               const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
               const locked = msg.is_locked && !canSeeMedia(msg);
+
               return (
                 <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
@@ -649,6 +654,7 @@ export default function ChatPage() {
                         </button>
                       )
                     )}
+
                     <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                       {!!msg.content && (
                         <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
@@ -663,6 +669,7 @@ export default function ChatPage() {
                 </div>
               );
             })}
+
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
@@ -747,10 +754,12 @@ export default function ChatPage() {
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
+
             {messages.map((msg) => {
               const mine = msg.sender_id === userId;
               const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
               const locked = msg.is_locked && !canSeeMedia(msg);
+
               return (
                 <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
@@ -801,6 +810,7 @@ export default function ChatPage() {
                         </button>
                       )
                     )}
+
                     <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                       {!!msg.content && (
                         <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
@@ -815,6 +825,7 @@ export default function ChatPage() {
                 </div>
               );
             })}
+
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
