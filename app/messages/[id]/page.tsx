@@ -13,6 +13,8 @@ import { createNotification } from '../../../lib/notifications';
 
 const TIP_AMOUNTS = [5, 10, 20, 50];
 const REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👍'];
+const MAX_VIDEO_SECONDS = 30;
+const MAX_FILE_MB = 50;
 
 export default function ChatPage() {
   const params = useParams();
@@ -32,7 +34,8 @@ export default function ChatPage() {
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState<'image' | 'video' | null>(null);
+  const [viewer, setViewer] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
   const [lockPhoto, setLockPhoto] = useState(false);
   const [lockPrice, setLockPrice] = useState('5');
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
@@ -282,29 +285,61 @@ export default function ChatPage() {
     typingTimer.current = setTimeout(() => notifyTyping(false), 3000);
   };
 
-  const pickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (!f.type.startsWith('image/')) {
-      alert('Please choose an image');
-      return;
-    }
-    if (f.size > 10 * 1024 * 1024) {
-      alert('Max 10MB');
-      return;
-    }
-    if (preview) URL.revokeObjectURL(preview);
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
-  };
-
-  const clearImage = () => {
+  const clearMedia = () => {
     if (preview) URL.revokeObjectURL(preview);
     setFile(null);
     setPreview(null);
+    setPreviewType(null);
     setLockPhoto(false);
     setLockPrice('5');
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const pickMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+
+    const isImage = f.type.startsWith('image/');
+    const isVideo = f.type.startsWith('video/');
+
+    if (!isImage && !isVideo) {
+      alert('Please choose a photo or video');
+      return;
+    }
+
+    if (f.size > MAX_FILE_MB * 1024 * 1024) {
+      alert(`Max ${MAX_FILE_MB}MB`);
+      return;
+    }
+
+    if (isVideo) {
+      const url = URL.createObjectURL(f);
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        window.URL.revokeObjectURL(url);
+        if (video.duration > MAX_VIDEO_SECONDS) {
+          alert(`Videos must be ${MAX_VIDEO_SECONDS} seconds or less`);
+          if (fileRef.current) fileRef.current.value = '';
+          return;
+        }
+        if (preview) URL.revokeObjectURL(preview);
+        setFile(f);
+        setPreview(URL.createObjectURL(f));
+        setPreviewType('video');
+      };
+      video.onerror = () => {
+        alert('Could not read this video');
+        if (fileRef.current) fileRef.current.value = '';
+      };
+      video.src = url;
+      return;
+    }
+
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setPreviewType('image');
   };
 
   const send = async () => {
@@ -313,31 +348,34 @@ export default function ChatPage() {
 
     setSending(true);
     const messageText = text.trim();
-    const imageFile = file;
-    const shouldLock = lockPhoto && !!imageFile;
+    const mediaFile = file;
+    const mediaKind = previewType;
+    const shouldLock = lockPhoto && !!mediaFile;
     const price = shouldLock ? parseFloat(lockPrice) || 5 : null;
     const replyId = replyTo?.id || null;
 
     setText('');
-    clearImage();
+    clearMedia();
     setReplyTo(null);
     notifyTyping(false);
 
     try {
       let mediaUrl: string | null = null;
+      let mediaType: string | null = null;
 
-      if (imageFile) {
-        const ext = imageFile.name.split('.').pop() || 'jpg';
+      if (mediaFile && mediaKind) {
+        const ext = mediaFile.name.split('.').pop() || (mediaKind === 'video' ? 'mp4' : 'jpg');
         const path = `${userId}/${Date.now()}.${ext}`;
 
         const { error: upError } = await supabase.storage
           .from('chat-media')
-          .upload(path, imageFile, { contentType: imageFile.type });
+          .upload(path, mediaFile, { contentType: mediaFile.type });
 
         if (upError) throw upError;
 
         const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
         mediaUrl = data.publicUrl;
+        mediaType = mediaKind;
       }
 
       const { data, error } = await supabase
@@ -347,7 +385,7 @@ export default function ChatPage() {
           sender_id: userId,
           content: messageText,
           media_url: mediaUrl,
-          media_type: mediaUrl ? 'image' : null,
+          media_type: mediaType,
           is_locked: shouldLock,
           unlock_price: price,
           reply_to_id: replyId,
@@ -372,7 +410,9 @@ export default function ChatPage() {
       if (otherUserId) {
         const previewText = messageText
           ? messageText.slice(0, 80)
-          : mediaUrl
+          : mediaType === 'video'
+          ? 'Sent a video'
+          : mediaType === 'image'
           ? 'Sent a photo'
           : 'Sent a message';
 
@@ -454,7 +494,7 @@ export default function ChatPage() {
           userId: msg.sender_id,
           actorId: userId,
           type: 'unlock',
-          title: `${actorName()} unlocked your photo`,
+          title: `${actorName()} unlocked your ${msg.media_type === 'video' ? 'video' : 'photo'}`,
           body: `£${Number(amount).toFixed(2)}`,
           link: `/messages/${conversationId}`,
         });
@@ -564,6 +604,12 @@ export default function ChatPage() {
     return messages.find((m) => m.id === msg.reply_to_id) || null;
   };
 
+  const mediaLabel = (m: any) => {
+    if (m?.media_type === 'video') return '🎬 Video';
+    if (m?.media_type === 'image') return '📷 Photo';
+    return m?.content || 'Message';
+  };
+
   const groupedReactions = (messageId: string) => {
     const list = reactions[messageId] || [];
     const map: Record<string, { count: number; mine: boolean }> = {};
@@ -573,6 +619,82 @@ export default function ChatPage() {
       if (r.user_id === userId) map[r.emoji].mine = true;
     });
     return Object.entries(map);
+  };
+
+  const MediaBlock = ({ msg, locked, mine }: { msg: any; locked: boolean; mine: boolean }) => {
+    if (!msg.media_url) return null;
+    const isVideo = msg.media_type === 'video';
+    const isImage = msg.media_type === 'image';
+
+    if (!isVideo && !isImage) return null;
+
+    if (locked) {
+      return (
+        <div className="relative">
+          {isImage ? (
+            <img
+              src={msg.media_url}
+              alt=""
+              className="w-full max-h-[280px] object-cover blur-xl scale-110"
+            />
+          ) : (
+            <div className="w-full h-[200px] bg-zinc-800 blur-sm" />
+          )}
+          <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center p-4">
+            <Lock size={28} className="text-white mb-2" />
+            <p className="text-white text-sm font-medium mb-3">
+              Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
+            </p>
+            <button
+              type="button"
+              onClick={() => unlockMessage(msg)}
+              disabled={unlockingId === msg.id}
+              className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full flex items-center gap-2"
+            >
+              <Unlock size={16} />
+              {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (isVideo) {
+      return (
+        <div className="relative bg-black">
+          <video
+            src={msg.media_url}
+            controls
+            playsInline
+            className="w-full max-h-[360px]"
+          />
+          {msg.is_locked && mine && (
+            <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+              <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => setViewer({ url: msg.media_url, type: 'image' })}
+        className="block w-full relative"
+      >
+        <img
+          src={msg.media_url}
+          alt=""
+          className="w-full max-h-[320px] object-cover"
+        />
+        {msg.is_locked && mine && (
+          <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+            <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
+          </span>
+        )}
+      </button>
+    );
   };
 
   const MessageBubble = ({ msg }: { msg: any }) => {
@@ -586,8 +708,6 @@ export default function ChatPage() {
     return (
       <div className={`flex ${mine ? 'justify-end' : 'justify-start'} group relative`}>
         <div className={`max-w-[80%] ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
-
-          {/* Reaction picker ABOVE the message */}
           {showReactPicker && (
             <div
               className={`flex gap-1 mb-1.5 p-1.5 bg-zinc-900 border border-zinc-700 rounded-full shadow-lg ${
@@ -627,55 +747,11 @@ export default function ChatPage() {
                 <p className="font-medium opacity-80">
                   {replied.sender_id === userId ? 'You' : otherUser?.display_name || 'Them'}
                 </p>
-                <p className="truncate">
-                  {replied.media_type === 'image' ? '📷 Photo' : replied.content || 'Message'}
-                </p>
+                <p className="truncate">{mediaLabel(replied)}</p>
               </div>
             )}
 
-            {msg.media_url && msg.media_type === 'image' && (
-              locked ? (
-                <div className="relative">
-                  <img
-                    src={msg.media_url}
-                    alt=""
-                    className="w-full max-h-[280px] object-cover blur-xl scale-110"
-                  />
-                  <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center p-4">
-                    <Lock size={28} className="text-white mb-2" />
-                    <p className="text-white text-sm font-medium mb-3">
-                      Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => unlockMessage(msg)}
-                      disabled={unlockingId === msg.id}
-                      className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full flex items-center gap-2"
-                    >
-                      <Unlock size={16} />
-                      {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setViewer(msg.media_url)}
-                  className="block w-full relative"
-                >
-                  <img
-                    src={msg.media_url}
-                    alt=""
-                    className="w-full max-h-[320px] object-cover"
-                  />
-                  {msg.is_locked && mine && (
-                    <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
-                      <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
-                    </span>
-                  )}
-                </button>
-              )
-            )}
+            <MediaBlock msg={msg} locked={locked} mine={mine} />
 
             <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
               {!!msg.content && (
@@ -694,7 +770,6 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Existing reactions under message */}
           {reacts.length > 0 && (
             <div className={`flex flex-wrap gap-1 mt-1 ${mine ? 'justify-end' : 'justify-start'}`}>
               {reacts.map(([emoji, info]) => (
@@ -717,7 +792,6 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Reply + React buttons stay under message */}
           <div
             className={`flex items-center gap-1 mt-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition ${
               mine ? 'justify-end' : 'justify-start'
@@ -754,25 +828,35 @@ export default function ChatPage() {
     );
   };
 
-  const PhotoPreviewBox = () => (
+  const MediaPreviewBox = () => (
     <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl">
       <div className="flex items-start gap-3">
         <div className="relative flex-shrink-0">
-          <img
-            src={preview!}
-            alt=""
-            className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
-          />
+          {previewType === 'video' ? (
+            <video
+              src={preview!}
+              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+              muted
+            />
+          ) : (
+            <img
+              src={preview!}
+              alt=""
+              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+            />
+          )}
           <button
             type="button"
-            onClick={clearImage}
+            onClick={clearMedia}
             className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
           >
             <X size={14} />
           </button>
         </div>
         <div className="flex-1 min-w-0 space-y-2">
-          <p className="text-xs text-zinc-400">Photo ready to send</p>
+          <p className="text-xs text-zinc-400">
+            {previewType === 'video' ? 'Video ready to send (max 30s)' : 'Photo ready to send'}
+          </p>
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
@@ -784,7 +868,7 @@ export default function ChatPage() {
               }`}
             >
               <Lock size={12} />
-              {lockPhoto ? 'Locked' : 'Lock photo'}
+              {lockPhoto ? 'Locked' : 'Lock'}
             </button>
             {lockPhoto && (
               <div className="flex items-center gap-1 bg-zinc-800 border border-zinc-600 rounded-full px-2 py-1">
@@ -814,9 +898,7 @@ export default function ChatPage() {
           <p className="text-xs text-pink-400 font-medium">
             Replying to {replyTo.sender_id === userId ? 'yourself' : otherUser?.display_name || 'them'}
           </p>
-          <p className="text-xs text-zinc-400 truncate">
-            {replyTo.media_type === 'image' ? '📷 Photo' : replyTo.content || 'Message'}
-          </p>
+          <p className="text-xs text-zinc-400 truncate">{mediaLabel(replyTo)}</p>
         </div>
         <button type="button" onClick={() => setReplyTo(null)} className="text-zinc-500 hover:text-white">
           <X size={16} />
@@ -843,7 +925,13 @@ export default function ChatPage() {
         <Sidebar />
       </div>
 
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*,video/mp4,video/webm,video/quicktime"
+        className="hidden"
+        onChange={pickMedia}
+      />
 
       {viewer && (
         <div
@@ -857,12 +945,22 @@ export default function ChatPage() {
           >
             <X size={20} />
           </button>
-          <img
-            src={viewer}
-            alt=""
-            className="max-w-full max-h-full object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
+          {viewer.type === 'video' ? (
+            <video
+              src={viewer.url}
+              controls
+              autoPlay
+              className="max-w-full max-h-full"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <img
+              src={viewer.url}
+              alt=""
+              className="max-w-full max-h-full object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
         </div>
       )}
 
@@ -980,14 +1078,8 @@ export default function ChatPage() {
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
                   <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                  <span
-                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
-                    style={{ animationDelay: '150ms' }}
-                  />
-                  <span
-                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
-                    style={{ animationDelay: '300ms' }}
-                  />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             )}
@@ -999,7 +1091,7 @@ export default function ChatPage() {
           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
         >
           <ReplyBar />
-          {preview && <PhotoPreviewBox />}
+          {preview && <MediaPreviewBox />}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -1087,14 +1179,8 @@ export default function ChatPage() {
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
                   <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                  <span
-                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
-                    style={{ animationDelay: '150ms' }}
-                  />
-                  <span
-                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
-                    style={{ animationDelay: '300ms' }}
-                  />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             )}
@@ -1103,7 +1189,7 @@ export default function ChatPage() {
 
         <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
           <ReplyBar />
-          {preview && <PhotoPreviewBox />}
+          {preview && <MediaPreviewBox />}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -1129,13 +1215,4 @@ export default function ChatPage() {
               type="button"
               onClick={send}
               disabled={sending || (!text.trim() && !file)}
-              className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0"
-            >
-              <Send size={18} />
-            </button>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
+              className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-
