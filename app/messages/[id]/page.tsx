@@ -665,14 +665,16 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Reactions */}
           {reacts.length > 0 && (
             <div className={`flex flex-wrap gap-1 mt-1 ${mine ? 'justify-end' : 'justify-start'}`}>
               {reacts.map(([emoji, info]) => (
                 <button
                   key={emoji}
                   type="button"
-                  onClick={() => toggleReaction(msg.id, emoji)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleReaction(msg.id, emoji);
+                  }}
                   className={`text-xs px-1.5 py-0.5 rounded-full border ${
                     info.mine
                       ? 'bg-pink-600/20 border-pink-500/50'
@@ -685,11 +687,14 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Actions */}
-          <div className={`flex items-center gap-1 mt-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition ${mine ? 'justify-end' : 'justify-start'}`}>
+          <div
+            className={`flex items-center gap-1 mt-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition ${mine ? 'justify-end' : 'justify-start'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setReplyTo(msg);
                 setReactFor(null);
                 setTimeout(() => inputRef.current?.focus(), 50);
@@ -701,7 +706,10 @@ export default function ChatPage() {
             </button>
             <button
               type="button"
-              onClick={() => setReactFor(showReactPicker ? null : msg.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setReactFor(showReactPicker ? null : msg.id);
+              }}
               className="p-1.5 rounded-full text-zinc-500 hover:text-pink-400 hover:bg-zinc-800 transition"
               title="React"
             >
@@ -710,12 +718,18 @@ export default function ChatPage() {
           </div>
 
           {showReactPicker && (
-            <div className={`flex gap-1 mt-1 p-1.5 bg-zinc-900 border border-zinc-700 rounded-full ${mine ? 'self-end' : 'self-start'}`}>
+            <div
+              className={`flex gap-1 mt-1 p-1.5 bg-zinc-900 border border-zinc-700 rounded-full ${mine ? 'self-end' : 'self-start'}`}
+              onClick={(e) => e.stopPropagation()}
+            >
               {REACTION_EMOJIS.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
-                  onClick={() => toggleReaction(msg.id, emoji)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleReaction(msg.id, emoji);
+                  }}
                   className="w-8 h-8 rounded-full hover:bg-zinc-800 text-lg flex items-center justify-center transition"
                 >
                   {emoji}
