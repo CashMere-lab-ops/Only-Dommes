@@ -3,12 +3,16 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock, Check, CheckCheck } from 'lucide-react';
+import {
+  ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock,
+  Check, CheckCheck, Reply, Smile
+} from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
 import { createNotification } from '../../../lib/notifications';
 
 const TIP_AMOUNTS = [5, 10, 20, 50];
+const REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👍'];
 
 export default function ChatPage() {
   const params = useParams();
@@ -17,6 +21,7 @@ export default function ChatPage() {
   const conversationId = params.id as string;
 
   const [messages, setMessages] = useState<any[]>([]);
+  const [reactions, setReactions] = useState<Record<string, any[]>>({});
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -36,6 +41,8 @@ export default function ChatPage() {
   const [tipAmount, setTipAmount] = useState<number | null>(10);
   const [customTip, setCustomTip] = useState('');
   const [tipping, setTipping] = useState(false);
+  const [replyTo, setReplyTo] = useState<any | null>(null);
+  const [reactFor, setReactFor] = useState<string | null>(null);
 
   const mobileRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
@@ -79,6 +86,21 @@ export default function ChatPage() {
       .from('profiles')
       .update({ last_seen_at: new Date().toISOString() })
       .eq('id', uid);
+  };
+
+  const loadReactions = async (messageIds: string[]) => {
+    if (messageIds.length === 0) return;
+    const { data } = await supabase
+      .from('message_reactions')
+      .select('*')
+      .in('message_id', messageIds);
+
+    const map: Record<string, any[]> = {};
+    (data || []).forEach((r) => {
+      if (!map[r.message_id]) map[r.message_id] = [];
+      map[r.message_id].push(r);
+    });
+    setReactions(map);
   };
 
   useEffect(() => {
@@ -149,6 +171,10 @@ export default function ChatPage() {
       setMyUnlocks(new Set((unlocks || []).map((u) => u.message_id)));
       setLoading(false);
 
+      if (msgs && msgs.length > 0) {
+        await loadReactions(msgs.map((m) => m.id));
+      }
+
       await markAsRead(user.id);
       setTimeout(scrollBottom, 150);
     };
@@ -159,14 +185,12 @@ export default function ChatPage() {
     };
   }, [conversationId]);
 
-  // Keep last_seen fresh while in chat
   useEffect(() => {
     if (!userId) return;
     const interval = setInterval(() => bumpLastSeen(userId), 30000);
     return () => clearInterval(interval);
   }, [userId]);
 
-  // Refresh other user's last_seen every 20s
   useEffect(() => {
     if (!otherUserId) return;
     const interval = setInterval(async () => {
@@ -202,8 +226,6 @@ export default function ChatPage() {
             return [...prev, payload.new];
           });
           setTimeout(scrollBottom, 50);
-
-          // If the other person just sent a message, mark it read
           if (payload.new.sender_id !== userId) {
             await markAsRead(userId);
           }
@@ -223,6 +245,14 @@ export default function ChatPage() {
           );
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'message_reactions' },
+        async () => {
+          const ids = messages.map((m) => m.id);
+          if (ids.length > 0) await loadReactions(ids);
+        }
+      )
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload?.userId !== userId) {
           setIsOtherTyping(!!payload?.isTyping);
@@ -235,7 +265,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [conversationId, userId]);
+  }, [conversationId, userId, messages.length]);
 
   const notifyTyping = (on: boolean) => {
     channelRef.current?.send({
@@ -286,9 +316,11 @@ export default function ChatPage() {
     const imageFile = file;
     const shouldLock = lockPhoto && !!imageFile;
     const price = shouldLock ? parseFloat(lockPrice) || 5 : null;
+    const replyId = replyTo?.id || null;
 
     setText('');
     clearImage();
+    setReplyTo(null);
     notifyTyping(false);
 
     try {
@@ -318,6 +350,7 @@ export default function ChatPage() {
           media_type: mediaUrl ? 'image' : null,
           is_locked: shouldLock,
           unlock_price: price,
+          reply_to_id: replyId,
         })
         .select()
         .single();
@@ -362,6 +395,41 @@ export default function ChatPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const toggleReaction = async (messageId: string, emoji: string) => {
+    if (!userId) return;
+
+    const existing = (reactions[messageId] || []).find(
+      (r) => r.user_id === userId && r.emoji === emoji
+    );
+
+    try {
+      if (existing) {
+        await supabase.from('message_reactions').delete().eq('id', existing.id);
+        setReactions((prev) => ({
+          ...prev,
+          [messageId]: (prev[messageId] || []).filter((r) => r.id !== existing.id),
+        }));
+      } else {
+        const { data, error } = await supabase
+          .from('message_reactions')
+          .insert({ message_id: messageId, user_id: userId, emoji })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setReactions((prev) => ({
+          ...prev,
+          [messageId]: [...(prev[messageId] || []), data],
+        }));
+      }
+    } catch (err) {
+      console.error('Reaction error:', err);
+    }
+
+    setReactFor(null);
   };
 
   const unlockMessage = async (msg: any) => {
@@ -491,6 +559,175 @@ export default function ChatPage() {
     );
   };
 
+  const getReplyPreview = (msg: any) => {
+    if (!msg?.reply_to_id) return null;
+    return messages.find((m) => m.id === msg.reply_to_id) || null;
+  };
+
+  const groupedReactions = (messageId: string) => {
+    const list = reactions[messageId] || [];
+    const map: Record<string, { count: number; mine: boolean }> = {};
+    list.forEach((r) => {
+      if (!map[r.emoji]) map[r.emoji] = { count: 0, mine: false };
+      map[r.emoji].count += 1;
+      if (r.user_id === userId) map[r.emoji].mine = true;
+    });
+    return Object.entries(map);
+  };
+
+  const MessageBubble = ({ msg }: { msg: any }) => {
+    const mine = msg.sender_id === userId;
+    const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
+    const locked = msg.is_locked && !canSeeMedia(msg);
+    const replied = getReplyPreview(msg);
+    const reacts = groupedReactions(msg.id);
+    const showReactPicker = reactFor === msg.id;
+
+    return (
+      <div className={`flex ${mine ? 'justify-end' : 'justify-start'} group relative`}>
+        <div className={`max-w-[80%] ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
+          <div
+            className={`rounded-2xl overflow-hidden ${
+              mine ? 'rounded-br-md' : 'rounded-bl-md'
+            } ${isTip ? 'bg-gradient-to-r from-pink-600 to-rose-500' : ''}`}
+          >
+            {replied && (
+              <div
+                className={`px-3 pt-2 pb-1 text-xs border-b ${
+                  mine ? 'bg-pink-700/40 border-pink-500/30 text-pink-100' : 'bg-zinc-900 border-zinc-700 text-zinc-400'
+                }`}
+              >
+                <p className="font-medium opacity-80">
+                  {replied.sender_id === userId ? 'You' : otherUser?.display_name || 'Them'}
+                </p>
+                <p className="truncate">
+                  {replied.media_type === 'image'
+                    ? '📷 Photo'
+                    : replied.content || 'Message'}
+                </p>
+              </div>
+            )}
+
+            {msg.media_url && msg.media_type === 'image' && (
+              locked ? (
+                <div className="relative">
+                  <img
+                    src={msg.media_url}
+                    alt=""
+                    className="w-full max-h-[280px] object-cover blur-xl scale-110"
+                  />
+                  <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center p-4">
+                    <Lock size={28} className="text-white mb-2" />
+                    <p className="text-white text-sm font-medium mb-3">
+                      Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => unlockMessage(msg)}
+                      disabled={unlockingId === msg.id}
+                      className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full flex items-center gap-2"
+                    >
+                      <Unlock size={16} />
+                      {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setViewer(msg.media_url)}
+                  className="block w-full relative"
+                >
+                  <img
+                    src={msg.media_url}
+                    alt=""
+                    className="w-full max-h-[320px] object-cover"
+                  />
+                  {msg.is_locked && mine && (
+                    <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+                      <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
+                    </span>
+                  )}
+                </button>
+              )
+            )}
+
+            <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+              {!!msg.content && (
+                <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
+                  {msg.content}
+                </p>
+              )}
+              <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
+                {time(msg.created_at)}
+                {mine && <ReadTicks msg={msg} />}
+              </p>
+            </div>
+          </div>
+
+          {/* Reactions */}
+          {reacts.length > 0 && (
+            <div className={`flex flex-wrap gap-1 mt-1 ${mine ? 'justify-end' : 'justify-start'}`}>
+              {reacts.map(([emoji, info]) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => toggleReaction(msg.id, emoji)}
+                  className={`text-xs px-1.5 py-0.5 rounded-full border ${
+                    info.mine
+                      ? 'bg-pink-600/20 border-pink-500/50'
+                      : 'bg-zinc-900 border-zinc-700'
+                  }`}
+                >
+                  {emoji} {info.count > 1 ? info.count : ''}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className={`flex items-center gap-1 mt-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition ${mine ? 'justify-end' : 'justify-start'}`}>
+            <button
+              type="button"
+              onClick={() => {
+                setReplyTo(msg);
+                setReactFor(null);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+              className="p-1.5 rounded-full text-zinc-500 hover:text-pink-400 hover:bg-zinc-800 transition"
+              title="Reply"
+            >
+              <Reply size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setReactFor(showReactPicker ? null : msg.id)}
+              className="p-1.5 rounded-full text-zinc-500 hover:text-pink-400 hover:bg-zinc-800 transition"
+              title="React"
+            >
+              <Smile size={14} />
+            </button>
+          </div>
+
+          {showReactPicker && (
+            <div className={`flex gap-1 mt-1 p-1.5 bg-zinc-900 border border-zinc-700 rounded-full ${mine ? 'self-end' : 'self-start'}`}>
+              {REACTION_EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => toggleReaction(msg.id, emoji)}
+                  className="w-8 h-8 rounded-full hover:bg-zinc-800 text-lg flex items-center justify-center transition"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const PhotoPreviewBox = () => (
     <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl">
       <div className="flex items-start gap-3">
@@ -541,6 +778,26 @@ export default function ChatPage() {
       </div>
     </div>
   );
+
+  const ReplyBar = () => {
+    if (!replyTo) return null;
+    return (
+      <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl">
+        <Reply size={14} className="text-pink-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-pink-400 font-medium">
+            Replying to {replyTo.sender_id === userId ? 'yourself' : otherUser?.display_name || 'them'}
+          </p>
+          <p className="text-xs text-zinc-400 truncate">
+            {replyTo.media_type === 'image' ? '📷 Photo' : replyTo.content || 'Message'}
+          </p>
+        </div>
+        <button type="button" onClick={() => setReplyTo(null)} className="text-zinc-500 hover:text-white">
+          <X size={16} />
+        </button>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -677,87 +934,18 @@ export default function ChatPage() {
           ref={mobileRef}
           className="flex-1 overflow-y-scroll px-3"
           style={{ WebkitOverflowScrolling: 'touch' }}
+          onClick={() => setReactFor(null)}
         >
-          <div className="min-h-full flex flex-col justify-end py-3 space-y-2">
+          <div className="min-h-full flex flex-col justify-end py-3 space-y-3">
             {messages.length === 0 && (
               <div className="text-center text-zinc-500 py-16">
                 <p>No messages yet</p>
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
-
-            {messages.map((msg) => {
-              const mine = msg.sender_id === userId;
-              const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
-              const locked = msg.is_locked && !canSeeMedia(msg);
-
-              return (
-                <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[80%] rounded-2xl overflow-hidden ${
-                      mine ? 'rounded-br-md' : 'rounded-bl-md'
-                    } ${isTip ? 'bg-gradient-to-r from-pink-600 to-rose-500' : ''}`}
-                  >
-                    {msg.media_url && msg.media_type === 'image' && (
-                      locked ? (
-                        <div className="relative">
-                          <img
-                            src={msg.media_url}
-                            alt=""
-                            className="w-full max-h-[280px] object-cover blur-xl scale-110"
-                          />
-                          <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center p-4">
-                            <Lock size={28} className="text-white mb-2" />
-                            <p className="text-white text-sm font-medium mb-3">
-                              Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => unlockMessage(msg)}
-                              disabled={unlockingId === msg.id}
-                              className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full flex items-center gap-2"
-                            >
-                              <Unlock size={16} />
-                              {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setViewer(msg.media_url)}
-                          className="block w-full relative"
-                        >
-                          <img
-                            src={msg.media_url}
-                            alt=""
-                            className="w-full max-h-[320px] object-cover"
-                          />
-                          {msg.is_locked && mine && (
-                            <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
-                              <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
-                            </span>
-                          )}
-                        </button>
-                      )
-                    )}
-
-                    <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
-                      {!!msg.content && (
-                        <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
-                          {msg.content}
-                        </p>
-                      )}
-                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
-                        {time(msg.created_at)}
-                        {mine && <ReadTicks msg={msg} />}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} msg={msg} />
+            ))}
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
@@ -774,6 +962,7 @@ export default function ChatPage() {
           className="border-t border-zinc-800 px-3 py-2"
           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
         >
+          <ReplyBar />
           {preview && <PhotoPreviewBox />}
           <div className="flex items-center gap-2">
             <button
@@ -839,87 +1028,21 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div ref={desktopRef} className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto">
-          <div className="min-h-full flex flex-col justify-end py-3 space-y-2">
+        <div
+          ref={desktopRef}
+          className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto"
+          onClick={() => setReactFor(null)}
+        >
+          <div className="min-h-full flex flex-col justify-end py-3 space-y-3">
             {messages.length === 0 && (
               <div className="text-center text-zinc-500 py-16">
                 <p>No messages yet</p>
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
-
-            {messages.map((msg) => {
-              const mine = msg.sender_id === userId;
-              const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
-              const locked = msg.is_locked && !canSeeMedia(msg);
-
-              return (
-                <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[80%] rounded-2xl overflow-hidden ${
-                      mine ? 'rounded-br-md' : 'rounded-bl-md'
-                    } ${isTip ? 'bg-gradient-to-r from-pink-600 to-rose-500' : ''}`}
-                  >
-                    {msg.media_url && msg.media_type === 'image' && (
-                      locked ? (
-                        <div className="relative">
-                          <img
-                            src={msg.media_url}
-                            alt=""
-                            className="w-full max-h-[280px] object-cover blur-xl scale-110"
-                          />
-                          <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center p-4">
-                            <Lock size={28} className="text-white mb-2" />
-                            <p className="text-white text-sm font-medium mb-3">
-                              Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => unlockMessage(msg)}
-                              disabled={unlockingId === msg.id}
-                              className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full flex items-center gap-2"
-                            >
-                              <Unlock size={16} />
-                              {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setViewer(msg.media_url)}
-                          className="block w-full relative"
-                        >
-                          <img
-                            src={msg.media_url}
-                            alt=""
-                            className="w-full max-h-[320px] object-cover"
-                          />
-                          {msg.is_locked && mine && (
-                            <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
-                              <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
-                            </span>
-                          )}
-                        </button>
-                      )
-                    )}
-
-                    <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
-                      {!!msg.content && (
-                        <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
-                          {msg.content}
-                        </p>
-                      )}
-                      <p className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'}`}>
-                        {time(msg.created_at)}
-                        {mine && <ReadTicks msg={msg} />}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} msg={msg} />
+            ))}
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
@@ -933,6 +1056,7 @@ export default function ChatPage() {
         </div>
 
         <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
+          <ReplyBar />
           {preview && <PhotoPreviewBox />}
           <div className="flex items-center gap-2">
             <button
@@ -943,6 +1067,7 @@ export default function ChatPage() {
               <ImagePlus size={20} />
             </button>
             <input
+              ref={inputRef}
               value={text}
               onChange={(e) => onType(e.target.value)}
               placeholder="Message..."
