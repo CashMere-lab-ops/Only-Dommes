@@ -10,6 +10,7 @@ import {
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
+import { createNotification } from '../../lib/notifications';
 
 const POSTS_PER_PAGE = 20;
 const TIP_AMOUNTS = [5, 10, 20, 50];
@@ -59,28 +60,6 @@ export default function DiscoverPage() {
 
   const actorName = () =>
     profile?.display_name || profile?.username || 'Someone';
-
-  const createNotification = async (
-    userId: string,
-    type: string,
-    title: string,
-    body: string | null,
-    link: string
-  ) => {
-    if (!user || !userId || userId === user.id) return;
-    try {
-      await supabase.from('notifications').insert({
-        user_id: userId,
-        actor_id: user.id,
-        type,
-        title,
-        body,
-        link,
-      });
-    } catch (err) {
-      console.error('Notification error:', err);
-    }
-  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -246,15 +225,15 @@ export default function DiscoverPage() {
       } else {
         await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
 
-        // Notify post owner (not yourself)
         if (post?.creator_id && post.creator_id !== user.id) {
-          await createNotification(
-            post.creator_id,
-            'like',
-            `${actorName()} liked your post`,
-            post.content ? post.content.slice(0, 80) : null,
-            '/discover'
-          );
+          await createNotification({
+            userId: post.creator_id,
+            actorId: user.id,
+            type: 'like',
+            title: `${actorName()} liked your post`,
+            body: post.content ? post.content.slice(0, 80) : null,
+            link: '/discover',
+          });
         }
       }
 
@@ -354,15 +333,15 @@ export default function DiscoverPage() {
 
       await supabase.from('posts').update({ comments_count: count || 0 }).eq('id', postId);
 
-      // Notify post owner
       if (post?.creator_id && post.creator_id !== user.id) {
-        await createNotification(
-          post.creator_id,
-          'comment',
-          `${actorName()} commented on your post`,
-          commentText.slice(0, 100),
-          '/discover'
-        );
+        await createNotification({
+          userId: post.creator_id,
+          actorId: user.id,
+          type: 'comment',
+          title: `${actorName()} commented on your post`,
+          body: commentText.slice(0, 100),
+          link: '/discover',
+        });
       }
 
       setNewComment((prev) => ({ ...prev, [postId]: '' }));
@@ -465,14 +444,14 @@ export default function DiscoverPage() {
       });
       if (error) throw error;
 
-      // Notify tip receiver
-      await createNotification(
-        tipPost.creator_id,
-        'tip',
-        `${actorName()} tipped you £${Number(amount).toFixed(2)}`,
-        tipMessage.trim() || null,
-        `/${profile?.username || ''}`
-      );
+      await createNotification({
+        userId: tipPost.creator_id,
+        actorId: user.id,
+        type: 'tip',
+        title: `${actorName()} tipped you £${Number(amount).toFixed(2)}`,
+        body: tipMessage.trim() || null,
+        link: `/${profile?.username || ''}`,
+      });
 
       setTipSuccess(true);
       setTimeout(() => closeTipModal(), 1800);
