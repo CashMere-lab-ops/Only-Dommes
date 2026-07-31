@@ -1187,7 +1187,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
+               <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
           <ReplyBar />
           {preview && <MediaPreviewBox />}
           <div className="flex items-center gap-2">
@@ -1215,4 +1215,13 @@ export default function ChatPage() {
               type="button"
               onClick={send}
               disabled={sending || (!text.trim() && !file)}
-              className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-
+              className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
