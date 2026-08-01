@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock,
-  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause
+  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid
 } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
@@ -47,8 +47,8 @@ export default function ChatPage() {
   const [tipping, setTipping] = useState(false);
   const [replyTo, setReplyTo] = useState<any | null>(null);
   const [reactFor, setReactFor] = useState<string | null>(null);
+  const [showGallery, setShowGallery] = useState(false);
 
-  // Voice notes
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
@@ -287,7 +287,6 @@ export default function ChatPage() {
     };
   }, [conversationId, userId, messages.length]);
 
-  // Cleanup voice URL on unmount
   useEffect(() => {
     return () => {
       if (voiceUrl) URL.revokeObjectURL(voiceUrl);
@@ -482,7 +481,9 @@ export default function ChatPage() {
         .insert({
           conversation_id: conversationId,
           sender_id: userId,
-          content: messageText || (mediaType === 'audio' ? `🎤 Voice note (${formatDuration(audioDuration)})` : ''),
+          content:
+            messageText ||
+            (mediaType === 'audio' ? `🎤 Voice note (${formatDuration(audioDuration)})` : ''),
           media_url: mediaUrl,
           media_type: mediaType,
           is_locked: shouldLock,
@@ -723,6 +724,13 @@ export default function ChatPage() {
     return Object.entries(map);
   };
 
+  const galleryItems = messages.filter(
+    (m) =>
+      (m.media_type === 'image' || m.media_type === 'video') &&
+      m.media_url &&
+      canSeeMedia(m)
+  );
+
   const VoicePlayer = ({ url, mine }: { url: string; mine: boolean }) => {
     const audioRef = useRef<HTMLAudioElement>(null);
     const [playing, setPlaying] = useState(false);
@@ -757,7 +765,11 @@ export default function ChatPage() {
     };
 
     return (
-      <div className={`flex items-center gap-3 px-3 py-2 min-w-[200px] ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+      <div
+        className={`flex items-center gap-3 px-3 py-2 min-w-[200px] ${
+          mine ? 'bg-pink-600' : 'bg-zinc-800'
+        }`}
+      >
         <audio ref={audioRef} src={url} preload="metadata" />
         <button
           type="button"
@@ -911,7 +923,11 @@ export default function ChatPage() {
             {!isAudio && (
               <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                 {!!msg.content && (
-                  <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
+                  <p
+                    className={`text-[15px] whitespace-pre-wrap break-words ${
+                      isTip ? 'font-medium' : ''
+                    }`}
+                  >
                     {msg.content}
                   </p>
                 )}
@@ -999,9 +1015,17 @@ export default function ChatPage() {
       <div className="flex items-start gap-3">
         <div className="relative flex-shrink-0">
           {previewType === 'video' ? (
-            <video src={preview!} className="h-16 w-16 object-cover rounded-xl border border-zinc-700" muted />
+            <video
+              src={preview!}
+              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+              muted
+            />
           ) : (
-            <img src={preview!} alt="" className="h-16 w-16 object-cover rounded-xl border border-zinc-700" />
+            <img
+              src={preview!}
+              alt=""
+              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+            />
           )}
           <button
             type="button"
@@ -1095,6 +1119,66 @@ export default function ChatPage() {
     );
   };
 
+  const GalleryPanel = () => {
+    if (!showGallery) return null;
+    return (
+      <div className="fixed inset-0 z-[95] bg-zinc-950 flex flex-col">
+        <div className="border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowGallery(false)}
+            className="text-zinc-400 hover:text-white p-1"
+          >
+            <ArrowLeft size={22} />
+          </button>
+          <div className="flex-1">
+            <p className="font-semibold">Media</p>
+            <p className="text-xs text-zinc-400">{galleryItems.length} items</p>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+          {galleryItems.length === 0 ? (
+            <div className="text-center text-zinc-500 py-20">
+              <LayoutGrid size={40} className="mx-auto mb-3 opacity-40" />
+              <p>No photos or videos yet</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-w-3xl mx-auto">
+              {galleryItems
+                .slice()
+                .reverse()
+                .map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      setViewer({
+                        url: m.media_url,
+                        type: m.media_type === 'video' ? 'video' : 'image',
+                      });
+                    }}
+                    className="relative aspect-square bg-zinc-900 rounded-lg overflow-hidden"
+                  >
+                    {m.media_type === 'video' ? (
+                      <>
+                        <video src={m.media_url} className="w-full h-full object-cover" muted />
+                        <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">
+                          Video
+                        </span>
+                      </>
+                    ) : (
+                      <img src={m.media_url} alt="" className="w-full h-full object-cover" />
+                    )}
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
@@ -1157,7 +1241,9 @@ export default function ChatPage() {
           type="button"
           onClick={send}
           disabled={!canSend}
-          className={`${mobile ? 'w-10 h-10' : 'w-12 h-12'} rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0`}
+          className={`${
+            mobile ? 'w-10 h-10' : 'w-12 h-12'
+          } rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0`}
         >
           <Send size={18} />
         </button>
@@ -1178,6 +1264,8 @@ export default function ChatPage() {
         className="hidden"
         onChange={pickMedia}
       />
+
+      <GalleryPanel />
 
       {viewer && (
         <div
@@ -1297,6 +1385,13 @@ export default function ChatPage() {
           </Link>
           <button
             type="button"
+            onClick={() => setShowGallery(true)}
+            className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 flex items-center justify-center flex-shrink-0"
+          >
+            <LayoutGrid size={18} />
+          </button>
+          <button
+            type="button"
             onClick={() => setShowTip(true)}
             className="w-9 h-9 rounded-full bg-pink-600/20 border border-pink-500/40 text-pink-400 flex items-center justify-center flex-shrink-0"
           >
@@ -1324,8 +1419,14 @@ export default function ChatPage() {
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
                   <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
                 </div>
               </div>
             )}
@@ -1372,6 +1473,14 @@ export default function ChatPage() {
           </Link>
           <button
             type="button"
+            onClick={() => setShowGallery(true)}
+            className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition"
+            title="Media"
+          >
+            <LayoutGrid size={18} />
+          </button>
+          <button
+            type="button"
             onClick={() => setShowTip(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600/20 border border-pink-500/40 text-pink-400 hover:bg-pink-600/30 transition text-sm font-medium"
           >
@@ -1399,8 +1508,14 @@ export default function ChatPage() {
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
                   <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
                 </div>
               </div>
             )}
