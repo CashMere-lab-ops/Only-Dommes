@@ -3,32 +3,61 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Send, Users, Heart, Clock, Trash2, Calendar } from 'lucide-react';
+import {
+  ArrowLeft,
+  Send,
+  Users,
+  Heart,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Megaphone,
+  Calendar,
+} from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
 
 type Audience = 'followers' | 'subscribers' | 'both';
+type HistoryTab = 'scheduled' | 'sent';
 
 export default function MassMessagePage() {
   const router = useRouter();
   const supabase = createClient();
 
+  const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+
   const [content, setContent] = useState('');
   const [audience, setAudience] = useState<Audience>('followers');
   const [mode, setMode] = useState<'now' | 'schedule'>('now');
-  const [scheduledAt, setScheduledAt] = useState('');
+  const [scheduledFor, setScheduledFor] = useState('');
+
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [scheduled, setScheduled] = useState<any[]>([]);
-  const [followerCount, setFollowerCount] = useState(0);
-  const [subCount, setSubCount] = useState(0);
+
+  const [historyTab, setHistoryTab] = useState<HistoryTab>('scheduled');
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  const loadHistory = async (uid: string) => {
+    setHistoryLoading(true);
+    const { data } = await supabase
+      .from('mass_messages')
+      .select('*')
+      .eq('creator_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    setHistory(data || []);
+    setHistoryLoading(false);
+  };
 
   useEffect(() => {
-    const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    const init = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
@@ -46,379 +75,406 @@ export default function MassMessagePage() {
       }
 
       setUserId(user.id);
-
-      const { count: fCount } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', user.id);
-      setFollowerCount(fCount || 0);
-
-      const { count: sCount } = await supabase
-        .from('subscriptions')
-        .select('*', { count: 'exact', head: true })
-        .eq('creator_id', user.id)
-        .eq('status', 'active');
-      setSubCount(sCount || 0);
-
-      const { data: pending } = await supabase
-        .from('scheduled_mass_messages')
-        .select('*')
-        .eq('creator_id', user.id)
-        .eq('status', 'pending')
-        .order('scheduled_at', { ascending: true });
-
-      setScheduled(pending || []);
+      await loadHistory(user.id);
       setLoading(false);
     };
 
-    load();
+    init();
   }, []);
 
-  const getRecipientIds = async (creatorId: string, aud: Audience) => {
+  const getRecipientIds = async (uid: string, aud: Audience) => {
     const ids = new Set<string>();
 
     if (aud === 'followers' || aud === 'both') {
-      const { data } = await supabase
+      const { data: fans } = await supabase
         .from('follows')
         .select('follower_id')
-        .eq('following_id', creatorId);
-      (data || []).forEach((r) => ids.add(r.follower_id));
+        .eq('following_id', uid);
+      (fans || []).forEach((f: any) => ids.add(f.follower_id));
     }
 
     if (aud === 'subscribers' || aud === 'both') {
-      const { data } = await supabase
+      const { data: subs } = await supabase
         .from('subscriptions')
         .select('subscriber_id')
-        .eq('creator_id', creatorId)
+        .eq('creator_id', uid)
         .eq('status', 'active');
-      (data || []).forEach((r) => ids.add(r.subscriber_id));
+      (subs || []).forEach((s: any) => ids.add(s.subscriber_id));
     }
 
     return Array.from(ids);
   };
 
-  const ensureConversation = async (creatorId: string, fanId: string) => {
+  const ensureConversation = async (me: string, other: string) => {
     const { data: existing } = await supabase
       .from('conversations')
       .select('id')
       .or(
-        `and(participant_1.eq.${creatorId},participant_2.eq.${fanId}),and(participant_1.eq.${fanId},participant_2.eq.${creatorId})`
+        `and(participant_1.eq.${me},participant_2.eq.${other}),and(participant_1.eq.${other},participant_2.eq.${me})`
       )
       .maybeSingle();
 
-    if (existing) return existing.id;
+    if (existing?.id) return existing.id;
 
     const { data: created, error } = await supabase
       .from('conversations')
       .insert({
-        participant_1: creatorId,
-        participant_2: fanId,
+        participant_1: me,
+        participant_2: other,
         last_message_at: new Date().toISOString(),
       })
       .select('id')
       .single();
 
-    if (error) throw error;
+    if (error || !created) return null;
     return created.id;
   };
 
-  const sendToRecipients = async (creatorId: string, text: string, aud: Audience) => {
-    const recipientIds = await getRecipientIds(creatorId, aud);
+  const sendNow = async (uid: string, text: string, aud: Audience) => {
+    const recipientIds = await getRecipientIds(uid, aud);
     let sent = 0;
 
-    for (const fanId of recipientIds) {
-      try {
-        const convoId = await ensureConversation(creatorId, fanId);
-        await supabase.from('messages').insert({
-          conversation_id: convoId,
-          sender_id: creatorId,
-          content: text,
-        });
+    for (const otherId of recipientIds) {
+      const convoId = await ensureConversation(uid, otherId);
+      if (!convoId) continue;
+
+      const { error: msgErr } = await supabase.from('messages').insert({
+        conversation_id: convoId,
+        sender_id: uid,
+        content: text,
+      });
+
+      if (!msgErr) {
+        sent += 1;
         await supabase
           .from('conversations')
           .update({ last_message_at: new Date().toISOString() })
           .eq('id', convoId);
-        sent += 1;
-      } catch (err) {
-        console.error('Mass send failed for', fanId, err);
       }
     }
+
+    await supabase.from('mass_messages').insert({
+      creator_id: uid,
+      content: text,
+      audience: aud,
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      recipient_count: sent,
+      scheduled_for: null,
+    });
 
     return sent;
   };
 
-  const handleSendNow = async () => {
+  const scheduleMessage = async (uid: string, text: string, aud: Audience, when: string) => {
+    const { error } = await supabase.from('mass_messages').insert({
+      creator_id: uid,
+      content: text,
+      audience: aud,
+      status: 'scheduled',
+      scheduled_for: new Date(when).toISOString(),
+      recipient_count: 0,
+    });
+
+    if (error) throw error;
+  };
+
+  const handleSubmit = async () => {
     if (!userId || !content.trim()) return;
     setSending(true);
     setError('');
     setMessage('');
 
     try {
-      const count = await sendToRecipients(userId, content.trim(), audience);
-      setMessage(`Sent to ${count} people`);
+      if (mode === 'schedule') {
+        if (!scheduledFor) {
+          setError('Pick a date and time');
+          setSending(false);
+          return;
+        }
+        const when = new Date(scheduledFor);
+        if (when.getTime() <= Date.now()) {
+          setError('Schedule time must be in the future');
+          setSending(false);
+          return;
+        }
+        await scheduleMessage(userId, content.trim(), audience, scheduledFor);
+        setMessage('Mass message scheduled');
+      } else {
+        const count = await sendNow(userId, content.trim(), audience);
+        setMessage(`Sent to ${count} recipient${count === 1 ? '' : 's'}`);
+      }
+
       setContent('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleSchedule = async () => {
-    if (!userId || !content.trim() || !scheduledAt) return;
-    setSending(true);
-    setError('');
-    setMessage('');
-
-    const when = new Date(scheduledAt);
-    if (isNaN(when.getTime()) || when.getTime() <= Date.now()) {
-      setError('Pick a future date and time');
-      setSending(false);
-      return;
-    }
-
-    try {
-      const { data, error: insertError } = await supabase
-        .from('scheduled_mass_messages')
-        .insert({
-          creator_id: userId,
-          content: content.trim(),
-          audience,
-          scheduled_at: when.toISOString(),
-          status: 'pending',
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      setScheduled((prev) =>
-        [...prev, data].sort(
-          (a, b) =>
-            new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
-        )
-      );
-      setContent('');
-      setScheduledAt('');
+      setScheduledFor('');
       setMode('now');
-      setMessage('Message scheduled');
-    } catch (err: any) {
-      setError(err.message || 'Failed to schedule');
-    } finally {
-      setSending(false);
+      await loadHistory(userId);
+    } catch (e: any) {
+      setError(e?.message || 'Something went wrong');
     }
+
+    setSending(false);
   };
 
   const cancelScheduled = async (id: string) => {
-    const { error: updateError } = await supabase
-      .from('scheduled_mass_messages')
+    if (!userId) return;
+    await supabase
+      .from('mass_messages')
       .update({ status: 'cancelled' })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('creator_id', userId)
+      .eq('status', 'scheduled');
 
-    if (!updateError) {
-      setScheduled((prev) => prev.filter((s) => s.id !== id));
-    }
+    await loadHistory(userId);
   };
 
-  const estimatedCount =
-    audience === 'followers'
-      ? followerCount
-      : audience === 'subscribers'
-      ? subCount
-      : followerCount + subCount;
+  const audienceLabel = (a: string) => {
+    if (a === 'subscribers') return 'Subscribers';
+    if (a === 'both') return 'Followers + Subscribers';
+    return 'Followers';
+  };
+
+  const formatWhen = (iso: string | null) => {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  };
+
+  const scheduledItems = history.filter((h) => h.status === 'scheduled');
+  const sentItems = history.filter((h) => h.status === 'sent' || h.status === 'failed');
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-        <p className="text-zinc-400">Loading...</p>
+      <div className="min-h-screen bg-zinc-950 text-white flex">
+        <Sidebar />
+        <main className="flex-1 flex items-center justify-center text-zinc-500">
+          Loading...
+        </main>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
-      <div className="hidden lg:block">
-        <Sidebar />
-      </div>
-
+      <Sidebar />
       <main className="flex-1 overflow-y-auto">
-        <div className="sticky top-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
-          <Link href="/messages" className="text-zinc-400 hover:text-white">
-            <ArrowLeft size={22} />
-          </Link>
-          <div>
-            <h1 className="text-lg font-semibold">Mass Message</h1>
-            <p className="text-xs text-zinc-500">Send one message to many people at once</p>
-          </div>
-        </div>
-
-        <div className="max-w-xl mx-auto px-4 py-6 space-y-6">
-          {(message || error) && (
-            <div
-              className={`rounded-xl px-4 py-3 text-sm ${
-                error
-                  ? 'bg-red-500/10 border border-red-500/30 text-red-400'
-                  : 'bg-pink-500/10 border border-pink-500/30 text-pink-400'
-              }`}
+        <div className="max-w-2xl mx-auto px-4 py-6">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-6">
+            <Link
+              href="/messages"
+              className="text-zinc-400 hover:text-white transition"
             >
-              {error || message}
-            </div>
-          )}
-
-          {/* Audience */}
-          <div className="space-y-2">
-            <p className="text-sm text-zinc-400">Send to</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setAudience('subscribers')}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                  audience === 'subscribers'
-                    ? 'bg-pink-600 text-white'
-                    : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                }`}
-              >
-                ♥ Subscribers ({subCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAudience('followers')}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                  audience === 'followers'
-                    ? 'bg-pink-600 text-white'
-                    : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                }`}
-              >
-                👥 Followers ({followerCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAudience('both')}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                  audience === 'both'
-                    ? 'bg-pink-600 text-white'
-                    : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                }`}
-              >
-                Both
-              </button>
-            </div>
-            <p className="text-xs text-zinc-500">About {estimatedCount} recipients</p>
+              <ArrowLeft size={22} />
+            </Link>
+            <h1 className="text-xl font-semibold flex items-center gap-2">
+              <Megaphone className="text-pink-500" size={22} />
+              Mass message
+            </h1>
           </div>
 
-          {/* Message */}
-          <div className="space-y-2">
-            <p className="text-sm text-zinc-400">Message</p>
+          {/* Compose */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
+            <label className="text-sm text-zinc-400 mb-2 block">Message</label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              rows={5}
-              maxLength={1000}
               placeholder="Write your mass message..."
-              className="w-full bg-zinc-900 border border-pink-500/50 rounded-2xl px-4 py-3 outline-none focus:border-pink-500 resize-none"
+              rows={4}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 resize-none mb-4"
             />
-            <p className="text-xs text-zinc-500 text-right">{content.length}/1000</p>
-          </div>
 
-          {/* Send now / Schedule */}
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
+            <label className="text-sm text-zinc-400 mb-2 block">Audience</label>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {(
+                [
+                  { id: 'followers' as Audience, label: 'Followers', icon: Users },
+                  { id: 'subscribers' as Audience, label: 'Subscribers', icon: Heart },
+                  { id: 'both' as Audience, label: 'Both', icon: Users },
+                ] as const
+              ).map((opt) => {
+                const Icon = opt.icon;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setAudience(opt.id)}
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border text-sm transition ${
+                      audience === opt.id
+                        ? 'border-pink-500 bg-pink-500/10 text-pink-400'
+                        : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600'
+                    }`}
+                  >
+                    <Icon size={18} />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="text-sm text-zinc-400 mb-2 block">When</label>
+            <div className="flex gap-2 mb-4">
               <button
                 type="button"
                 onClick={() => setMode('now')}
-                className={`rounded-xl border py-2.5 text-sm font-medium flex items-center justify-center gap-2 ${
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition ${
                   mode === 'now'
-                    ? 'border-pink-500 bg-pink-600/20 text-pink-300'
-                    : 'border-zinc-700 bg-zinc-900 text-zinc-300'
+                    ? 'border-pink-500 bg-pink-500/10 text-pink-400'
+                    : 'border-zinc-700 bg-zinc-800 text-zinc-400'
                 }`}
               >
-                <Send size={16} /> Send now
+                Send now
               </button>
               <button
                 type="button"
                 onClick={() => setMode('schedule')}
-                className={`rounded-xl border py-2.5 text-sm font-medium flex items-center justify-center gap-2 ${
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition ${
                   mode === 'schedule'
-                    ? 'border-pink-500 bg-pink-600/20 text-pink-300'
-                    : 'border-zinc-700 bg-zinc-900 text-zinc-300'
+                    ? 'border-pink-500 bg-pink-500/10 text-pink-400'
+                    : 'border-zinc-700 bg-zinc-800 text-zinc-400'
                 }`}
               >
-                <Calendar size={16} /> Schedule
+                Schedule
               </button>
             </div>
 
             {mode === 'schedule' && (
-              <div>
-                <label className="text-sm text-zinc-400 mb-1.5 block">Send at</label>
+              <div className="mb-4">
+                <label className="text-sm text-zinc-400 mb-2 block flex items-center gap-1.5">
+                  <Calendar size={14} /> Date & time
+                </label>
                 <input
                   type="datetime-local"
-                  value={scheduledAt}
-                  onChange={(e) => setScheduledAt(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500"
+                  value={scheduledFor}
+                  onChange={(e) => setScheduledFor(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500"
                 />
               </div>
             )}
 
+            {error && (
+              <p className="text-sm text-red-400 mb-3 bg-red-400/10 border border-red-400/20 rounded-xl px-3 py-2">
+                {error}
+              </p>
+            )}
+            {message && (
+              <p className="text-sm text-emerald-400 mb-3 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-3 py-2">
+                {message}
+              </p>
+            )}
+
             <button
               type="button"
-              onClick={mode === 'now' ? handleSendNow : handleSchedule}
-              disabled={
-                sending ||
-                !content.trim() ||
-                (mode === 'schedule' && !scheduledAt)
-              }
-              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3.5 rounded-2xl font-semibold transition flex items-center justify-center gap-2"
+              onClick={handleSubmit}
+              disabled={sending || !content.trim()}
+              className="w-full flex items-center justify-center gap-2 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3 rounded-xl font-medium transition"
             >
-              {sending
-                ? mode === 'now'
-                  ? 'Sending...'
-                  : 'Scheduling...'
-                : mode === 'now'
-                ? '✈ Send Mass Message'
-                : '📅 Schedule Message'}
+              {sending ? (
+                'Working...'
+              ) : mode === 'schedule' ? (
+                <>
+                  <Clock size={18} /> Schedule message
+                </>
+              ) : (
+                <>
+                  <Send size={18} /> Send now
+                </>
+              )}
             </button>
-            <p className="text-center text-xs text-zinc-500">
-              Each person gets this in their normal chat with you.
-            </p>
           </div>
 
-          {/* Pending scheduled */}
-          {scheduled.length > 0 && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
-              <p className="font-medium flex items-center gap-2">
-                <Clock size={18} className="text-pink-500" /> Scheduled
-              </p>
-              <div className="space-y-2">
-                {scheduled.map((item) => (
+          {/* History */}
+          <div>
+            <h2 className="text-lg font-semibold mb-3">History</h2>
+
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setHistoryTab('scheduled')}
+                className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition ${
+                  historyTab === 'scheduled'
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+                }`}
+              >
+                Scheduled ({scheduledItems.length})
+              </button>
+              <button
+                onClick={() => setHistoryTab('sent')}
+                className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition ${
+                  historyTab === 'sent'
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+                }`}
+              >
+                Delivered ({sentItems.length})
+              </button>
+            </div>
+
+            {historyLoading ? (
+              <p className="text-zinc-500 text-sm py-8 text-center">Loading history...</p>
+            ) : (historyTab === 'scheduled' ? scheduledItems : sentItems).length === 0 ? (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl py-12 text-center text-zinc-500 text-sm">
+                {historyTab === 'scheduled'
+                  ? 'No scheduled mass messages'
+                  : 'No delivered mass messages yet'}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(historyTab === 'scheduled' ? scheduledItems : sentItems).map((item) => (
                   <div
                     key={item.id}
-                    className="bg-zinc-800 border border-zinc-700 rounded-xl p-3 flex items-start gap-3"
+                    className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm line-clamp-2">{item.content}</p>
-                      <p className="text-xs text-zinc-400 mt-1">
-                        {new Date(item.scheduled_at).toLocaleString('en-GB', {
-                          day: 'numeric',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}{' '}
-                        · {item.audience}
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <p className="text-sm text-zinc-100 whitespace-pre-wrap break-words flex-1">
+                        {item.content || '(no text)'}
                       </p>
+                      {item.status === 'scheduled' && (
+                        <button
+                          onClick={() => cancelScheduled(item.id)}
+                          className="text-xs text-red-400 hover:text-red-300 flex-shrink-0"
+                        >
+                          Cancel
+                        </button>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => cancelScheduled(item.id)}
-                      className="text-zinc-400 hover:text-red-400 p-1"
-                      title="Cancel"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+                      <span className="flex items-center gap-1">
+                        {item.status === 'sent' ? (
+                          <CheckCircle2 size={12} className="text-emerald-500" />
+                        ) : item.status === 'failed' ? (
+                          <XCircle size={12} className="text-red-400" />
+                        ) : (
+                          <Clock size={12} className="text-pink-400" />
+                        )}
+                        {item.status === 'sent'
+                          ? 'Delivered'
+                          : item.status === 'failed'
+                          ? 'Failed'
+                          : 'Scheduled'}
+                      </span>
+                      <span>{audienceLabel(item.audience)}</span>
+                      {item.status === 'scheduled' && (
+                        <span>Sends {formatWhen(item.scheduled_for)}</span>
+                      )}
+                      {item.status === 'sent' && (
+                        <>
+                          <span>{formatWhen(item.sent_at)}</span>
+                          <span>
+                            {item.recipient_count} recipient
+                            {item.recipient_count === 1 ? '' : 's'}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </main>
     </div>
