@@ -58,23 +58,30 @@ export default function ChatPage() {
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
   const [voiceSecs, setVoiceSecs] = useState(0);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const mobileRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<any>(null);
+  const userIdRef = useRef<string | null>(null);
 
   const actorName = () =>
     myProfile?.display_name || myProfile?.username || 'Someone';
 
   const scrollBottom = () => {
-    if (mobileRef.current) mobileRef.current.scrollTop = mobileRef.current.scrollHeight;
-    if (desktopRef.current) desktopRef.current.scrollTop = desktopRef.current.scrollHeight;
+    requestAnimationFrame(() => {
+      if (mobileRef.current) {
+        mobileRef.current.scrollTop = mobileRef.current.scrollHeight;
+      }
+      if (desktopRef.current) {
+        desktopRef.current.scrollTop = desktopRef.current.scrollHeight;
+      }
+    });
   };
 
   const formatLastSeen = (dateString?: string | null) => {
@@ -118,6 +125,7 @@ export default function ChatPage() {
       .from('message_reactions')
       .select('*')
       .in('message_id', messageIds);
+
     const map: Record<string, any[]> = {};
     (data || []).forEach((r) => {
       if (!map[r.message_id]) map[r.message_id] = [];
@@ -138,6 +146,7 @@ export default function ChatPage() {
       if (!alive) return;
 
       setUserId(user.id);
+      userIdRef.current = user.id;
       await bumpLastSeen(user.id);
 
       const { data: me } = await supabase
@@ -222,7 +231,7 @@ export default function ChatPage() {
       }
 
       await markAsRead(user.id);
-      setTimeout(scrollBottom, 150);
+      setTimeout(scrollBottom, 200);
     };
 
     load();
@@ -248,10 +257,11 @@ export default function ChatPage() {
       if (data) {
         setOtherUser((prev: any) => (prev ? { ...prev, ...data } : prev));
       }
-    }, 20000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [otherUserId]);
 
+  // Realtime — stable deps only (no messages.length)
   useEffect(() => {
     if (!conversationId || !userId) return;
 
@@ -271,9 +281,9 @@ export default function ChatPage() {
             if (prev.find((m) => m.id === payload.new.id)) return prev;
             return [...prev, payload.new];
           });
-          setTimeout(scrollBottom, 50);
-          if (payload.new.sender_id !== userId) {
-            await markAsRead(userId);
+          setTimeout(scrollBottom, 80);
+          if (payload.new.sender_id !== userIdRef.current) {
+            await markAsRead(userIdRef.current!);
           }
         }
       )
@@ -291,16 +301,8 @@ export default function ChatPage() {
           );
         }
       )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'message_reactions' },
-        async () => {
-          const ids = messages.map((m) => m.id);
-          if (ids.length > 0) await loadReactions(ids);
-        }
-      )
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
-        if (payload?.userId !== userId) {
+        if (payload?.userId !== userIdRef.current) {
           setIsOtherTyping(!!payload?.isTyping);
         }
       })
@@ -311,7 +313,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [conversationId, userId, messages.length]);
+  }, [conversationId, userId]);
 
   useEffect(() => {
     return () => {
@@ -376,8 +378,7 @@ export default function ChatPage() {
       ? new Date(otherUser.last_seen_at).getTime()
       : 0;
     const fiveMin = 5 * 60 * 1000;
-    const isOffline = Date.now() - lastSeen > fiveMin;
-    if (!isOffline) return;
+    if (Date.now() - lastSeen <= fiveMin) return;
 
     try {
       const { data, error } = await supabase
@@ -638,13 +639,12 @@ export default function ChatPage() {
         });
       }
 
-      // Auto-reply if fan messaged offline creator
       if (myProfile?.account_type !== 'creator') {
         await maybeSendAutoReply();
       }
 
       setTimeout(scrollBottom, 80);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setTimeout(() => inputRef.current?.focus(), 120);
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Failed to send');
@@ -944,7 +944,13 @@ export default function ChatPage() {
     if (isVideo) {
       return (
         <div className="relative bg-black min-w-[260px]">
-          <video src={msg.media_url} controls playsInline className="w-full max-h-[360px]" />
+          <video
+            src={msg.media_url}
+            controls
+            playsInline
+            preload="metadata"
+            className="w-full max-h-[360px]"
+          />
           {msg.is_locked && mine && (
             <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
               <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
@@ -1153,6 +1159,8 @@ export default function ChatPage() {
               src={preview!}
               className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
               muted
+              playsInline
+              preload="metadata"
             />
           ) : (
             <img
@@ -1300,7 +1308,13 @@ export default function ChatPage() {
                   >
                     {m.media_type === 'video' ? (
                       <>
-                        <video src={m.media_url} className="w-full h-full object-cover" muted />
+                        <video
+                          src={m.media_url}
+                          className="w-full h-full object-cover"
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
                         <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">
                           Video
                         </span>
@@ -1426,7 +1440,8 @@ export default function ChatPage() {
             <video
               src={viewer.url}
               controls
-              autoPlay
+              playsInline
+              preload="metadata"
               className="max-w-full max-h-full"
               onClick={(e) => e.stopPropagation()}
             />
@@ -1557,7 +1572,7 @@ export default function ChatPage() {
 
         <div
           ref={mobileRef}
-          className="flex-1 overflow-y-scroll px-3"
+          className="flex-1 overflow-y-auto px-3"
           style={{ WebkitOverflowScrolling: 'touch' }}
           onClick={() => setReactFor(null)}
         >
@@ -1651,7 +1666,7 @@ export default function ChatPage() {
 
         <div
           ref={desktopRef}
-          className="flex-1 overflow-y-scroll px-6 max-w-3xl w-full mx-auto"
+          className="flex-1 overflow-y-auto px-6 max-w-3xl w-full mx-auto"
           onClick={() => setReactFor(null)}
         >
           <div className="min-h-full flex flex-col justify-end py-3 space-y-3">
