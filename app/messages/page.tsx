@@ -32,7 +32,13 @@ export default function MessagesPage() {
   const userIdRef = useRef<string | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadMeta = async (userId: string) => {
+  const loadMeta = async (userId: string, creator: boolean) => {
+    if (!creator) {
+      setFanIds(new Set());
+      setSubIds(new Set());
+      return;
+    }
+
     // People who follow YOU = fans
     const { data: fans } = await supabase
       .from('follows')
@@ -41,7 +47,7 @@ export default function MessagesPage() {
 
     setFanIds(new Set((fans || []).map((f: any) => f.follower_id)));
 
-    // Active paying subscribers (to you as creator)
+    // Active paying subscribers
     const { data: subs } = await supabase
       .from('subscriptions')
       .select('subscriber_id')
@@ -131,16 +137,16 @@ export default function MessagesPage() {
         .eq('id', user.id)
         .single();
 
-      setIsCreator(profile?.account_type === 'creator');
+      const creator = profile?.account_type === 'creator';
+      setIsCreator(creator);
 
-      await loadMeta(user.id);
+      await loadMeta(user.id, creator);
       await loadConversations(user.id);
     };
 
     init();
   }, []);
 
-  // Realtime-ish refresh when new messages arrive
   useEffect(() => {
     if (!currentUserId) return;
 
@@ -163,6 +169,13 @@ export default function MessagesPage() {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };
   }, [currentUserId, loadConversations]);
+
+  // If sub somehow has fans/subscribers selected, snap back to all
+  useEffect(() => {
+    if (!isCreator && (filter === 'fans' || filter === 'subscribers')) {
+      setFilter('all');
+    }
+  }, [isCreator, filter]);
 
   const toggleArchive = async (convo: any) => {
     if (!currentUserId) return;
@@ -215,27 +228,32 @@ export default function MessagesPage() {
 
   const filtered = conversations.filter((c) => {
     if (filter === 'archived') return c.isArchived;
-    if (c.isArchived) return false; // hide archived from other tabs
+    if (c.isArchived) return false;
 
     if (filter === 'unread') return c.unreadCount > 0;
     if (filter === 'fans') return fanIds.has(c.otherId);
     if (filter === 'subscribers') return subIds.has(c.otherId);
-    return true; // all
+    return true;
   });
 
-  const tabs: { id: Filter; label: string }[] = [
-    { id: 'all', label: 'All' },
-    { id: 'unread', label: 'Unread' },
-    { id: 'fans', label: 'Fans' },
-    { id: 'subscribers', label: 'Subscribers' },
-    { id: 'archived', label: 'Archived' },
-  ];
+  const tabs: { id: Filter; label: string }[] = isCreator
+    ? [
+        { id: 'all', label: 'All' },
+        { id: 'unread', label: 'Unread' },
+        { id: 'fans', label: 'Fans' },
+        { id: 'subscribers', label: 'Subscribers' },
+        { id: 'archived', label: 'Archived' },
+      ]
+    : [
+        { id: 'all', label: 'All' },
+        { id: 'unread', label: 'Unread' },
+        { id: 'archived', label: 'Archived' },
+      ];
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
         <div className="sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800">
           <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -258,7 +276,6 @@ export default function MessagesPage() {
             )}
           </div>
 
-          {/* Filters */}
           <div className="max-w-3xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-none">
             {tabs.map((tab) => (
               <button
@@ -276,7 +293,6 @@ export default function MessagesPage() {
           </div>
         </div>
 
-        {/* List */}
         <div className="flex-1 max-w-3xl w-full mx-auto">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-zinc-500">
@@ -297,7 +313,9 @@ export default function MessagesPage() {
                   : 'No messages yet'}
               </p>
               <p className="text-zinc-600 text-sm mt-2">
-                {filter === 'all' ? 'Start a conversation from someone’s profile' : 'Try another filter'}
+                {filter === 'all'
+                  ? 'Start a conversation from someone’s profile'
+                  : 'Try another filter'}
               </p>
             </div>
           ) : (
@@ -307,7 +325,6 @@ export default function MessagesPage() {
                   convo.otherProfile?.display_name ||
                   convo.otherProfile?.username ||
                   'User';
-                const username = convo.otherProfile?.username;
                 const avatar = convo.otherProfile?.avatar_url;
                 const initial = (name || '?')[0].toUpperCase();
                 const hasUnread = convo.unreadCount > 0;
@@ -370,7 +387,6 @@ export default function MessagesPage() {
                       </div>
                     </Link>
 
-                    {/* Menu */}
                     <div className="relative flex-shrink-0">
                       <button
                         onClick={(e) => {
