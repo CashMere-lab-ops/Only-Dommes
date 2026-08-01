@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, User, Lock, Bell, Camera, Save, Eye, EyeOff,
-  Link2, Unlink, Heart, MessageCircle, Bot
+  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -37,8 +37,13 @@ export default function SettingsPage() {
   const [subscriptionPrice, setSubscriptionPrice] = useState('9.99');
   const [messagePrice, setMessagePrice] = useState('0');
 
+  // Offline / new message auto-reply
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [autoReplyMessage, setAutoReplyMessage] = useState('');
+
+  // Tip auto-reply
+  const [autoReplyTipEnabled, setAutoReplyTipEnabled] = useState(false);
+  const [autoReplyTipMessage, setAutoReplyTipMessage] = useState('');
 
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
@@ -72,6 +77,8 @@ export default function SettingsPage() {
         setMessagePrice(String(data.message_price ?? 0));
         setAutoReplyEnabled(!!data.auto_reply_enabled);
         setAutoReplyMessage(data.auto_reply_message || '');
+        setAutoReplyTipEnabled(!!data.auto_reply_tip_enabled);
+        setAutoReplyTipMessage(data.auto_reply_tip_message || '');
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
@@ -148,6 +155,8 @@ export default function SettingsPage() {
         updates.message_price = parseFloat(messagePrice) || 0;
         updates.auto_reply_enabled = autoReplyEnabled;
         updates.auto_reply_message = autoReplyMessage.trim();
+        updates.auto_reply_tip_enabled = autoReplyTipEnabled;
+        updates.auto_reply_tip_message = autoReplyTipMessage.trim();
       }
 
       const { error: updateError } = await supabase
@@ -431,44 +440,85 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Auto-reply */}
+            {/* Auto-replies */}
             {isCreator && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-6">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
-                  <Bot size={18} className="text-pink-500" /> Auto-reply
+                  <Bot size={18} className="text-pink-500" /> Auto-replies
                 </h2>
-                <p className="text-sm text-zinc-400">
-                  When you&apos;re offline, automatically reply once to new messages in a chat.
-                </p>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Enable auto-reply</p>
-                    <p className="text-sm text-zinc-400">Sends when you haven&apos;t been active recently</p>
+
+                {/* Offline message auto-reply */}
+                <div className="space-y-3 pb-6 border-b border-zinc-800">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Offline message reply</p>
+                      <p className="text-sm text-zinc-400">
+                        Sent once when a fan messages you while you&apos;re offline
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={autoReplyEnabled}
+                        onChange={() => setAutoReplyEnabled(!autoReplyEnabled)}
+                      />
+                      <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                    </label>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={autoReplyEnabled}
-                      onChange={() => setAutoReplyEnabled(!autoReplyEnabled)}
-                    />
-                    <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
-                  </label>
+                  {autoReplyEnabled && (
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Message</label>
+                      <textarea
+                        value={autoReplyMessage}
+                        onChange={(e) => setAutoReplyMessage(e.target.value)}
+                        rows={3}
+                        maxLength={300}
+                        placeholder="Thanks for messaging! I'll reply as soon as I'm free 💕"
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500 resize-none"
+                      />
+                      <p className="text-xs text-zinc-500 mt-1">{autoReplyMessage.length}/300</p>
+                    </div>
+                  )}
                 </div>
-                {autoReplyEnabled && (
-                  <div>
-                    <label className="text-sm text-zinc-400 mb-1.5 block">Auto-reply message</label>
-                    <textarea
-                      value={autoReplyMessage}
-                      onChange={(e) => setAutoReplyMessage(e.target.value)}
-                      rows={3}
-                      maxLength={300}
-                      placeholder="Thanks for messaging! I'll reply as soon as I'm free 💕"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500 resize-none"
-                    />
-                    <p className="text-xs text-zinc-500 mt-1">{autoReplyMessage.length}/300</p>
+
+                {/* Tip auto-reply */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-start gap-2">
+                      <DollarSign size={18} className="text-pink-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium">Tip thank-you</p>
+                        <p className="text-sm text-zinc-400">
+                          Sent automatically when someone tips you in chat
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={autoReplyTipEnabled}
+                        onChange={() => setAutoReplyTipEnabled(!autoReplyTipEnabled)}
+                      />
+                      <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                    </label>
                   </div>
-                )}
+                  {autoReplyTipEnabled && (
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Thank-you message</label>
+                      <textarea
+                        value={autoReplyTipMessage}
+                        onChange={(e) => setAutoReplyTipMessage(e.target.value)}
+                        rows={3}
+                        maxLength={300}
+                        placeholder="Thank you so much for the tip! You're amazing 💕"
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500 resize-none"
+                      />
+                      <p className="text-xs text-zinc-500 mt-1">{autoReplyTipMessage.length}/300</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
