@@ -27,7 +27,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
 
-  // Creator states
   const [showUpload, setShowUpload] = useState(false);
   const [showItemForm, setShowItemForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -61,21 +60,24 @@ export default function DashboardPage() {
 
   const [myClips] = useState([
     { id: 1, title: 'Morning Stretch Session', price: 12.99, sales: 0 },
-    { id: 2, title: 'Private JOI Custom', price: 45.00, sales: 0 },
+    { id: 2, title: 'Private JOI Custom', price: 45.0, sales: 0 },
   ]);
 
   const [myItems, setMyItems] = useState<Item[]>([]);
 
-  // Subscribers (creators)
+  // Creators: their subscribers
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
 
-  // Fan side: my subscription count
+  // Subs: creators they subscribe to
+  const [mySubscriptions, setMySubscriptions] = useState<any[]>([]);
   const [mySubCount, setMySubCount] = useState(0);
 
   useEffect(() => {
     const loadProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data } = await supabase
@@ -87,7 +89,6 @@ export default function DashboardPage() {
       setProfile(data);
 
       if (data?.account_type === 'creator') {
-        // Load active subscribers
         const { data: subs } = await supabase
           .from('subscriptions')
           .select('*')
@@ -114,13 +115,32 @@ export default function DashboardPage() {
           setSubCount(0);
         }
       } else {
-        // Fan: count their active subs
-        const { count } = await supabase
+        // Sub: load creators they are subscribed to
+        const { data: subs } = await supabase
           .from('subscriptions')
-          .select('*', { count: 'exact', head: true })
+          .select('*')
           .eq('subscriber_id', user.id)
-          .eq('status', 'active');
-        setMySubCount(count || 0);
+          .eq('status', 'active')
+          .order('started_at', { ascending: false });
+
+        if (subs && subs.length > 0) {
+          const ids = subs.map((s) => s.creator_id);
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url')
+            .in('id', ids);
+
+          const map = new Map((profiles || []).map((p) => [p.id, p]));
+          const enriched = subs.map((s) => ({
+            ...s,
+            creator: map.get(s.creator_id) || null,
+          }));
+          setMySubscriptions(enriched);
+          setMySubCount(enriched.length);
+        } else {
+          setMySubscriptions([]);
+          setMySubCount(0);
+        }
       }
 
       setLoading(false);
@@ -321,7 +341,8 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                {/* Your Subscriptions — list of creators */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col">
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-lg font-semibold flex items-center gap-2">
                       <Heart size={20} className="text-pink-400" /> Your Subscriptions
@@ -330,25 +351,70 @@ export default function DashboardPage() {
                       View all
                     </Link>
                   </div>
-                  <div className="text-center py-12 text-zinc-500">
-                    <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-                      <Heart size={28} className="opacity-40" />
+
+                  {mySubscriptions.length === 0 ? (
+                    <div className="text-center py-10 text-zinc-500 flex-1">
+                      <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+                        <Heart size={28} className="opacity-40" />
+                      </div>
+                      <p className="text-sm mb-1">No active subscriptions</p>
+                      <p className="text-xs text-zinc-600 mb-5">
+                        Subscribe to creators to unlock exclusive content
+                      </p>
                     </div>
-                    <p className="text-sm mb-1">
-                      {mySubCount === 0
-                        ? 'No active subscriptions'
-                        : `${mySubCount} active subscription${mySubCount === 1 ? '' : 's'}`}
-                    </p>
-                    <p className="text-xs text-zinc-600 mb-5">
-                      Subscribe to creators to unlock exclusive content
-                    </p>
-                    <Link
-                      href="/subscriptions"
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-pink-600 hover:bg-pink-700 rounded-xl text-sm font-medium transition"
-                    >
-                      Manage Subscriptions
-                    </Link>
-                  </div>
+                  ) : (
+                    <div className="space-y-2 flex-1 mb-5">
+                      {mySubscriptions.slice(0, 5).map((sub) => {
+                        const name =
+                          sub.creator?.display_name ||
+                          sub.creator?.username ||
+                          'Creator';
+                        const username = sub.creator?.username;
+                        const initial = name.charAt(0).toUpperCase();
+                        return (
+                          <Link
+                            key={sub.id}
+                            href={username ? `/${username}` : '/subscriptions'}
+                            className="flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-800/70 transition"
+                          >
+                            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
+                              {sub.creator?.avatar_url ? (
+                                <img
+                                  src={sub.creator.avatar_url}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                initial
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{name}</p>
+                              <p className="text-xs text-zinc-400 truncate">
+                                {username ? `@${username}` : ''}
+                                {sub.started_at ? ` · since ${formatDate(sub.started_at)}` : ''}
+                              </p>
+                            </div>
+                            <span className="text-sm text-pink-400 font-medium flex-shrink-0">
+                              £{Number(sub.price || 0).toFixed(2)}/mo
+                            </span>
+                          </Link>
+                        );
+                      })}
+                      {mySubscriptions.length > 5 && (
+                        <p className="text-xs text-zinc-500 text-center pt-1">
+                          +{mySubscriptions.length - 5} more
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <Link
+                    href="/subscriptions"
+                    className="w-full text-center px-5 py-2.5 bg-pink-600 hover:bg-pink-700 rounded-xl text-sm font-medium transition text-white"
+                  >
+                    Manage Subscriptions
+                  </Link>
                 </div>
 
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
@@ -428,7 +494,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* SUBSCRIBERS LIST */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -436,7 +501,6 @@ export default function DashboardPage() {
                 </h2>
                 <span className="text-sm text-zinc-400">{subCount} active</span>
               </div>
-
               {subscribers.length === 0 ? (
                 <div className="text-center py-10 text-zinc-500 text-sm">
                   <Users size={32} className="mx-auto mb-2 opacity-40" />
@@ -450,7 +514,6 @@ export default function DashboardPage() {
                       sub.subscriber?.username ||
                       'User';
                     const initial = name.charAt(0).toUpperCase();
-
                     return (
                       <Link
                         key={sub.id}
@@ -697,7 +760,6 @@ export default function DashboardPage() {
           </div>
         </main>
 
-        {/* modals unchanged */}
         {viewingItem && viewingItem.photos.length > 0 && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
