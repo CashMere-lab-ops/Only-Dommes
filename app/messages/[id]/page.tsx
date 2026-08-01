@@ -630,17 +630,17 @@ export default function ChatPage() {
 
     if (locked) {
       return (
-        <div className="relative">
+        <div className="relative w-full min-w-[260px] aspect-video bg-zinc-900 overflow-hidden">
           {isImage ? (
             <img
               src={msg.media_url}
               alt=""
-              className="w-full max-h-[280px] object-cover blur-xl scale-110"
+              className="absolute inset-0 w-full h-full object-cover blur-xl scale-110"
             />
           ) : (
-            <div className="w-full h-[200px] bg-zinc-800 blur-sm" />
+            <div className="absolute inset-0 bg-zinc-800" />
           )}
-          <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-4 text-center">
             <Lock size={28} className="text-white mb-2" />
             <p className="text-white text-sm font-medium mb-3">
               Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
@@ -649,7 +649,7 @@ export default function ChatPage() {
               type="button"
               onClick={() => unlockMessage(msg)}
               disabled={unlockingId === msg.id}
-              className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full flex items-center gap-2"
+              className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-full flex items-center gap-2"
             >
               <Unlock size={16} />
               {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
@@ -661,7 +661,7 @@ export default function ChatPage() {
 
     if (isVideo) {
       return (
-        <div className="relative bg-black">
+        <div className="relative bg-black min-w-[260px]">
           <video
             src={msg.media_url}
             controls
@@ -681,7 +681,7 @@ export default function ChatPage() {
       <button
         type="button"
         onClick={() => setViewer({ url: msg.media_url, type: 'image' })}
-        className="block w-full relative"
+        className="block w-full relative min-w-[200px]"
       >
         <img
           src={msg.media_url}
@@ -1187,7 +1187,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-               <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
+        <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
           <ReplyBar />
           {preview && <MediaPreviewBox />}
           <div className="flex items-center gap-2">
