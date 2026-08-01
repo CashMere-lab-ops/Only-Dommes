@@ -1,4 +1,4 @@
-'use client';
+'use c'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -33,10 +33,20 @@ function toLocalTimeValue(d: Date) {
 }
 
 function combineLocal(dateStr: string, timeStr: string) {
-  // dateStr: YYYY-MM-DD, timeStr: HH:mm
   const [y, m, day] = dateStr.split('-').map(Number);
   const [hh, mm] = timeStr.split(':').map(Number);
   return new Date(y, m - 1, day, hh, mm, 0, 0);
+}
+
+function formatNice(d: Date) {
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 export default function MassMessagePage() {
@@ -239,12 +249,7 @@ export default function MassMessagePage() {
           return;
         }
         await scheduleMessage(userId, content.trim(), audience, when);
-        setMessage(
-          `Scheduled for ${when.toLocaleString(undefined, {
-            dateStyle: 'medium',
-            timeStyle: 'short',
-          })}`
-        );
+        setMessage(`Scheduled for ${formatNice(when)}`);
       } else {
         const count = await sendNow(userId, content.trim(), audience);
         setMessage(`Sent to ${count} recipient${count === 1 ? '' : 's'}`);
@@ -283,15 +288,11 @@ export default function MassMessagePage() {
 
   const formatWhen = (iso: string | null) => {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    });
+    return formatNice(new Date(iso));
   };
 
   const scheduledItems = history.filter((h) => h.status === 'scheduled');
   const sentItems = history.filter((h) => h.status === 'sent' || h.status === 'failed');
-
   const minDate = toLocalDateValue(new Date());
 
   if (loading) {
@@ -386,7 +387,6 @@ export default function MassMessagePage() {
 
             {mode === 'schedule' && (
               <div className="mb-4 space-y-3">
-                {/* Quick picks */}
                 <div className="flex flex-wrap gap-2">
                   {[
                     { label: 'In 1 hour', mins: 60 },
@@ -444,11 +444,7 @@ export default function MassMessagePage() {
                   <p className="text-xs text-zinc-400 bg-zinc-800/80 border border-zinc-700 rounded-xl px-3 py-2">
                     Will send:{' '}
                     <span className="text-pink-400 font-medium">
-                      {scheduledPreview.toLocaleString(undefined, {
-                        weekday: 'short',
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
+                      {formatNice(scheduledPreview)}
                     </span>{' '}
                     <span className="text-zinc-500">(your local time)</span>
                   </p>
@@ -487,7 +483,6 @@ export default function MassMessagePage() {
             </button>
           </div>
 
-          {/* History */}
           <div>
             <h2 className="text-lg font-semibold mb-3">History</h2>
 
