@@ -10,6 +10,8 @@ import {
   Archive,
   ArchiveRestore,
   MoreHorizontal,
+  Search,
+  X,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
@@ -25,6 +27,7 @@ export default function MessagesPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isCreator, setIsCreator] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [fanIds, setFanIds] = useState<Set<string>>(new Set());
   const [subIds, setSubIds] = useState<Set<string>>(new Set());
@@ -39,7 +42,6 @@ export default function MessagesPage() {
       return;
     }
 
-    // People who follow YOU = fans
     const { data: fans } = await supabase
       .from('follows')
       .select('follower_id')
@@ -47,7 +49,6 @@ export default function MessagesPage() {
 
     setFanIds(new Set((fans || []).map((f: any) => f.follower_id)));
 
-    // Active paying subscribers
     const { data: subs } = await supabase
       .from('subscriptions')
       .select('subscriber_id')
@@ -94,6 +95,20 @@ export default function MessagesPage() {
 
           const lastMessage = lastMessages?.[0] || null;
 
+          // Recent message texts for search (last 30)
+          const { data: recentMsgs } = await supabase
+            .from('messages')
+            .select('content')
+            .eq('conversation_id', convo.id)
+            .not('content', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(30);
+
+          const searchBlob = (recentMsgs || [])
+            .map((m: any) => m.content || '')
+            .join(' ')
+            .toLowerCase();
+
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
@@ -108,6 +123,7 @@ export default function MessagesPage() {
             lastMessage,
             unreadCount: count || 0,
             isArchived,
+            searchBlob,
           };
         })
       );
@@ -170,7 +186,6 @@ export default function MessagesPage() {
     };
   }, [currentUserId, loadConversations]);
 
-  // If sub somehow has fans/subscribers selected, snap back to all
   useEffect(() => {
     if (!isCreator && (filter === 'fans' || filter === 'subscribers')) {
       setFilter('all');
@@ -226,14 +241,32 @@ export default function MessagesPage() {
     return `${prefix}${msg.content || ''}`;
   };
 
-  const filtered = conversations.filter((c) => {
-    if (filter === 'archived') return c.isArchived;
-    if (c.isArchived) return false;
+  const q = search.trim().toLowerCase();
 
-    if (filter === 'unread') return c.unreadCount > 0;
-    if (filter === 'fans') return fanIds.has(c.otherId);
-    if (filter === 'subscribers') return subIds.has(c.otherId);
-    return true;
+  const filtered = conversations.filter((c) => {
+    // Tab filter first
+    if (filter === 'archived') {
+      if (!c.isArchived) return false;
+    } else {
+      if (c.isArchived) return false;
+      if (filter === 'unread' && c.unreadCount === 0) return false;
+      if (filter === 'fans' && !fanIds.has(c.otherId)) return false;
+      if (filter === 'subscribers' && !subIds.has(c.otherId)) return false;
+    }
+
+    // Search: name OR message content
+    if (!q) return true;
+
+    const displayName = (c.otherProfile?.display_name || '').toLowerCase();
+    const username = (c.otherProfile?.username || '').toLowerCase();
+    const nameMatch =
+      displayName.includes(q) ||
+      username.includes(q) ||
+      `@${username}`.includes(q);
+
+    const messageMatch = (c.searchBlob || '').includes(q);
+
+    return nameMatch || messageMatch;
   });
 
   const tabs: { id: Filter; label: string }[] = isCreator
@@ -276,6 +309,7 @@ export default function MessagesPage() {
             )}
           </div>
 
+          {/* Filter tabs */}
           <div className="max-w-3xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-none">
             {tabs.map((tab) => (
               <button
@@ -291,6 +325,31 @@ export default function MessagesPage() {
               </button>
             ))}
           </div>
+
+          {/* Search */}
+          <div className="max-w-3xl mx-auto px-4 pb-3">
+            <div className="relative">
+              <Search
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search names or messages..."
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-10 text-sm outline-none focus:border-pink-500 placeholder:text-zinc-500"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 max-w-3xl w-full mx-auto">
@@ -302,7 +361,9 @@ export default function MessagesPage() {
             <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
               <MessageCircle className="text-zinc-700 mb-4" size={48} />
               <p className="text-zinc-400 text-lg">
-                {filter === 'archived'
+                {q
+                  ? 'No chats match your search'
+                  : filter === 'archived'
                   ? 'No archived chats'
                   : filter === 'unread'
                   ? 'No unread messages'
@@ -313,7 +374,9 @@ export default function MessagesPage() {
                   : 'No messages yet'}
               </p>
               <p className="text-zinc-600 text-sm mt-2">
-                {filter === 'all'
+                {q
+                  ? 'Try a different name or word'
+                  : filter === 'all'
                   ? 'Start a conversation from someone’s profile'
                   : 'Try another filter'}
               </p>
