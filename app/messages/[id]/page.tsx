@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock,
-  Check, CheckCheck, Reply, Smile
+  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause
 } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
@@ -14,6 +14,7 @@ import { createNotification } from '../../../lib/notifications';
 const TIP_AMOUNTS = [5, 10, 20, 50];
 const REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👍'];
 const MAX_VIDEO_SECONDS = 30;
+const MAX_VOICE_SECONDS = 60;
 const MAX_FILE_MB = 50;
 
 export default function ChatPage() {
@@ -47,6 +48,16 @@ export default function ChatPage() {
   const [replyTo, setReplyTo] = useState<any | null>(null);
   const [reactFor, setReactFor] = useState<string | null>(null);
 
+  // Voice notes
+  const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
+  const [voiceSecs, setVoiceSecs] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const mobileRef = useRef<HTMLDivElement>(null);
   const desktopRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -72,6 +83,12 @@ export default function ChatPage() {
     if (diff < 86400) return `Active ${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `Active ${Math.floor(diff / 86400)}d ago`;
     return `Active ${date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+  };
+
+  const formatDuration = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   const markAsRead = async (uid: string) => {
@@ -270,6 +287,15 @@ export default function ChatPage() {
     };
   }, [conversationId, userId, messages.length]);
 
+  // Cleanup voice URL on unmount
+  useEffect(() => {
+    return () => {
+      if (voiceUrl) URL.revokeObjectURL(voiceUrl);
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+      mediaRecorderRef.current?.stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
   const notifyTyping = (on: boolean) => {
     channelRef.current?.send({
       type: 'broadcast',
@@ -295,9 +321,72 @@ export default function ChatPage() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
+  const clearVoice = () => {
+    if (voiceUrl) URL.revokeObjectURL(voiceUrl);
+    setVoiceBlob(null);
+    setVoiceUrl(null);
+    setVoiceSecs(0);
+    setRecordSecs(0);
+  };
+
+  const startRecording = async () => {
+    try {
+      clearMedia();
+      clearVoice();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: mime });
+        const url = URL.createObjectURL(blob);
+        setVoiceBlob(blob);
+        setVoiceUrl(url);
+        setVoiceSecs(recordSecs);
+        setRecording(false);
+        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setRecordSecs(0);
+
+      recordTimerRef.current = setInterval(() => {
+        setRecordSecs((s) => {
+          if (s + 1 >= MAX_VOICE_SECONDS) {
+            stopRecording();
+            return MAX_VOICE_SECONDS;
+          }
+          return s + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+      alert('Microphone access is needed for voice notes');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+  };
+
   const pickMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
+
+    clearVoice();
 
     const isImage = f.type.startsWith('image/');
     const isVideo = f.type.startsWith('video/');
@@ -344,7 +433,7 @@ export default function ChatPage() {
 
   const send = async () => {
     if (sending || !userId) return;
-    if (!text.trim() && !file) return;
+    if (!text.trim() && !file && !voiceBlob) return;
 
     setSending(true);
     const messageText = text.trim();
@@ -353,9 +442,12 @@ export default function ChatPage() {
     const shouldLock = lockPhoto && !!mediaFile;
     const price = shouldLock ? parseFloat(lockPrice) || 5 : null;
     const replyId = replyTo?.id || null;
+    const audioBlob = voiceBlob;
+    const audioDuration = voiceSecs;
 
     setText('');
     clearMedia();
+    clearVoice();
     setReplyTo(null);
     notifyTyping(false);
 
@@ -363,16 +455,23 @@ export default function ChatPage() {
       let mediaUrl: string | null = null;
       let mediaType: string | null = null;
 
-      if (mediaFile && mediaKind) {
+      if (audioBlob) {
+        const ext = audioBlob.type.includes('webm') ? 'webm' : 'mp4';
+        const path = `${userId}/${Date.now()}.${ext}`;
+        const { error: upError } = await supabase.storage
+          .from('chat-media')
+          .upload(path, audioBlob, { contentType: audioBlob.type });
+        if (upError) throw upError;
+        const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
+        mediaUrl = data.publicUrl;
+        mediaType = 'audio';
+      } else if (mediaFile && mediaKind) {
         const ext = mediaFile.name.split('.').pop() || (mediaKind === 'video' ? 'mp4' : 'jpg');
         const path = `${userId}/${Date.now()}.${ext}`;
-
         const { error: upError } = await supabase.storage
           .from('chat-media')
           .upload(path, mediaFile, { contentType: mediaFile.type });
-
         if (upError) throw upError;
-
         const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
         mediaUrl = data.publicUrl;
         mediaType = mediaKind;
@@ -383,7 +482,7 @@ export default function ChatPage() {
         .insert({
           conversation_id: conversationId,
           sender_id: userId,
-          content: messageText,
+          content: messageText || (mediaType === 'audio' ? `🎤 Voice note (${formatDuration(audioDuration)})` : ''),
           media_url: mediaUrl,
           media_type: mediaType,
           is_locked: shouldLock,
@@ -410,6 +509,8 @@ export default function ChatPage() {
       if (otherUserId) {
         const previewText = messageText
           ? messageText.slice(0, 80)
+          : mediaType === 'audio'
+          ? 'Sent a voice note'
           : mediaType === 'video'
           ? 'Sent a video'
           : mediaType === 'image'
@@ -605,6 +706,7 @@ export default function ChatPage() {
   };
 
   const mediaLabel = (m: any) => {
+    if (m?.media_type === 'audio') return '🎤 Voice note';
     if (m?.media_type === 'video') return '🎬 Video';
     if (m?.media_type === 'image') return '📷 Photo';
     return m?.content || 'Message';
@@ -621,10 +723,71 @@ export default function ChatPage() {
     return Object.entries(map);
   };
 
+  const VoicePlayer = ({ url, mine }: { url: string; mine: boolean }) => {
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const [playing, setPlaying] = useState(false);
+    const [progress, setProgress] = useState(0);
+
+    useEffect(() => {
+      const a = audioRef.current;
+      if (!a) return;
+      const onTime = () => setProgress(a.duration ? a.currentTime / a.duration : 0);
+      const onEnd = () => {
+        setPlaying(false);
+        setProgress(0);
+      };
+      a.addEventListener('timeupdate', onTime);
+      a.addEventListener('ended', onEnd);
+      return () => {
+        a.removeEventListener('timeupdate', onTime);
+        a.removeEventListener('ended', onEnd);
+      };
+    }, []);
+
+    const toggle = () => {
+      const a = audioRef.current;
+      if (!a) return;
+      if (playing) {
+        a.pause();
+        setPlaying(false);
+      } else {
+        a.play();
+        setPlaying(true);
+      }
+    };
+
+    return (
+      <div className={`flex items-center gap-3 px-3 py-2 min-w-[200px] ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+        <audio ref={audioRef} src={url} preload="metadata" />
+        <button
+          type="button"
+          onClick={toggle}
+          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+            mine ? 'bg-white/20 text-white' : 'bg-pink-600 text-white'
+          }`}
+        >
+          {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+        </button>
+        <div className="flex-1 h-1 rounded-full bg-black/20 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${mine ? 'bg-white' : 'bg-pink-500'}`}
+            style={{ width: `${progress * 100}%` }}
+          />
+        </div>
+        <Mic size={14} className={mine ? 'text-pink-100' : 'text-zinc-400'} />
+      </div>
+    );
+  };
+
   const MediaBlock = ({ msg, locked, mine }: { msg: any; locked: boolean; mine: boolean }) => {
     if (!msg.media_url) return null;
     const isVideo = msg.media_type === 'video';
     const isImage = msg.media_type === 'image';
+    const isAudio = msg.media_type === 'audio';
+
+    if (isAudio) {
+      return <VoicePlayer url={msg.media_url} mine={mine} />;
+    }
 
     if (!isVideo && !isImage) return null;
 
@@ -662,12 +825,7 @@ export default function ChatPage() {
     if (isVideo) {
       return (
         <div className="relative bg-black min-w-[260px]">
-          <video
-            src={msg.media_url}
-            controls
-            playsInline
-            className="w-full max-h-[360px]"
-          />
+          <video src={msg.media_url} controls playsInline className="w-full max-h-[360px]" />
           {msg.is_locked && mine && (
             <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
               <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
@@ -683,11 +841,7 @@ export default function ChatPage() {
         onClick={() => setViewer({ url: msg.media_url, type: 'image' })}
         className="block w-full relative min-w-[200px]"
       >
-        <img
-          src={msg.media_url}
-          alt=""
-          className="w-full max-h-[320px] object-cover"
-        />
+        <img src={msg.media_url} alt="" className="w-full max-h-[320px] object-cover" />
         {msg.is_locked && mine && (
           <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
             <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
@@ -700,6 +854,7 @@ export default function ChatPage() {
   const MessageBubble = ({ msg }: { msg: any }) => {
     const mine = msg.sender_id === userId;
     const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
+    const isAudio = msg.media_type === 'audio';
     const locked = msg.is_locked && !canSeeMedia(msg);
     const replied = getReplyPreview(msg);
     const reacts = groupedReactions(msg.id);
@@ -753,21 +908,32 @@ export default function ChatPage() {
 
             <MediaBlock msg={msg} locked={locked} mine={mine} />
 
-            <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
-              {!!msg.content && (
-                <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
-                  {msg.content}
+            {!isAudio && (
+              <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+                {!!msg.content && (
+                  <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
+                    {msg.content}
+                  </p>
+                )}
+                <p
+                  className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${
+                    mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'
+                  }`}
+                >
+                  {time(msg.created_at)}
+                  {mine && <ReadTicks msg={msg} />}
                 </p>
-              )}
-              <p
-                className={`text-[10px] ${msg.content ? 'mt-1' : ''} ${
-                  mine || isTip ? 'text-pink-200/80' : 'text-zinc-500'
-                }`}
-              >
-                {time(msg.created_at)}
-                {mine && <ReadTicks msg={msg} />}
-              </p>
-            </div>
+              </div>
+            )}
+
+            {isAudio && (
+              <div className={`px-3 pb-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
+                <p className={`text-[10px] ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
+                  {time(msg.created_at)}
+                  {mine && <ReadTicks msg={msg} />}
+                </p>
+              </div>
+            )}
           </div>
 
           {reacts.length > 0 && (
@@ -833,17 +999,9 @@ export default function ChatPage() {
       <div className="flex items-start gap-3">
         <div className="relative flex-shrink-0">
           {previewType === 'video' ? (
-            <video
-              src={preview!}
-              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
-              muted
-            />
+            <video src={preview!} className="h-16 w-16 object-cover rounded-xl border border-zinc-700" muted />
           ) : (
-            <img
-              src={preview!}
-              alt=""
-              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
-            />
+            <img src={preview!} alt="" className="h-16 w-16 object-cover rounded-xl border border-zinc-700" />
           )}
           <button
             type="button"
@@ -889,6 +1047,36 @@ export default function ChatPage() {
     </div>
   );
 
+  const VoicePreviewBox = () => (
+    <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center gap-3">
+      <div className="w-10 h-10 rounded-full bg-pink-600/20 text-pink-400 flex items-center justify-center">
+        <Mic size={18} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">Voice note ready</p>
+        <p className="text-xs text-zinc-400">{formatDuration(voiceSecs)}</p>
+        {voiceUrl && <audio src={voiceUrl} controls className="w-full mt-1 h-8" />}
+      </div>
+      <button type="button" onClick={clearVoice} className="text-zinc-400 hover:text-white p-1">
+        <X size={18} />
+      </button>
+    </div>
+  );
+
+  const RecordingBar = () => (
+    <div className="mb-2 flex items-center gap-3 px-3 py-2 bg-red-950/40 border border-red-900/50 rounded-xl">
+      <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+      <p className="text-sm text-red-300 flex-1">Recording… {formatDuration(recordSecs)}</p>
+      <button
+        type="button"
+        onClick={stopRecording}
+        className="w-9 h-9 rounded-full bg-red-600 text-white flex items-center justify-center"
+      >
+        <Square size={14} fill="currentColor" />
+      </button>
+    </div>
+  );
+
   const ReplyBar = () => {
     if (!replyTo) return null;
     return (
@@ -918,6 +1106,64 @@ export default function ChatPage() {
   const displayName = otherUser?.display_name || otherUser?.username || 'User';
   const initial = displayName.charAt(0).toUpperCase();
   const isOnline = formatLastSeen(otherUser?.last_seen_at) === 'Online';
+  const canSend = !sending && (!!text.trim() || !!file || !!voiceBlob);
+
+  const Composer = ({ mobile = false }: { mobile?: boolean }) => (
+    <div>
+      <ReplyBar />
+      {recording && <RecordingBar />}
+      {voiceUrl && !recording && <VoicePreviewBox />}
+      {preview && <MediaPreviewBox />}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={recording}
+          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0 disabled:opacity-40"
+        >
+          <ImagePlus size={20} />
+        </button>
+
+        {!recording && !voiceBlob ? (
+          <button
+            type="button"
+            onClick={startRecording}
+            className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
+            title="Voice note"
+          >
+            <Mic size={20} />
+          </button>
+        ) : null}
+
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => onType(e.target.value)}
+          placeholder="Message..."
+          disabled={recording}
+          className={`flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 outline-none focus:border-pink-500 disabled:opacity-50 ${
+            mobile ? 'py-2.5' : 'py-3 text-sm'
+          }`}
+          style={mobile ? { fontSize: 16 } : undefined}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !mobile) {
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+
+        <button
+          type="button"
+          onClick={send}
+          disabled={!canSend}
+          className={`${mobile ? 'w-10 h-10' : 'w-12 h-12'} rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0`}
+        >
+          <Send size={18} />
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -1090,33 +1336,7 @@ export default function ChatPage() {
           className="border-t border-zinc-800 px-3 py-2"
           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
         >
-          <ReplyBar />
-          {preview && <MediaPreviewBox />}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
-            >
-              <ImagePlus size={20} />
-            </button>
-            <input
-              ref={inputRef}
-              value={text}
-              onChange={(e) => onType(e.target.value)}
-              placeholder="Message..."
-              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 outline-none focus:border-pink-500"
-              style={{ fontSize: 16 }}
-            />
-            <button
-              type="button"
-              onClick={send}
-              disabled={sending || (!text.trim() && !file)}
-              className="w-10 h-10 rounded-full bg-pink-600 disabled:opacity-40 flex items-center justify-center flex-shrink-0"
-            >
-              <Send size={18} />
-            </button>
-          </div>
+          <Composer mobile />
         </div>
       </div>
 
@@ -1188,38 +1408,7 @@ export default function ChatPage() {
         </div>
 
         <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
-          <ReplyBar />
-          {preview && <MediaPreviewBox />}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
-            >
-              <ImagePlus size={20} />
-            </button>
-            <input
-              ref={inputRef}
-              value={text}
-              onChange={(e) => onType(e.target.value)}
-              placeholder="Message..."
-              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-3 text-sm outline-none focus:border-pink-500"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={send}
-              disabled={sending || (!text.trim() && !file)}
-              className="w-12 h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0"
-            >
-              <Send size={18} />
-            </button>
-          </div>
+          <Composer />
         </div>
       </main>
     </div>
