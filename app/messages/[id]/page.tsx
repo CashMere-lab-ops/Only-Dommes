@@ -48,11 +48,10 @@ export default function ChatPage() {
   const [replyTo, setReplyTo] = useState<any | null>(null);
   const [reactFor, setReactFor] = useState<string | null>(null);
   const [showGallery, setShowGallery] = useState(false);
-
-  // Message price gate
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [unlockingChat, setUnlockingChat] = useState(false);
   const [messagePrice, setMessagePrice] = useState(0);
+  const [autoReplySent, setAutoReplySent] = useState(false);
 
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
@@ -119,7 +118,6 @@ export default function ChatPage() {
       .from('message_reactions')
       .select('*')
       .in('message_id', messageIds);
-
     const map: Record<string, any[]> = {};
     (data || []).forEach((r) => {
       if (!map[r.message_id]) map[r.message_id] = [];
@@ -165,6 +163,8 @@ export default function ChatPage() {
         return;
       }
 
+      setAutoReplySent(!!convo.auto_reply_sent);
+
       const otherId =
         convo.participant_1 === user.id
           ? convo.participant_2
@@ -174,11 +174,12 @@ export default function ChatPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('username, display_name, avatar_url, last_seen_at, account_type, message_price')
+        .select(
+          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message'
+        )
         .eq('id', otherId)
         .single();
 
-      // Message price gate: fan messaging a creator who charges
       const price = Number(profile?.message_price || 0);
       setMessagePrice(price);
 
@@ -194,7 +195,6 @@ export default function ChatPage() {
           .eq('creator_id', otherId)
           .eq('fan_id', user.id)
           .maybeSingle();
-
         locked = !access;
       }
       setNeedsUnlock(locked);
@@ -242,11 +242,11 @@ export default function ChatPage() {
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('last_seen_at')
+        .select('last_seen_at, auto_reply_enabled, auto_reply_message')
         .eq('id', otherUserId)
         .single();
       if (data) {
-        setOtherUser((prev: any) => (prev ? { ...prev, last_seen_at: data.last_seen_at } : prev));
+        setOtherUser((prev: any) => (prev ? { ...prev, ...data } : prev));
       }
     }, 20000);
     return () => clearInterval(interval);
@@ -340,17 +340,14 @@ export default function ChatPage() {
   const unlockChat = async () => {
     if (!userId || !otherUserId || unlockingChat) return;
     setUnlockingChat(true);
-
     try {
       const { error } = await supabase.from('message_access').insert({
         creator_id: otherUserId,
         fan_id: userId,
         amount: messagePrice,
       });
-
       if (error) throw error;
 
-      // Optional tip-style notification for creator
       await createNotification({
         userId: otherUserId,
         actorId: userId,
@@ -366,6 +363,54 @@ export default function ChatPage() {
       alert(err.message || 'Could not unlock messaging');
     } finally {
       setUnlockingChat(false);
+    }
+  };
+
+  const maybeSendAutoReply = async () => {
+    if (!otherUserId || !userId) return;
+    if (autoReplySent) return;
+    if (!otherUser?.auto_reply_enabled) return;
+    if (!otherUser?.auto_reply_message?.trim()) return;
+
+    const lastSeen = otherUser.last_seen_at
+      ? new Date(otherUser.last_seen_at).getTime()
+      : 0;
+    const fiveMin = 5 * 60 * 1000;
+    const isOffline = Date.now() - lastSeen > fiveMin;
+    if (!isOffline) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          sender_id: otherUserId,
+          content: otherUser.auto_reply_message.trim(),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setMessages((prev) => {
+          if (prev.find((m) => m.id === data.id)) return prev;
+          return [...prev, data];
+        });
+      }
+
+      await supabase
+        .from('conversations')
+        .update({
+          auto_reply_sent: true,
+          last_message_at: new Date().toISOString(),
+        })
+        .eq('id', conversationId);
+
+      setAutoReplySent(true);
+      setTimeout(scrollBottom, 80);
+    } catch (err) {
+      console.error('Auto-reply failed', err);
     }
   };
 
@@ -445,17 +490,14 @@ export default function ChatPage() {
     if (needsUnlock) return;
     const f = e.target.files?.[0];
     if (!f) return;
-
     clearVoice();
 
     const isImage = f.type.startsWith('image/');
     const isVideo = f.type.startsWith('video/');
-
     if (!isImage && !isVideo) {
       alert('Please choose a photo or video');
       return;
     }
-
     if (f.size > MAX_FILE_MB * 1024 * 1024) {
       alert(`Max ${MAX_FILE_MB}MB`);
       return;
@@ -530,7 +572,8 @@ export default function ChatPage() {
         mediaUrl = data.publicUrl;
         mediaType = 'audio';
       } else if (mediaFile && mediaKind) {
-        const ext = mediaFile.name.split('.').pop() || (mediaKind === 'video' ? 'mp4' : 'jpg');
+        const ext =
+          mediaFile.name.split('.').pop() || (mediaKind === 'video' ? 'mp4' : 'jpg');
         const path = `${userId}/${Date.now()}.${ext}`;
         const { error: upError } = await supabase.storage
           .from('chat-media')
@@ -548,7 +591,9 @@ export default function ChatPage() {
           sender_id: userId,
           content:
             messageText ||
-            (mediaType === 'audio' ? `🎤 Voice note (${formatDuration(audioDuration)})` : ''),
+            (mediaType === 'audio'
+              ? `🎤 Voice note (${formatDuration(audioDuration)})`
+              : ''),
           media_url: mediaUrl,
           media_type: mediaType,
           is_locked: shouldLock,
@@ -593,6 +638,11 @@ export default function ChatPage() {
         });
       }
 
+      // Auto-reply if fan messaged offline creator
+      if (myProfile?.account_type !== 'creator') {
+        await maybeSendAutoReply();
+      }
+
       setTimeout(scrollBottom, 80);
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (err: any) {
@@ -606,11 +656,9 @@ export default function ChatPage() {
 
   const toggleReaction = async (messageId: string, emoji: string) => {
     if (!userId) return;
-
     const existing = (reactions[messageId] || []).find(
       (r) => r.user_id === userId && r.emoji === emoji
     );
-
     try {
       if (existing) {
         await supabase.from('message_reactions').delete().eq('id', existing.id);
@@ -624,9 +672,7 @@ export default function ChatPage() {
           .insert({ message_id: messageId, user_id: userId, emoji })
           .select()
           .single();
-
         if (error) throw error;
-
         setReactions((prev) => ({
           ...prev,
           [messageId]: [...(prev[messageId] || []), data],
@@ -635,33 +681,29 @@ export default function ChatPage() {
     } catch (err) {
       console.error('Reaction error:', err);
     }
-
     setReactFor(null);
   };
 
   const unlockMessage = async (msg: any) => {
     if (!userId || unlockingId) return;
     setUnlockingId(msg.id);
-
     try {
       const amount = msg.unlock_price || 0;
-
       const { error } = await supabase.from('message_unlocks').insert({
         message_id: msg.id,
         user_id: userId,
         amount,
       });
-
       if (error) throw error;
-
       setMyUnlocks((prev) => new Set(prev).add(msg.id));
-
       if (msg.sender_id && msg.sender_id !== userId) {
         await createNotification({
           userId: msg.sender_id,
           actorId: userId,
           type: 'unlock',
-          title: `${actorName()} unlocked your ${msg.media_type === 'video' ? 'video' : 'photo'}`,
+          title: `${actorName()} unlocked your ${
+            msg.media_type === 'video' ? 'video' : 'photo'
+          }`,
           body: `£${Number(amount).toFixed(2)}`,
           link: `/messages/${conversationId}`,
         });
@@ -682,15 +724,12 @@ export default function ChatPage() {
 
   const sendTip = async () => {
     if (!userId || !otherUserId || tipping) return;
-
     const amount = customTip ? parseFloat(customTip) : tipAmount;
     if (!amount || amount <= 0) {
       alert('Enter a valid tip amount');
       return;
     }
-
     setTipping(true);
-
     try {
       const { error: tipError } = await supabase.from('tips').insert({
         from_user_id: userId,
@@ -699,7 +738,6 @@ export default function ChatPage() {
         conversation_id: conversationId,
         message: 'Tip in chat',
       });
-
       if (tipError) throw tipError;
 
       const { data, error: msgError } = await supabase
@@ -712,7 +750,6 @@ export default function ChatPage() {
         })
         .select()
         .single();
-
       if (msgError) throw msgError;
 
       if (data) {
@@ -856,7 +893,15 @@ export default function ChatPage() {
     );
   };
 
-  const MediaBlock = ({ msg, locked, mine }: { msg: any; locked: boolean; mine: boolean }) => {
+  const MediaBlock = ({
+    msg,
+    locked,
+    mine,
+  }: {
+    msg: any;
+    locked: boolean;
+    mine: boolean;
+  }) => {
     if (!msg.media_url) return null;
     const isVideo = msg.media_type === 'video';
     const isImage = msg.media_type === 'image';
@@ -1090,7 +1135,9 @@ export default function ChatPage() {
             disabled={unlockingChat}
             className="mt-3 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full transition"
           >
-            {unlockingChat ? 'Unlocking...' : `Unlock for £${Number(messagePrice).toFixed(2)}`}
+            {unlockingChat
+              ? 'Unlocking...'
+              : `Unlock for £${Number(messagePrice).toFixed(2)}`}
           </button>
         </div>
       </div>
@@ -1195,11 +1242,16 @@ export default function ChatPage() {
         <Reply size={14} className="text-pink-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-xs text-pink-400 font-medium">
-            Replying to {replyTo.sender_id === userId ? 'yourself' : otherUser?.display_name || 'them'}
+            Replying to{' '}
+            {replyTo.sender_id === userId ? 'yourself' : otherUser?.display_name || 'them'}
           </p>
           <p className="text-xs text-zinc-400 truncate">{mediaLabel(replyTo)}</p>
         </div>
-        <button type="button" onClick={() => setReplyTo(null)} className="text-zinc-500 hover:text-white">
+        <button
+          type="button"
+          onClick={() => setReplyTo(null)}
+          className="text-zinc-500 hover:text-white"
+        >
           <X size={16} />
         </button>
       </div>
@@ -1438,7 +1490,9 @@ export default function ChatPage() {
             >
               {tipping
                 ? 'Sending...'
-                : `Send £${(customTip ? parseFloat(customTip) || 0 : tipAmount || 0).toFixed(2)} tip`}
+                : `Send £${(
+                    customTip ? parseFloat(customTip) || 0 : tipAmount || 0
+                  ).toFixed(2)} tip`}
             </button>
           </div>
         </div>
@@ -1447,10 +1501,17 @@ export default function ChatPage() {
       {/* MOBILE */}
       <div className="lg:hidden fixed inset-0 z-50 bg-zinc-950 flex flex-col">
         <div className="border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
-          <button type="button" onClick={() => router.push('/messages')} className="text-zinc-400 p-1">
+          <button
+            type="button"
+            onClick={() => router.push('/messages')}
+            className="text-zinc-400 p-1"
+          >
             <ArrowLeft size={24} />
           </button>
-          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 min-w-0 flex-1">
+          <Link
+            href={`/${otherUser?.username}`}
+            className="flex items-center gap-3 min-w-0 flex-1"
+          >
             <div className="relative flex-shrink-0">
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
                 {otherUser?.avatar_url ? (
@@ -1467,7 +1528,11 @@ export default function ChatPage() {
               <p className="font-semibold text-sm truncate">{displayName}</p>
               <p
                 className={`text-xs truncate ${
-                  isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'
+                  isOtherTyping
+                    ? 'text-pink-400'
+                    : isOnline
+                    ? 'text-green-400'
+                    : 'text-zinc-400'
                 }`}
               >
                 {statusLine()}
@@ -1555,7 +1620,11 @@ export default function ChatPage() {
               <p className="font-semibold text-sm">{displayName}</p>
               <p
                 className={`text-xs ${
-                  isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'
+                  isOtherTyping
+                    ? 'text-pink-400'
+                    : isOnline
+                    ? 'text-green-400'
+                    : 'text-zinc-400'
                 }`}
               >
                 {statusLine()}
