@@ -4,11 +4,11 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  // Optional protection: only enforce if Authorization header is sent
-  // Browser testing works; real cron can still send the secret later
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
 
+  // Vercel cron sends Authorization: Bearer <CRON_SECRET> when configured
+  // Also allow browser test without header if you want (optional)
   if (cronSecret && authHeader && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -20,11 +20,12 @@ export async function GET(request: Request) {
 
   const now = new Date().toISOString();
 
+  // New table: mass_messages
   const { data: due, error } = await supabase
-    .from('scheduled_mass_messages')
+    .from('mass_messages')
     .select('*')
-    .eq('status', 'pending')
-    .lte('scheduled_at', now)
+    .eq('status', 'scheduled')
+    .lte('scheduled_for', now)
     .limit(20);
 
   if (error) {
@@ -101,7 +102,7 @@ export async function GET(request: Request) {
       }
 
       await supabase
-        .from('scheduled_mass_messages')
+        .from('mass_messages')
         .update({
           status: 'sent',
           sent_at: new Date().toISOString(),
@@ -112,16 +113,19 @@ export async function GET(request: Request) {
       results.push({ id: job.id, sent });
     } catch (err: any) {
       await supabase
-        .from('scheduled_mass_messages')
+        .from('mass_messages')
         .update({
           status: 'failed',
-          error_message: err.message || 'Failed',
         })
         .eq('id', job.id);
 
-      results.push({ id: job.id, error: err.message });
+      results.push({ id: job.id, error: err?.message || 'Failed' });
     }
   }
 
-  return NextResponse.json({ ok: true, processed: results.length, results });
+  return NextResponse.json({
+    ok: true,
+    processed: results.length,
+    results,
+  });
 }
