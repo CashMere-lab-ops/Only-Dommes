@@ -95,16 +95,14 @@ export default function MessagesPage() {
 
           const lastMessage = lastMessages?.[0] || null;
 
-          // Recent message texts for search (last 30)
-          const { data: recentMsgs } = await supabase
+          // ALL message text in this chat (for full search)
+          const { data: allMsgs } = await supabase
             .from('messages')
             .select('content')
             .eq('conversation_id', convo.id)
-            .not('content', 'is', null)
-            .order('created_at', { ascending: false })
-            .limit(30);
+            .not('content', 'is', null);
 
-          const searchBlob = (recentMsgs || [])
+          const searchBlob = (allMsgs || [])
             .map((m: any) => m.content || '')
             .join(' ')
             .toLowerCase();
@@ -244,7 +242,6 @@ export default function MessagesPage() {
   const q = search.trim().toLowerCase();
 
   const filtered = conversations.filter((c) => {
-    // Tab filter first
     if (filter === 'archived') {
       if (!c.isArchived) return false;
     } else {
@@ -254,7 +251,6 @@ export default function MessagesPage() {
       if (filter === 'subscribers' && !subIds.has(c.otherId)) return false;
     }
 
-    // Search: name OR message content
     if (!q) return true;
 
     const displayName = (c.otherProfile?.display_name || '').toLowerCase();
@@ -309,7 +305,6 @@ export default function MessagesPage() {
             )}
           </div>
 
-          {/* Filter tabs */}
           <div className="max-w-3xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-none">
             {tabs.map((tab) => (
               <button
@@ -326,7 +321,6 @@ export default function MessagesPage() {
             ))}
           </div>
 
-          {/* Search */}
           <div className="max-w-3xl mx-auto px-4 pb-3">
             <div className="relative">
               <Search
