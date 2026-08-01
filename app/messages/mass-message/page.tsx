@@ -225,8 +225,7 @@ export default function MassMessagePage() {
       ? followerCount
       : audience === 'subscribers'
       ? subCount
-      : new Set([...Array(followerCount), ...Array(subCount)]).size ||
-        followerCount + subCount;
+      : followerCount + subCount;
 
   if (loading) {
     return (
@@ -247,7 +246,10 @@ export default function MassMessagePage() {
           <Link href="/messages" className="text-zinc-400 hover:text-white">
             <ArrowLeft size={22} />
           </Link>
-          <h1 className="text-lg font-semibold">Mass message</h1>
+          <div>
+            <h1 className="text-lg font-semibold">Mass Message</h1>
+            <p className="text-xs text-zinc-500">Send one message to many people at once</p>
+          </div>
         </div>
 
         <div className="max-w-xl mx-auto px-4 py-6 space-y-6">
@@ -264,67 +266,70 @@ export default function MassMessagePage() {
           )}
 
           {/* Audience */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
-            <p className="font-medium">Audience</p>
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  { id: 'followers', label: 'Followers', icon: Users, count: followerCount },
-                  { id: 'subscribers', label: 'Subs', icon: Heart, count: subCount },
-                  { id: 'both', label: 'Both', icon: Users, count: null },
-                ] as const
-              ).map((opt) => {
-                const Icon = opt.icon;
-                const active = audience === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setAudience(opt.id)}
-                    className={`rounded-xl border p-3 text-center transition ${
-                      active
-                        ? 'border-pink-500 bg-pink-600/15 text-pink-300'
-                        : 'border-zinc-700 bg-zinc-800 text-zinc-300'
-                    }`}
-                  >
-                    <Icon size={18} className="mx-auto mb-1" />
-                    <p className="text-xs font-medium">{opt.label}</p>
-                    {opt.count !== null && (
-                      <p className="text-[10px] text-zinc-500 mt-0.5">{opt.count}</p>
-                    )}
-                  </button>
-                );
-              })}
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-400">Send to</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setAudience('subscribers')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
+                  audience === 'subscribers'
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                }`}
+              >
+                ♥ Subscribers ({subCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAudience('followers')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
+                  audience === 'followers'
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                }`}
+              >
+                👥 Followers ({followerCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAudience('both')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
+                  audience === 'both'
+                    ? 'bg-pink-600 text-white'
+                    : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                }`}
+              >
+                Both
+              </button>
             </div>
-            <p className="text-xs text-zinc-500">
-              Estimated reach: ~{estimatedCount} people
-            </p>
+            <p className="text-xs text-zinc-500">About {estimatedCount} recipients</p>
           </div>
 
           {/* Message */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
-            <p className="font-medium">Message</p>
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-400">Message</p>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               rows={5}
               maxLength={1000}
               placeholder="Write your mass message..."
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 outline-none focus:border-pink-500 resize-none"
+              className="w-full bg-zinc-900 border border-pink-500/50 rounded-2xl px-4 py-3 outline-none focus:border-pink-500 resize-none"
             />
             <p className="text-xs text-zinc-500 text-right">{content.length}/1000</p>
           </div>
 
-          {/* Mode */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4">
+          {/* Send now / Schedule */}
+          <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setMode('now')}
                 className={`rounded-xl border py-2.5 text-sm font-medium flex items-center justify-center gap-2 ${
                   mode === 'now'
-                    ? 'border-pink-500 bg-pink-600/15 text-pink-300'
-                    : 'border-zinc-700 bg-zinc-800 text-zinc-300'
+                    ? 'border-pink-500 bg-pink-600/20 text-pink-300'
+                    : 'border-zinc-700 bg-zinc-900 text-zinc-300'
                 }`}
               >
                 <Send size={16} /> Send now
@@ -334,8 +339,8 @@ export default function MassMessagePage() {
                 onClick={() => setMode('schedule')}
                 className={`rounded-xl border py-2.5 text-sm font-medium flex items-center justify-center gap-2 ${
                   mode === 'schedule'
-                    ? 'border-pink-500 bg-pink-600/15 text-pink-300'
-                    : 'border-zinc-700 bg-zinc-800 text-zinc-300'
+                    ? 'border-pink-500 bg-pink-600/20 text-pink-300'
+                    : 'border-zinc-700 bg-zinc-900 text-zinc-300'
                 }`}
               >
                 <Calendar size={16} /> Schedule
@@ -349,7 +354,7 @@ export default function MassMessagePage() {
                   type="datetime-local"
                   value={scheduledAt}
                   onChange={(e) => setScheduledAt(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500"
                 />
               </div>
             )}
@@ -362,16 +367,19 @@ export default function MassMessagePage() {
                 !content.trim() ||
                 (mode === 'schedule' && !scheduledAt)
               }
-              className="w-full bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 disabled:opacity-50 py-3.5 rounded-xl font-semibold transition"
+              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3.5 rounded-2xl font-semibold transition flex items-center justify-center gap-2"
             >
               {sending
                 ? mode === 'now'
                   ? 'Sending...'
                   : 'Scheduling...'
                 : mode === 'now'
-                ? 'Send mass message'
-                : 'Schedule message'}
+                ? '✈ Send Mass Message'
+                : '📅 Schedule Message'}
             </button>
+            <p className="text-center text-xs text-zinc-500">
+              Each person gets this in their normal chat with you.
+            </p>
           </div>
 
           {/* Pending scheduled */}
