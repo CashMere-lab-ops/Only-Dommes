@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, User, Lock, Bell, Shield, Camera, Save, Eye, EyeOff,
-  Link2, Unlink, Heart, MessageCircle
+  ArrowLeft, User, Lock, Bell, Camera, Save, Eye, EyeOff,
+  Link2, Unlink, Heart, MessageCircle, Bot
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -33,12 +33,13 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Creator
   const [subscriptionsEnabled, setSubscriptionsEnabled] = useState(false);
   const [subscriptionPrice, setSubscriptionPrice] = useState('9.99');
   const [messagePrice, setMessagePrice] = useState('0');
 
-  // Notifications
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+  const [autoReplyMessage, setAutoReplyMessage] = useState('');
+
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
   const [emailLives, setEmailLives] = useState(true);
@@ -69,6 +70,8 @@ export default function SettingsPage() {
         setSubscriptionsEnabled(!!data.subscriptions_enabled);
         setSubscriptionPrice(String(data.subscription_price ?? 9.99));
         setMessagePrice(String(data.message_price ?? 0));
+        setAutoReplyEnabled(!!data.auto_reply_enabled);
+        setAutoReplyMessage(data.auto_reply_message || '');
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
@@ -143,6 +146,8 @@ export default function SettingsPage() {
         updates.subscriptions_enabled = subscriptionsEnabled;
         updates.subscription_price = parseFloat(subscriptionPrice) || 0;
         updates.message_price = parseFloat(messagePrice) || 0;
+        updates.auto_reply_enabled = autoReplyEnabled;
+        updates.auto_reply_message = autoReplyMessage.trim();
       }
 
       const { error: updateError } = await supabase
@@ -222,7 +227,6 @@ export default function SettingsPage() {
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">
-          {/* Mobile top bar */}
           <div className="lg:hidden sticky top-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
             <Link href="/account" className="text-zinc-400">
               <ArrowLeft size={22} />
@@ -282,7 +286,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Profile info */}
+            {/* Profile */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <User size={18} className="text-pink-500" /> Profile
@@ -318,7 +322,6 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* X link */}
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">X (Twitter)</label>
                 {xUsername ? (
@@ -368,7 +371,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Creator: Subscriptions */}
+            {/* Subscriptions */}
             {isCreator && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -386,7 +389,7 @@ export default function SettingsPage() {
                       checked={subscriptionsEnabled}
                       onChange={() => setSubscriptionsEnabled(!subscriptionsEnabled)}
                     />
-                    <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                    <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
                   </label>
                 </div>
                 {subscriptionsEnabled && (
@@ -405,7 +408,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Creator: Message price */}
+            {/* Message price */}
             {isCreator && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -425,6 +428,47 @@ export default function SettingsPage() {
                     className="w-32 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500"
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Auto-reply */}
+            {isCreator && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Bot size={18} className="text-pink-500" /> Auto-reply
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  When you&apos;re offline, automatically reply once to new messages in a chat.
+                </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Enable auto-reply</p>
+                    <p className="text-sm text-zinc-400">Sends when you haven&apos;t been active recently</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={autoReplyEnabled}
+                      onChange={() => setAutoReplyEnabled(!autoReplyEnabled)}
+                    />
+                    <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                  </label>
+                </div>
+                {autoReplyEnabled && (
+                  <div>
+                    <label className="text-sm text-zinc-400 mb-1.5 block">Auto-reply message</label>
+                    <textarea
+                      value={autoReplyMessage}
+                      onChange={(e) => setAutoReplyMessage(e.target.value)}
+                      rows={3}
+                      maxLength={300}
+                      placeholder="Thanks for messaging! I'll reply as soon as I'm free 💕"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500 resize-none"
+                    />
+                    <p className="text-xs text-zinc-500 mt-1">{autoReplyMessage.length}/300</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -525,7 +569,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Save */}
             <button
               type="button"
               onClick={handleSaveProfile}
