@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, memo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -16,6 +16,165 @@ const REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👍'];
 const MAX_VIDEO_SECONDS = 30;
 const MAX_VOICE_SECONDS = 60;
 const MAX_FILE_MB = 50;
+
+/* ---------- Stable sub-components (OUTSIDE main page) ---------- */
+
+const VoicePlayer = memo(function VoicePlayer({
+  url,
+  mine,
+}: {
+  url: string;
+  mine: boolean;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    const onTime = () => setProgress(a.duration ? a.currentTime / a.duration : 0);
+    const onEnd = () => {
+      setPlaying(false);
+      setProgress(0);
+    };
+    a.addEventListener('timeupdate', onTime);
+    a.addEventListener('ended', onEnd);
+    return () => {
+      a.removeEventListener('timeupdate', onTime);
+      a.removeEventListener('ended', onEnd);
+    };
+  }, []);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) {
+      a.pause();
+      setPlaying(false);
+    } else {
+      a.play();
+      setPlaying(true);
+    }
+  };
+
+  return (
+    <div
+      className={`flex items-center gap-3 px-3 py-2 min-w-[200px] ${
+        mine ? 'bg-pink-600' : 'bg-zinc-800'
+      }`}
+    >
+      <audio ref={audioRef} src={url} preload="metadata" />
+      <button
+        type="button"
+        onClick={toggle}
+        className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+          mine ? 'bg-white/20 text-white' : 'bg-pink-600 text-white'
+        }`}
+      >
+        {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+      </button>
+      <div className="flex-1 h-1 rounded-full bg-black/20 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${mine ? 'bg-white' : 'bg-pink-500'}`}
+          style={{ width: `${progress * 100}%` }}
+        />
+      </div>
+      <Mic size={14} className={mine ? 'text-pink-100' : 'text-zinc-400'} />
+    </div>
+  );
+});
+
+const MediaBlock = memo(function MediaBlock({
+  msg,
+  locked,
+  mine,
+  unlockingId,
+  onUnlock,
+  onOpenViewer,
+}: {
+  msg: any;
+  locked: boolean;
+  mine: boolean;
+  unlockingId: string | null;
+  onUnlock: (msg: any) => void;
+  onOpenViewer: (url: string, type: 'image' | 'video') => void;
+}) {
+  if (!msg.media_url) return null;
+  const isVideo = msg.media_type === 'video';
+  const isImage = msg.media_type === 'image';
+  const isAudio = msg.media_type === 'audio';
+
+  if (isAudio) return <VoicePlayer url={msg.media_url} mine={mine} />;
+  if (!isVideo && !isImage) return null;
+
+  if (locked) {
+    return (
+      <div className="relative w-full min-w-[260px] aspect-video bg-zinc-900 overflow-hidden">
+        {isImage ? (
+          <img
+            src={msg.media_url}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover blur-xl scale-110"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-zinc-800" />
+        )}
+        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-4 text-center">
+          <Lock size={28} className="text-white mb-2" />
+          <p className="text-white text-sm font-medium mb-3">
+            Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
+          </p>
+          <button
+            type="button"
+            onClick={() => onUnlock(msg)}
+            disabled={unlockingId === msg.id}
+            className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-full flex items-center gap-2"
+          >
+            <Unlock size={16} />
+            {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isVideo) {
+    return (
+      <div className="relative bg-black min-w-[260px]">
+        <video
+          src={msg.media_url}
+          controls
+          playsInline
+          preload="metadata"
+          className="w-full max-h-[360px]"
+        />
+        {msg.is_locked && mine && (
+          <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+            <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenViewer(msg.media_url, 'image')}
+      className="block w-full relative min-w-[200px]"
+    >
+      <img src={msg.media_url} alt="" className="w-full max-h-[320px] object-cover" />
+      {msg.is_locked && mine && (
+        <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+          <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
+        </span>
+      )}
+    </button>
+  );
+});
+
+/* ---------- Main page ---------- */
 
 export default function ChatPage() {
   const params = useParams();
@@ -75,12 +234,8 @@ export default function ChatPage() {
 
   const scrollBottom = () => {
     requestAnimationFrame(() => {
-      if (mobileRef.current) {
-        mobileRef.current.scrollTop = mobileRef.current.scrollHeight;
-      }
-      if (desktopRef.current) {
-        desktopRef.current.scrollTop = desktopRef.current.scrollHeight;
-      }
+      if (mobileRef.current) mobileRef.current.scrollTop = mobileRef.current.scrollHeight;
+      if (desktopRef.current) desktopRef.current.scrollTop = desktopRef.current.scrollHeight;
     });
   };
 
@@ -125,7 +280,6 @@ export default function ChatPage() {
       .from('message_reactions')
       .select('*')
       .in('message_id', messageIds);
-
     const map: Record<string, any[]> = {};
     (data || []).forEach((r) => {
       if (!map[r.message_id]) map[r.message_id] = [];
@@ -138,7 +292,9 @@ export default function ChatPage() {
     let alive = true;
 
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
@@ -166,7 +322,6 @@ export default function ChatPage() {
         router.push('/messages');
         return;
       }
-
       if (convo.participant_1 !== user.id && convo.participant_2 !== user.id) {
         router.push('/messages');
         return;
@@ -175,10 +330,7 @@ export default function ChatPage() {
       setAutoReplySent(!!convo.auto_reply_sent);
 
       const otherId =
-        convo.participant_1 === user.id
-          ? convo.participant_2
-          : convo.participant_1;
-
+        convo.participant_1 === user.id ? convo.participant_2 : convo.participant_1;
       setOtherUserId(otherId);
 
       const { data: profile } = await supabase
@@ -261,7 +413,6 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [otherUserId]);
 
-  // Realtime — stable deps only (no messages.length)
   useEffect(() => {
     if (!conversationId || !userId) return;
 
@@ -349,7 +500,6 @@ export default function ChatPage() {
         amount: messagePrice,
       });
       if (error) throw error;
-
       await createNotification({
         userId: otherUserId,
         actorId: userId,
@@ -358,7 +508,6 @@ export default function ChatPage() {
         body: `£${Number(messagePrice).toFixed(2)}`,
         link: `/messages/${conversationId}`,
       });
-
       setNeedsUnlock(false);
     } catch (err: any) {
       console.error(err);
@@ -377,8 +526,7 @@ export default function ChatPage() {
     const lastSeen = otherUser.last_seen_at
       ? new Date(otherUser.last_seen_at).getTime()
       : 0;
-    const fiveMin = 5 * 60 * 1000;
-    if (Date.now() - lastSeen <= fiveMin) return;
+    if (Date.now() - lastSeen <= 5 * 60 * 1000) return;
 
     try {
       const { data, error } = await supabase
@@ -390,24 +538,17 @@ export default function ChatPage() {
         })
         .select()
         .single();
-
       if (error) throw error;
-
       if (data) {
         setMessages((prev) => {
           if (prev.find((m) => m.id === data.id)) return prev;
           return [...prev, data];
         });
       }
-
       await supabase
         .from('conversations')
-        .update({
-          auto_reply_sent: true,
-          last_message_at: new Date().toISOString(),
-        })
+        .update({ auto_reply_sent: true, last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
-
       setAutoReplySent(true);
       setTimeout(scrollBottom, 80);
     } catch (err) {
@@ -444,27 +585,22 @@ export default function ChatPage() {
         : 'audio/mp4';
       const recorder = new MediaRecorder(stream, { mimeType: mime });
       chunksRef.current = [];
-
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
-
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunksRef.current, { type: mime });
-        const url = URL.createObjectURL(blob);
         setVoiceBlob(blob);
-        setVoiceUrl(url);
+        setVoiceUrl(URL.createObjectURL(blob));
         setVoiceSecs(recordSecs);
         setRecording(false);
         if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       };
-
       mediaRecorderRef.current = recorder;
       recorder.start();
       setRecording(true);
       setRecordSecs(0);
-
       recordTimerRef.current = setInterval(() => {
         setRecordSecs((s) => {
           if (s + 1 >= MAX_VOICE_SECONDS) {
@@ -474,8 +610,7 @@ export default function ChatPage() {
           return s + 1;
         });
       }, 1000);
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert('Microphone access is needed for voice notes');
     }
   };
@@ -492,7 +627,6 @@ export default function ChatPage() {
     const f = e.target.files?.[0];
     if (!f) return;
     clearVoice();
-
     const isImage = f.type.startsWith('image/');
     const isVideo = f.type.startsWith('video/');
     if (!isImage && !isVideo) {
@@ -503,7 +637,6 @@ export default function ChatPage() {
       alert(`Max ${MAX_FILE_MB}MB`);
       return;
     }
-
     if (isVideo) {
       const url = URL.createObjectURL(f);
       const video = document.createElement('video');
@@ -527,7 +660,6 @@ export default function ChatPage() {
       video.src = url;
       return;
     }
-
     if (preview) URL.revokeObjectURL(preview);
     setFile(f);
     setPreview(URL.createObjectURL(f));
@@ -603,7 +735,6 @@ export default function ChatPage() {
         })
         .select()
         .single();
-
       if (error) throw error;
 
       if (data) {
@@ -628,7 +759,6 @@ export default function ChatPage() {
           : mediaType === 'image'
           ? 'Sent a photo'
           : 'Sent a message';
-
         await createNotification({
           userId: otherUserId,
           actorId: userId,
@@ -644,7 +774,7 @@ export default function ChatPage() {
       }
 
       setTimeout(scrollBottom, 80);
-      setTimeout(() => inputRef.current?.focus(), 120);
+      setTimeout(() => inputRef.current?.focus(), 100);
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Failed to send');
@@ -679,7 +809,7 @@ export default function ChatPage() {
         }));
       }
     } catch (err) {
-      console.error('Reaction error:', err);
+      console.error(err);
     }
     setReactFor(null);
   };
@@ -709,7 +839,6 @@ export default function ChatPage() {
         });
       }
     } catch (err: any) {
-      console.error(err);
       alert(err.message || 'Unlock failed');
     } finally {
       setUnlockingId(null);
@@ -731,16 +860,14 @@ export default function ChatPage() {
     }
     setTipping(true);
     try {
-      const { error: tipError } = await supabase.from('tips').insert({
+      await supabase.from('tips').insert({
         from_user_id: userId,
         to_user_id: otherUserId,
         amount,
         conversation_id: conversationId,
         message: 'Tip in chat',
       });
-      if (tipError) throw tipError;
-
-      const { data, error: msgError } = await supabase
+      const { data } = await supabase
         .from('messages')
         .insert({
           conversation_id: conversationId,
@@ -750,20 +877,16 @@ export default function ChatPage() {
         })
         .select()
         .single();
-      if (msgError) throw msgError;
-
       if (data) {
         setMessages((prev) => {
           if (prev.find((m) => m.id === data.id)) return prev;
           return [...prev, data];
         });
       }
-
       await supabase
         .from('conversations')
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversationId);
-
       await createNotification({
         userId: otherUserId,
         actorId: userId,
@@ -772,13 +895,11 @@ export default function ChatPage() {
         body: null,
         link: `/messages/${conversationId}`,
       });
-
       setShowTip(false);
       setCustomTip('');
       setTipAmount(10);
       setTimeout(scrollBottom, 80);
     } catch (err: any) {
-      console.error(err);
       alert(err.message || 'Tip failed');
     } finally {
       setTipping(false);
@@ -791,21 +912,6 @@ export default function ChatPage() {
   const statusLine = () => {
     if (isOtherTyping) return 'typing...';
     return formatLastSeen(otherUser?.last_seen_at) || `@${otherUser?.username}`;
-  };
-
-  const ReadTicks = ({ msg }: { msg: any }) => {
-    if (msg.sender_id !== userId) return null;
-    const read = msg.is_read || msg.read_at;
-    return read ? (
-      <CheckCheck size={12} className="inline ml-1 text-pink-200" />
-    ) : (
-      <Check size={12} className="inline ml-1 text-pink-200/70" />
-    );
-  };
-
-  const getReplyPreview = (msg: any) => {
-    if (!msg?.reply_to_id) return null;
-    return messages.find((m) => m.id === msg.reply_to_id) || null;
   };
 
   const mediaLabel = (m: any) => {
@@ -833,160 +939,33 @@ export default function ChatPage() {
       canSeeMedia(m)
   );
 
-  const VoicePlayer = ({ url, mine }: { url: string; mine: boolean }) => {
-    const audioRef = useRef<HTMLAudioElement>(null);
-    const [playing, setPlaying] = useState(false);
-    const [progress, setProgress] = useState(0);
-
-    useEffect(() => {
-      const a = audioRef.current;
-      if (!a) return;
-      const onTime = () => setProgress(a.duration ? a.currentTime / a.duration : 0);
-      const onEnd = () => {
-        setPlaying(false);
-        setProgress(0);
-      };
-      a.addEventListener('timeupdate', onTime);
-      a.addEventListener('ended', onEnd);
-      return () => {
-        a.removeEventListener('timeupdate', onTime);
-        a.removeEventListener('ended', onEnd);
-      };
-    }, []);
-
-    const toggle = () => {
-      const a = audioRef.current;
-      if (!a) return;
-      if (playing) {
-        a.pause();
-        setPlaying(false);
-      } else {
-        a.play();
-        setPlaying(true);
-      }
-    };
-
+  if (loading) {
     return (
-      <div
-        className={`flex items-center gap-3 px-3 py-2 min-w-[200px] ${
-          mine ? 'bg-pink-600' : 'bg-zinc-800'
-        }`}
-      >
-        <audio ref={audioRef} src={url} preload="metadata" />
-        <button
-          type="button"
-          onClick={toggle}
-          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-            mine ? 'bg-white/20 text-white' : 'bg-pink-600 text-white'
-          }`}
-        >
-          {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
-        </button>
-        <div className="flex-1 h-1 rounded-full bg-black/20 overflow-hidden">
-          <div
-            className={`h-full rounded-full ${mine ? 'bg-white' : 'bg-pink-500'}`}
-            style={{ width: `${progress * 100}%` }}
-          />
-        </div>
-        <Mic size={14} className={mine ? 'text-pink-100' : 'text-zinc-400'} />
+      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+        <p className="text-zinc-400">Loading chat...</p>
       </div>
     );
-  };
+  }
 
-  const MediaBlock = ({
-    msg,
-    locked,
-    mine,
-  }: {
-    msg: any;
-    locked: boolean;
-    mine: boolean;
-  }) => {
-    if (!msg.media_url) return null;
-    const isVideo = msg.media_type === 'video';
-    const isImage = msg.media_type === 'image';
-    const isAudio = msg.media_type === 'audio';
+  const displayName = otherUser?.display_name || otherUser?.username || 'User';
+  const initial = displayName.charAt(0).toUpperCase();
+  const isOnline = formatLastSeen(otherUser?.last_seen_at) === 'Online';
+  const canSend = !needsUnlock && !sending && (!!text.trim() || !!file || !!voiceBlob);
 
-    if (isAudio) return <VoicePlayer url={msg.media_url} mine={mine} />;
-    if (!isVideo && !isImage) return null;
-
-    if (locked) {
-      return (
-        <div className="relative w-full min-w-[260px] aspect-video bg-zinc-900 overflow-hidden">
-          {isImage ? (
-            <img
-              src={msg.media_url}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover blur-xl scale-110"
-            />
-          ) : (
-            <div className="absolute inset-0 bg-zinc-800" />
-          )}
-          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-4 text-center">
-            <Lock size={28} className="text-white mb-2" />
-            <p className="text-white text-sm font-medium mb-3">
-              Locked · £{Number(msg.unlock_price || 0).toFixed(2)}
-            </p>
-            <button
-              type="button"
-              onClick={() => unlockMessage(msg)}
-              disabled={unlockingId === msg.id}
-              className="bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2 rounded-full flex items-center gap-2"
-            >
-              <Unlock size={16} />
-              {unlockingId === msg.id ? 'Unlocking...' : 'Unlock'}
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    if (isVideo) {
-      return (
-        <div className="relative bg-black min-w-[260px]">
-          <video
-            src={msg.media_url}
-            controls
-            playsInline
-            preload="metadata"
-            className="w-full max-h-[360px]"
-          />
-          {msg.is_locked && mine && (
-            <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
-              <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
-            </span>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <button
-        type="button"
-        onClick={() => setViewer({ url: msg.media_url, type: 'image' })}
-        className="block w-full relative min-w-[200px]"
-      >
-        <img src={msg.media_url} alt="" className="w-full max-h-[320px] object-cover" />
-        {msg.is_locked && mine && (
-          <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
-            <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
-          </span>
-        )}
-      </button>
-    );
-  };
-
-  const MessageBubble = ({ msg }: { msg: any }) => {
+  /* ---- render one message (inline, not a nested component) ---- */
+  const renderMessage = (msg: any) => {
     const mine = msg.sender_id === userId;
     const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
     const isAudio = msg.media_type === 'audio';
     const locked = msg.is_locked && !canSeeMedia(msg);
-    const replied = getReplyPreview(msg);
+    const replied = msg.reply_to_id
+      ? messages.find((m) => m.id === msg.reply_to_id)
+      : null;
     const reacts = groupedReactions(msg.id);
     const showReactPicker = reactFor === msg.id;
 
     return (
-      <div className={`flex ${mine ? 'justify-end' : 'justify-start'} group relative`}>
+      <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'} group`}>
         <div className={`max-w-[80%] ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
           {showReactPicker && (
             <div
@@ -1003,7 +982,7 @@ export default function ChatPage() {
                     e.stopPropagation();
                     toggleReaction(msg.id, emoji);
                   }}
-                  className="w-8 h-8 rounded-full hover:bg-zinc-800 text-lg flex items-center justify-center transition"
+                  className="w-8 h-8 rounded-full hover:bg-zinc-800 text-lg flex items-center justify-center"
                 >
                   {emoji}
                 </button>
@@ -1031,16 +1010,19 @@ export default function ChatPage() {
               </div>
             )}
 
-            <MediaBlock msg={msg} locked={locked} mine={mine} />
+            <MediaBlock
+              msg={msg}
+              locked={locked}
+              mine={mine}
+              unlockingId={unlockingId}
+              onUnlock={unlockMessage}
+              onOpenViewer={(url, type) => setViewer({ url, type })}
+            />
 
             {!isAudio && (
               <div className={`px-3.5 py-2 ${isTip ? '' : mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                 {!!msg.content && (
-                  <p
-                    className={`text-[15px] whitespace-pre-wrap break-words ${
-                      isTip ? 'font-medium' : ''
-                    }`}
-                  >
+                  <p className={`text-[15px] whitespace-pre-wrap break-words ${isTip ? 'font-medium' : ''}`}>
                     {msg.content}
                   </p>
                 )}
@@ -1050,7 +1032,12 @@ export default function ChatPage() {
                   }`}
                 >
                   {time(msg.created_at)}
-                  {mine && <ReadTicks msg={msg} />}
+                  {mine &&
+                    (msg.is_read || msg.read_at ? (
+                      <CheckCheck size={12} className="inline ml-1 text-pink-200" />
+                    ) : (
+                      <Check size={12} className="inline ml-1 text-pink-200/70" />
+                    ))}
                 </p>
               </div>
             )}
@@ -1059,7 +1046,12 @@ export default function ChatPage() {
               <div className={`px-3 pb-2 ${mine ? 'bg-pink-600' : 'bg-zinc-800'}`}>
                 <p className={`text-[10px] ${mine ? 'text-pink-200/80' : 'text-zinc-500'}`}>
                   {time(msg.created_at)}
-                  {mine && <ReadTicks msg={msg} />}
+                  {mine &&
+                    (msg.is_read || msg.read_at ? (
+                      <CheckCheck size={12} className="inline ml-1 text-pink-200" />
+                    ) : (
+                      <Check size={12} className="inline ml-1 text-pink-200/70" />
+                    ))}
                 </p>
               </div>
             )}
@@ -1101,8 +1093,7 @@ export default function ChatPage() {
                 setReactFor(null);
                 setTimeout(() => inputRef.current?.focus(), 50);
               }}
-              className="p-1.5 rounded-full text-zinc-500 hover:text-pink-400 hover:bg-zinc-800 transition"
-              title="Reply"
+              className="p-1.5 rounded-full text-zinc-500 hover:text-pink-400 hover:bg-zinc-800"
             >
               <Reply size={14} />
             </button>
@@ -1112,8 +1103,7 @@ export default function ChatPage() {
                 e.stopPropagation();
                 setReactFor(showReactPicker ? null : msg.id);
               }}
-              className="p-1.5 rounded-full text-zinc-500 hover:text-pink-400 hover:bg-zinc-800 transition"
-              title="React"
+              className="p-1.5 rounded-full text-zinc-500 hover:text-pink-400 hover:bg-zinc-800"
             >
               <Smile size={14} />
             </button>
@@ -1123,258 +1113,164 @@ export default function ChatPage() {
     );
   };
 
-  const UnlockBar = () => (
-    <div className="mb-3 p-4 bg-zinc-900 border border-pink-500/40 rounded-2xl">
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full bg-pink-600/20 text-pink-400 flex items-center justify-center flex-shrink-0">
-          <Lock size={18} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm">Messaging is locked</p>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            Pay £{Number(messagePrice).toFixed(2)} once to unlock unlimited messages with{' '}
-            {otherUser?.display_name || otherUser?.username || 'this creator'}.
-          </p>
-          <button
-            type="button"
-            onClick={unlockChat}
-            disabled={unlockingChat}
-            className="mt-3 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full transition"
-          >
-            {unlockingChat
-              ? 'Unlocking...'
-              : `Unlock for £${Number(messagePrice).toFixed(2)}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const MediaPreviewBox = () => (
-    <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl">
-      <div className="flex items-start gap-3">
-        <div className="relative flex-shrink-0">
-          {previewType === 'video' ? (
-            <video
-              src={preview!}
-              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
-              muted
-              playsInline
-              preload="metadata"
-            />
-          ) : (
-            <img
-              src={preview!}
-              alt=""
-              className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
-            />
-          )}
-          <button
-            type="button"
-            onClick={clearMedia}
-            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <div className="flex-1 min-w-0 space-y-2">
-          <p className="text-xs text-zinc-400">
-            {previewType === 'video' ? 'Video ready to send (max 30s)' : 'Photo ready to send'}
-          </p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setLockPhoto(!lockPhoto)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border font-medium transition ${
-                lockPhoto
-                  ? 'bg-pink-600 border-pink-500 text-white'
-                  : 'bg-zinc-800 border-zinc-600 text-zinc-300 hover:border-pink-500 hover:text-pink-400'
-              }`}
-            >
-              <Lock size={12} />
-              {lockPhoto ? 'Locked' : 'Lock'}
-            </button>
-            {lockPhoto && (
-              <div className="flex items-center gap-1 bg-zinc-800 border border-zinc-600 rounded-full px-2 py-1">
-                <span className="text-xs text-zinc-400">£</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.5"
-                  value={lockPrice}
-                  onChange={(e) => setLockPrice(e.target.value)}
-                  className="w-14 bg-transparent text-sm outline-none text-white"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const VoicePreviewBox = () => (
-    <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center gap-3">
-      <div className="w-10 h-10 rounded-full bg-pink-600/20 text-pink-400 flex items-center justify-center">
-        <Mic size={18} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">Voice note ready</p>
-        <p className="text-xs text-zinc-400">{formatDuration(voiceSecs)}</p>
-        {voiceUrl && <audio src={voiceUrl} controls className="w-full mt-1 h-8" />}
-      </div>
-      <button type="button" onClick={clearVoice} className="text-zinc-400 hover:text-white p-1">
-        <X size={18} />
-      </button>
-    </div>
-  );
-
-  const RecordingBar = () => (
-    <div className="mb-2 flex items-center gap-3 px-3 py-2 bg-red-950/40 border border-red-900/50 rounded-xl">
-      <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-      <p className="text-sm text-red-300 flex-1">Recording… {formatDuration(recordSecs)}</p>
-      <button
-        type="button"
-        onClick={stopRecording}
-        className="w-9 h-9 rounded-full bg-red-600 text-white flex items-center justify-center"
-      >
-        <Square size={14} fill="currentColor" />
-      </button>
-    </div>
-  );
-
-  const ReplyBar = () => {
-    if (!replyTo) return null;
-    return (
-      <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl">
-        <Reply size={14} className="text-pink-400 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-pink-400 font-medium">
-            Replying to{' '}
-            {replyTo.sender_id === userId ? 'yourself' : otherUser?.display_name || 'them'}
-          </p>
-          <p className="text-xs text-zinc-400 truncate">{mediaLabel(replyTo)}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setReplyTo(null)}
-          className="text-zinc-500 hover:text-white"
-        >
-          <X size={16} />
-        </button>
-      </div>
-    );
-  };
-
-  const GalleryPanel = () => {
-    if (!showGallery) return null;
-    return (
-      <div className="fixed inset-0 z-[95] bg-zinc-950 flex flex-col">
-        <div className="border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setShowGallery(false)}
-            className="text-zinc-400 hover:text-white p-1"
-          >
-            <ArrowLeft size={22} />
-          </button>
-          <div className="flex-1">
-            <p className="font-semibold">Media</p>
-            <p className="text-xs text-zinc-400">{galleryItems.length} items</p>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          {galleryItems.length === 0 ? (
-            <div className="text-center text-zinc-500 py-20">
-              <LayoutGrid size={40} className="mx-auto mb-3 opacity-40" />
-              <p>No photos or videos yet</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-w-3xl mx-auto">
-              {galleryItems
-                .slice()
-                .reverse()
-                .map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() =>
-                      setViewer({
-                        url: m.media_url,
-                        type: m.media_type === 'video' ? 'video' : 'image',
-                      })
-                    }
-                    className="relative aspect-square bg-zinc-900 rounded-lg overflow-hidden"
-                  >
-                    {m.media_type === 'video' ? (
-                      <>
-                        <video
-                          src={m.media_url}
-                          className="w-full h-full object-cover"
-                          muted
-                          playsInline
-                          preload="metadata"
-                        />
-                        <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">
-                          Video
-                        </span>
-                      </>
-                    ) : (
-                      <img src={m.media_url} alt="" className="w-full h-full object-cover" />
-                    )}
-                  </button>
-                ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-        <p className="text-zinc-400">Loading chat...</p>
-      </div>
-    );
-  }
-
-  const displayName = otherUser?.display_name || otherUser?.username || 'User';
-  const initial = displayName.charAt(0).toUpperCase();
-  const isOnline = formatLastSeen(otherUser?.last_seen_at) === 'Online';
-  const canSend = !needsUnlock && !sending && (!!text.trim() || !!file || !!voiceBlob);
-
-  const Composer = ({ mobile = false }: { mobile?: boolean }) => (
+  /* ---- composer UI (inline — not a nested component) ---- */
+  const composerUI = (
     <div>
-      {needsUnlock && <UnlockBar />}
-      {!needsUnlock && (
-        <>
-          <ReplyBar />
-          {recording && <RecordingBar />}
-          {voiceUrl && !recording && <VoicePreviewBox />}
-          {preview && <MediaPreviewBox />}
-        </>
+      {needsUnlock && (
+        <div className="mb-3 p-4 bg-zinc-900 border border-pink-500/40 rounded-2xl">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-pink-600/20 text-pink-400 flex items-center justify-center flex-shrink-0">
+              <Lock size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm">Messaging is locked</p>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Pay £{Number(messagePrice).toFixed(2)} once to unlock unlimited messages with{' '}
+                {otherUser?.display_name || otherUser?.username || 'this creator'}.
+              </p>
+              <button
+                type="button"
+                onClick={unlockChat}
+                disabled={unlockingChat}
+                className="mt-3 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full"
+              >
+                {unlockingChat
+                  ? 'Unlocking...'
+                  : `Unlock for £${Number(messagePrice).toFixed(2)}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
+
+      {!needsUnlock && replyTo && (
+        <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl">
+          <Reply size={14} className="text-pink-400 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-pink-400 font-medium">
+              Replying to{' '}
+              {replyTo.sender_id === userId ? 'yourself' : otherUser?.display_name || 'them'}
+            </p>
+            <p className="text-xs text-zinc-400 truncate">{mediaLabel(replyTo)}</p>
+          </div>
+          <button type="button" onClick={() => setReplyTo(null)} className="text-zinc-500">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {!needsUnlock && recording && (
+        <div className="mb-2 flex items-center gap-3 px-3 py-2 bg-red-950/40 border border-red-900/50 rounded-xl">
+          <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+          <p className="text-sm text-red-300 flex-1">Recording… {formatDuration(recordSecs)}</p>
+          <button
+            type="button"
+            onClick={stopRecording}
+            className="w-9 h-9 rounded-full bg-red-600 text-white flex items-center justify-center"
+          >
+            <Square size={14} fill="currentColor" />
+          </button>
+        </div>
+      )}
+
+      {!needsUnlock && voiceUrl && !recording && (
+        <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-pink-600/20 text-pink-400 flex items-center justify-center">
+            <Mic size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Voice note ready</p>
+            <p className="text-xs text-zinc-400">{formatDuration(voiceSecs)}</p>
+            <audio src={voiceUrl} controls className="w-full mt-1 h-8" />
+          </div>
+          <button type="button" onClick={clearVoice} className="text-zinc-400 p-1">
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
+      {!needsUnlock && preview && (
+        <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl">
+          <div className="flex items-start gap-3">
+            <div className="relative flex-shrink-0">
+              {previewType === 'video' ? (
+                <video
+                  src={preview}
+                  className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                <img
+                  src={preview}
+                  alt=""
+                  className="h-16 w-16 object-cover rounded-xl border border-zinc-700"
+                />
+              )}
+              <button
+                type="button"
+                onClick={clearMedia}
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 min-w-0 space-y-2">
+              <p className="text-xs text-zinc-400">
+                {previewType === 'video' ? 'Video ready (max 30s)' : 'Photo ready'}
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setLockPhoto(!lockPhoto)}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border font-medium ${
+                    lockPhoto
+                      ? 'bg-pink-600 border-pink-500 text-white'
+                      : 'bg-zinc-800 border-zinc-600 text-zinc-300'
+                  }`}
+                >
+                  <Lock size={12} />
+                  {lockPhoto ? 'Locked' : 'Lock'}
+                </button>
+                {lockPhoto && (
+                  <div className="flex items-center gap-1 bg-zinc-800 border border-zinc-600 rounded-full px-2 py-1">
+                    <span className="text-xs text-zinc-400">£</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.5"
+                      value={lockPrice}
+                      onChange={(e) => setLockPrice(e.target.value)}
+                      className="w-14 bg-transparent text-sm outline-none text-white"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={recording || needsUnlock}
-          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0 disabled:opacity-40"
+          className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center disabled:opacity-40"
         >
           <ImagePlus size={20} />
         </button>
 
-        {!recording && !voiceBlob && !needsUnlock ? (
+        {!recording && !voiceBlob && !needsUnlock && (
           <button
             type="button"
             onClick={startRecording}
-            className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0"
-            title="Voice note"
+            className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center"
           >
             <Mic size={20} />
           </button>
-        ) : null}
+        )}
 
         <input
           ref={inputRef}
@@ -1382,12 +1278,10 @@ export default function ChatPage() {
           onChange={(e) => onType(e.target.value)}
           placeholder={needsUnlock ? 'Unlock to message...' : 'Message...'}
           disabled={recording || needsUnlock}
-          className={`flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 outline-none focus:border-pink-500 disabled:opacity-50 ${
-            mobile ? 'py-2.5' : 'py-3 text-sm'
-          }`}
-          style={mobile ? { fontSize: 16 } : undefined}
+          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 lg:py-3 lg:text-sm outline-none focus:border-pink-500 disabled:opacity-50"
+          style={{ fontSize: 16 }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !mobile) {
+            if (e.key === 'Enter') {
               e.preventDefault();
               send();
             }
@@ -1398,9 +1292,7 @@ export default function ChatPage() {
           type="button"
           onClick={send}
           disabled={!canSend}
-          className={`${
-            mobile ? 'w-10 h-10' : 'w-12 h-12'
-          } rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center transition flex-shrink-0`}
+          className="w-10 h-10 lg:w-12 lg:h-12 rounded-full bg-pink-600 hover:bg-pink-700 disabled:opacity-40 flex items-center justify-center"
         >
           <Send size={18} />
         </button>
@@ -1422,7 +1314,63 @@ export default function ChatPage() {
         onChange={pickMedia}
       />
 
-      <GalleryPanel />
+      {showGallery && (
+        <div className="fixed inset-0 z-[95] bg-zinc-950 flex flex-col">
+          <div className="border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
+            <button type="button" onClick={() => setShowGallery(false)} className="text-zinc-400 p-1">
+              <ArrowLeft size={22} />
+            </button>
+            <div className="flex-1">
+              <p className="font-semibold">Media</p>
+              <p className="text-xs text-zinc-400">{galleryItems.length} items</p>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3">
+            {galleryItems.length === 0 ? (
+              <div className="text-center text-zinc-500 py-20">
+                <LayoutGrid size={40} className="mx-auto mb-3 opacity-40" />
+                <p>No photos or videos yet</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-w-3xl mx-auto">
+                {galleryItems
+                  .slice()
+                  .reverse()
+                  .map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() =>
+                        setViewer({
+                          url: m.media_url,
+                          type: m.media_type === 'video' ? 'video' : 'image',
+                        })
+                      }
+                      className="relative aspect-square bg-zinc-900 rounded-lg overflow-hidden"
+                    >
+                      {m.media_type === 'video' ? (
+                        <>
+                          <video
+                            src={m.media_url}
+                            className="w-full h-full object-cover"
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                          <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">
+                            Video
+                          </span>
+                        </>
+                      ) : (
+                        <img src={m.media_url} alt="" className="w-full h-full object-cover" />
+                      )}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {viewer && (
         <div
@@ -1475,10 +1423,10 @@ export default function ChatPage() {
                     setTipAmount(amt);
                     setCustomTip('');
                   }}
-                  className={`py-3 rounded-xl text-sm font-semibold transition ${
+                  className={`py-3 rounded-xl text-sm font-semibold ${
                     tipAmount === amt && !customTip
                       ? 'bg-pink-600 text-white'
-                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                      : 'bg-zinc-800 text-zinc-300'
                   }`}
                 >
                   £{amt}
@@ -1501,13 +1449,11 @@ export default function ChatPage() {
               type="button"
               onClick={sendTip}
               disabled={tipping}
-              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3.5 rounded-xl font-semibold transition"
+              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3.5 rounded-xl font-semibold"
             >
               {tipping
                 ? 'Sending...'
-                : `Send £${(
-                    customTip ? parseFloat(customTip) || 0 : tipAmount || 0
-                  ).toFixed(2)} tip`}
+                : `Send £${(customTip ? parseFloat(customTip) || 0 : tipAmount || 0).toFixed(2)} tip`}
             </button>
           </div>
         </div>
@@ -1516,17 +1462,10 @@ export default function ChatPage() {
       {/* MOBILE */}
       <div className="lg:hidden fixed inset-0 z-50 bg-zinc-950 flex flex-col">
         <div className="border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => router.push('/messages')}
-            className="text-zinc-400 p-1"
-          >
+          <button type="button" onClick={() => router.push('/messages')} className="text-zinc-400 p-1">
             <ArrowLeft size={24} />
           </button>
-          <Link
-            href={`/${otherUser?.username}`}
-            className="flex items-center gap-3 min-w-0 flex-1"
-          >
+          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 min-w-0 flex-1">
             <div className="relative flex-shrink-0">
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
                 {otherUser?.avatar_url ? (
@@ -1543,11 +1482,7 @@ export default function ChatPage() {
               <p className="font-semibold text-sm truncate">{displayName}</p>
               <p
                 className={`text-xs truncate ${
-                  isOtherTyping
-                    ? 'text-pink-400'
-                    : isOnline
-                    ? 'text-green-400'
-                    : 'text-zinc-400'
+                  isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'
                 }`}
               >
                 {statusLine()}
@@ -1557,14 +1492,14 @@ export default function ChatPage() {
           <button
             type="button"
             onClick={() => setShowGallery(true)}
-            className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 flex items-center justify-center flex-shrink-0"
+            className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 flex items-center justify-center"
           >
             <LayoutGrid size={18} />
           </button>
           <button
             type="button"
             onClick={() => setShowTip(true)}
-            className="w-9 h-9 rounded-full bg-pink-600/20 border border-pink-500/40 text-pink-400 flex items-center justify-center flex-shrink-0"
+            className="w-9 h-9 rounded-full bg-pink-600/20 border border-pink-500/40 text-pink-400 flex items-center justify-center"
           >
             <DollarSign size={18} />
           </button>
@@ -1583,9 +1518,7 @@ export default function ChatPage() {
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} />
-            ))}
+            {messages.map(renderMessage)}
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
@@ -1608,7 +1541,7 @@ export default function ChatPage() {
           className="border-t border-zinc-800 px-3 py-2"
           style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
         >
-          <Composer mobile />
+          {composerUI}
         </div>
       </div>
 
@@ -1635,11 +1568,7 @@ export default function ChatPage() {
               <p className="font-semibold text-sm">{displayName}</p>
               <p
                 className={`text-xs ${
-                  isOtherTyping
-                    ? 'text-pink-400'
-                    : isOnline
-                    ? 'text-green-400'
-                    : 'text-zinc-400'
+                  isOtherTyping ? 'text-pink-400' : isOnline ? 'text-green-400' : 'text-zinc-400'
                 }`}
               >
                 {statusLine()}
@@ -1649,15 +1578,14 @@ export default function ChatPage() {
           <button
             type="button"
             onClick={() => setShowGallery(true)}
-            className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition"
-            title="Media"
+            className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center"
           >
             <LayoutGrid size={18} />
           </button>
           <button
             type="button"
             onClick={() => setShowTip(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600/20 border border-pink-500/40 text-pink-400 hover:bg-pink-600/30 transition text-sm font-medium"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600/20 border border-pink-500/40 text-pink-400 hover:bg-pink-600/30 text-sm font-medium"
           >
             <DollarSign size={16} />
             Tip
@@ -1676,9 +1604,7 @@ export default function ChatPage() {
                 <p className="text-sm mt-1">Say hello 👋</p>
               </div>
             )}
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} />
-            ))}
+            {messages.map(renderMessage)}
             {isOtherTyping && (
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
@@ -1698,7 +1624,7 @@ export default function ChatPage() {
         </div>
 
         <div className="max-w-3xl w-full mx-auto border-t border-zinc-800 px-6 py-4">
-          <Composer />
+          {composerUI}
         </div>
       </main>
     </div>
