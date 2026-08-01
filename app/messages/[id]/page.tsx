@@ -49,6 +49,11 @@ export default function ChatPage() {
   const [reactFor, setReactFor] = useState<string | null>(null);
   const [showGallery, setShowGallery] = useState(false);
 
+  // Message price gate
+  const [needsUnlock, setNeedsUnlock] = useState(false);
+  const [unlockingChat, setUnlockingChat] = useState(false);
+  const [messagePrice, setMessagePrice] = useState(0);
+
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
@@ -139,7 +144,7 @@ export default function ChatPage() {
 
       const { data: me } = await supabase
         .from('profiles')
-        .select('username, display_name, avatar_url')
+        .select('username, display_name, avatar_url, account_type')
         .eq('id', user.id)
         .single();
       setMyProfile(me);
@@ -169,9 +174,30 @@ export default function ChatPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('username, display_name, avatar_url, last_seen_at')
+        .select('username, display_name, avatar_url, last_seen_at, account_type, message_price')
         .eq('id', otherId)
         .single();
+
+      // Message price gate: fan messaging a creator who charges
+      const price = Number(profile?.message_price || 0);
+      setMessagePrice(price);
+
+      let locked = false;
+      if (
+        me?.account_type !== 'creator' &&
+        profile?.account_type === 'creator' &&
+        price > 0
+      ) {
+        const { data: access } = await supabase
+          .from('message_access')
+          .select('id')
+          .eq('creator_id', otherId)
+          .eq('fan_id', user.id)
+          .maybeSingle();
+
+        locked = !access;
+      }
+      setNeedsUnlock(locked);
 
       const { data: msgs } = await supabase
         .from('messages')
@@ -304,10 +330,43 @@ export default function ChatPage() {
   };
 
   const onType = (value: string) => {
+    if (needsUnlock) return;
     setText(value);
     notifyTyping(true);
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => notifyTyping(false), 3000);
+  };
+
+  const unlockChat = async () => {
+    if (!userId || !otherUserId || unlockingChat) return;
+    setUnlockingChat(true);
+
+    try {
+      const { error } = await supabase.from('message_access').insert({
+        creator_id: otherUserId,
+        fan_id: userId,
+        amount: messagePrice,
+      });
+
+      if (error) throw error;
+
+      // Optional tip-style notification for creator
+      await createNotification({
+        userId: otherUserId,
+        actorId: userId,
+        type: 'tip',
+        title: `${actorName()} unlocked messaging`,
+        body: `£${Number(messagePrice).toFixed(2)}`,
+        link: `/messages/${conversationId}`,
+      });
+
+      setNeedsUnlock(false);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Could not unlock messaging');
+    } finally {
+      setUnlockingChat(false);
+    }
   };
 
   const clearMedia = () => {
@@ -329,6 +388,7 @@ export default function ChatPage() {
   };
 
   const startRecording = async () => {
+    if (needsUnlock) return;
     try {
       clearMedia();
       clearVoice();
@@ -382,6 +442,7 @@ export default function ChatPage() {
   };
 
   const pickMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (needsUnlock) return;
     const f = e.target.files?.[0];
     if (!f) return;
 
@@ -431,6 +492,10 @@ export default function ChatPage() {
   };
 
   const send = async () => {
+    if (needsUnlock) {
+      alert('Unlock messaging first');
+      return;
+    }
     if (sending || !userId) return;
     if (!text.trim() && !file && !voiceBlob) return;
 
@@ -797,10 +862,7 @@ export default function ChatPage() {
     const isImage = msg.media_type === 'image';
     const isAudio = msg.media_type === 'audio';
 
-    if (isAudio) {
-      return <VoicePlayer url={msg.media_url} mine={mine} />;
-    }
-
+    if (isAudio) return <VoicePlayer url={msg.media_url} mine={mine} />;
     if (!isVideo && !isImage) return null;
 
     if (locked) {
@@ -1010,6 +1072,31 @@ export default function ChatPage() {
     );
   };
 
+  const UnlockBar = () => (
+    <div className="mb-3 p-4 bg-zinc-900 border border-pink-500/40 rounded-2xl">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-full bg-pink-600/20 text-pink-400 flex items-center justify-center flex-shrink-0">
+          <Lock size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm">Messaging is locked</p>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Pay £{Number(messagePrice).toFixed(2)} once to unlock unlimited messages with{' '}
+            {otherUser?.display_name || otherUser?.username || 'this creator'}.
+          </p>
+          <button
+            type="button"
+            onClick={unlockChat}
+            disabled={unlockingChat}
+            className="mt-3 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-full transition"
+          >
+            {unlockingChat ? 'Unlocking...' : `Unlock for £${Number(messagePrice).toFixed(2)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const MediaPreviewBox = () => (
     <div className="mb-3 p-3 bg-zinc-900 border border-zinc-800 rounded-2xl">
       <div className="flex items-start gap-3">
@@ -1136,7 +1223,6 @@ export default function ChatPage() {
             <p className="text-xs text-zinc-400">{galleryItems.length} items</p>
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto p-3">
           {galleryItems.length === 0 ? (
             <div className="text-center text-zinc-500 py-20">
@@ -1152,12 +1238,12 @@ export default function ChatPage() {
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => {
+                    onClick={() =>
                       setViewer({
                         url: m.media_url,
                         type: m.media_type === 'video' ? 'video' : 'image',
-                      });
-                    }}
+                      })
+                    }
                     className="relative aspect-square bg-zinc-900 rounded-lg overflow-hidden"
                   >
                     {m.media_type === 'video' ? (
@@ -1190,25 +1276,30 @@ export default function ChatPage() {
   const displayName = otherUser?.display_name || otherUser?.username || 'User';
   const initial = displayName.charAt(0).toUpperCase();
   const isOnline = formatLastSeen(otherUser?.last_seen_at) === 'Online';
-  const canSend = !sending && (!!text.trim() || !!file || !!voiceBlob);
+  const canSend = !needsUnlock && !sending && (!!text.trim() || !!file || !!voiceBlob);
 
   const Composer = ({ mobile = false }: { mobile?: boolean }) => (
     <div>
-      <ReplyBar />
-      {recording && <RecordingBar />}
-      {voiceUrl && !recording && <VoicePreviewBox />}
-      {preview && <MediaPreviewBox />}
+      {needsUnlock && <UnlockBar />}
+      {!needsUnlock && (
+        <>
+          <ReplyBar />
+          {recording && <RecordingBar />}
+          {voiceUrl && !recording && <VoicePreviewBox />}
+          {preview && <MediaPreviewBox />}
+        </>
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          disabled={recording}
+          disabled={recording || needsUnlock}
           className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center transition flex-shrink-0 disabled:opacity-40"
         >
           <ImagePlus size={20} />
         </button>
 
-        {!recording && !voiceBlob ? (
+        {!recording && !voiceBlob && !needsUnlock ? (
           <button
             type="button"
             onClick={startRecording}
@@ -1223,8 +1314,8 @@ export default function ChatPage() {
           ref={inputRef}
           value={text}
           onChange={(e) => onType(e.target.value)}
-          placeholder="Message..."
-          disabled={recording}
+          placeholder={needsUnlock ? 'Unlock to message...' : 'Message...'}
+          disabled={recording || needsUnlock}
           className={`flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 outline-none focus:border-pink-500 disabled:opacity-50 ${
             mobile ? 'py-2.5' : 'py-3 text-sm'
           }`}
@@ -1406,7 +1497,7 @@ export default function ChatPage() {
           onClick={() => setReactFor(null)}
         >
           <div className="min-h-full flex flex-col justify-end py-3 space-y-3">
-            {messages.length === 0 && (
+            {messages.length === 0 && !needsUnlock && (
               <div className="text-center text-zinc-500 py-16">
                 <p>No messages yet</p>
                 <p className="text-sm mt-1">Say hello 👋</p>
@@ -1495,7 +1586,7 @@ export default function ChatPage() {
           onClick={() => setReactFor(null)}
         >
           <div className="min-h-full flex flex-col justify-end py-3 space-y-3">
-            {messages.length === 0 && (
+            {messages.length === 0 && !needsUnlock && (
               <div className="text-center text-zinc-500 py-16">
                 <p>No messages yet</p>
                 <p className="text-sm mt-1">Say hello 👋</p>
