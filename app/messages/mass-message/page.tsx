@@ -20,6 +20,25 @@ import { createClient } from '../../../lib/supabase';
 type Audience = 'followers' | 'subscribers' | 'both';
 type HistoryTab = 'scheduled' | 'sent';
 
+function pad(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+function toLocalDateValue(d: Date) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toLocalTimeValue(d: Date) {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function combineLocal(dateStr: string, timeStr: string) {
+  // dateStr: YYYY-MM-DD, timeStr: HH:mm
+  const [y, m, day] = dateStr.split('-').map(Number);
+  const [hh, mm] = timeStr.split(':').map(Number);
+  return new Date(y, m - 1, day, hh, mm, 0, 0);
+}
+
 export default function MassMessagePage() {
   const router = useRouter();
   const supabase = createClient();
@@ -31,7 +50,10 @@ export default function MassMessagePage() {
   const [content, setContent] = useState('');
   const [audience, setAudience] = useState<Audience>('followers');
   const [mode, setMode] = useState<'now' | 'schedule'>('now');
-  const [scheduledFor, setScheduledFor] = useState('');
+
+  const defaultLater = new Date(Date.now() + 60 * 60 * 1000);
+  const [scheduleDate, setScheduleDate] = useState(toLocalDateValue(defaultLater));
+  const [scheduleTime, setScheduleTime] = useState(toLocalTimeValue(defaultLater));
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -166,18 +188,31 @@ export default function MassMessagePage() {
     return sent;
   };
 
-  const scheduleMessage = async (uid: string, text: string, aud: Audience, when: string) => {
+  const scheduleMessage = async (uid: string, text: string, aud: Audience, when: Date) => {
     const { error } = await supabase.from('mass_messages').insert({
       creator_id: uid,
       content: text,
       audience: aud,
       status: 'scheduled',
-      scheduled_for: new Date(when).toISOString(),
+      scheduled_for: when.toISOString(),
       recipient_count: 0,
     });
 
     if (error) throw error;
   };
+
+  const applyQuick = (minutesFromNow: number) => {
+    const d = new Date(Date.now() + minutesFromNow * 60 * 1000);
+    setScheduleDate(toLocalDateValue(d));
+    setScheduleTime(toLocalTimeValue(d));
+  };
+
+  const scheduledPreview = (() => {
+    if (!scheduleDate || !scheduleTime) return null;
+    const d = combineLocal(scheduleDate, scheduleTime);
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  })();
 
   const handleSubmit = async () => {
     if (!userId || !content.trim()) return;
@@ -187,27 +222,39 @@ export default function MassMessagePage() {
 
     try {
       if (mode === 'schedule') {
-        if (!scheduledFor) {
-          setError('Pick a date and time');
+        if (!scheduleDate || !scheduleTime) {
+          setError('Choose a date and time');
           setSending(false);
           return;
         }
-        const when = new Date(scheduledFor);
-        if (when.getTime() <= Date.now()) {
-          setError('Schedule time must be in the future');
+        const when = combineLocal(scheduleDate, scheduleTime);
+        if (Number.isNaN(when.getTime())) {
+          setError('Invalid date or time');
           setSending(false);
           return;
         }
-        await scheduleMessage(userId, content.trim(), audience, scheduledFor);
-        setMessage('Mass message scheduled');
+        if (when.getTime() <= Date.now() + 30 * 1000) {
+          setError('Pick a time at least 1 minute in the future');
+          setSending(false);
+          return;
+        }
+        await scheduleMessage(userId, content.trim(), audience, when);
+        setMessage(
+          `Scheduled for ${when.toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}`
+        );
       } else {
         const count = await sendNow(userId, content.trim(), audience);
         setMessage(`Sent to ${count} recipient${count === 1 ? '' : 's'}`);
       }
 
       setContent('');
-      setScheduledFor('');
       setMode('now');
+      const later = new Date(Date.now() + 60 * 60 * 1000);
+      setScheduleDate(toLocalDateValue(later));
+      setScheduleTime(toLocalTimeValue(later));
       await loadHistory(userId);
     } catch (e: any) {
       setError(e?.message || 'Something went wrong');
@@ -245,6 +292,8 @@ export default function MassMessagePage() {
   const scheduledItems = history.filter((h) => h.status === 'scheduled');
   const sentItems = history.filter((h) => h.status === 'sent' || h.status === 'failed');
 
+  const minDate = toLocalDateValue(new Date());
+
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -261,12 +310,8 @@ export default function MassMessagePage() {
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-4 py-6">
-          {/* Header */}
           <div className="flex items-center gap-3 mb-6">
-            <Link
-              href="/messages"
-              className="text-zinc-400 hover:text-white transition"
-            >
+            <Link href="/messages" className="text-zinc-400 hover:text-white transition">
               <ArrowLeft size={22} />
             </Link>
             <h1 className="text-xl font-semibold flex items-center gap-2">
@@ -275,7 +320,6 @@ export default function MassMessagePage() {
             </h1>
           </div>
 
-          {/* Compose */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
             <label className="text-sm text-zinc-400 mb-2 block">Message</label>
             <textarea
@@ -341,16 +385,74 @@ export default function MassMessagePage() {
             </div>
 
             {mode === 'schedule' && (
-              <div className="mb-4">
-                <label className="text-sm text-zinc-400 mb-2 block flex items-center gap-1.5">
-                  <Calendar size={14} /> Date & time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={scheduledFor}
-                  onChange={(e) => setScheduledFor(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500"
-                />
+              <div className="mb-4 space-y-3">
+                {/* Quick picks */}
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: 'In 1 hour', mins: 60 },
+                    { label: 'In 3 hours', mins: 180 },
+                    { label: 'Tomorrow 9am', mins: -1 },
+                  ].map((q) => (
+                    <button
+                      key={q.label}
+                      type="button"
+                      onClick={() => {
+                        if (q.mins === -1) {
+                          const d = new Date();
+                          d.setDate(d.getDate() + 1);
+                          d.setHours(9, 0, 0, 0);
+                          setScheduleDate(toLocalDateValue(d));
+                          setScheduleTime(toLocalTimeValue(d));
+                        } else {
+                          applyQuick(q.mins);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-800 border border-zinc-700 text-zinc-300 hover:border-pink-500 hover:text-pink-400 transition"
+                    >
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1.5 flex items-center gap-1">
+                      <Calendar size={12} /> Date
+                    </label>
+                    <input
+                      type="date"
+                      value={scheduleDate}
+                      min={minDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-3 text-sm outline-none focus:border-pink-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-500 mb-1.5 flex items-center gap-1">
+                      <Clock size={12} /> Time
+                    </label>
+                    <input
+                      type="time"
+                      value={scheduleTime}
+                      onChange={(e) => setScheduleTime(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-3 text-sm outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+                {scheduledPreview && (
+                  <p className="text-xs text-zinc-400 bg-zinc-800/80 border border-zinc-700 rounded-xl px-3 py-2">
+                    Will send:{' '}
+                    <span className="text-pink-400 font-medium">
+                      {scheduledPreview.toLocaleString(undefined, {
+                        weekday: 'short',
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </span>{' '}
+                    <span className="text-zinc-500">(your local time)</span>
+                  </p>
+                )}
               </div>
             )}
 
