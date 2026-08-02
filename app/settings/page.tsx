@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, User, Lock, Bell, Camera, Save, Eye, EyeOff,
-  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock
+  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -44,13 +44,20 @@ export default function SettingsPage() {
   const [autoReplyUnlockEnabled, setAutoReplyUnlockEnabled] = useState(false);
   const [autoReplyUnlockMessage, setAutoReplyUnlockMessage] = useState('');
 
+  // Voice calls
+  const [voiceCallsEnabled, setVoiceCallsEnabled] = useState(false);
+  const [voiceRate, setVoiceRate] = useState('3.00');
+  const [voiceMinMinutes, setVoiceMinMinutes] = useState('3');
+
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
   const [emailLives, setEmailLives] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
@@ -80,21 +87,21 @@ export default function SettingsPage() {
         setAutoReplyTipMessage(data.auto_reply_tip_message || '');
         setAutoReplyUnlockEnabled(!!data.auto_reply_unlock_enabled);
         setAutoReplyUnlockMessage(data.auto_reply_unlock_message || '');
+        setVoiceCallsEnabled(!!data.voice_calls_enabled);
+        setVoiceRate(String(data.voice_rate_per_minute ?? 3));
+        setVoiceMinMinutes(String(data.voice_min_minutes ?? 3));
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
       }
-
       setLoading(false);
     };
-
     load();
   }, []);
 
   const handleAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !profile) return;
-
     if (!file.type.startsWith('image/')) {
       setError('Please choose an image');
       return;
@@ -103,31 +110,23 @@ export default function SettingsPage() {
       setError('Max 5MB for profile photo');
       return;
     }
-
     setUploading(true);
     setError('');
     setMessage('');
-
     try {
       const ext = file.name.split('.').pop() || 'jpg';
       const path = `${profile.id}/avatar.${ext}`;
-
       const { error: upError } = await supabase.storage
         .from('avatars')
         .upload(path, file, { upsert: true, contentType: file.type });
-
       if (upError) throw upError;
-
       const { data } = supabase.storage.from('avatars').getPublicUrl(path);
       const url = `${data.publicUrl}?t=${Date.now()}`;
-
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: url })
         .eq('id', profile.id);
-
       if (updateError) throw updateError;
-
       setProfile({ ...profile, avatar_url: url });
       setMessage('Photo updated');
     } catch (err: any) {
@@ -160,6 +159,17 @@ export default function SettingsPage() {
         updates.auto_reply_tip_message = autoReplyTipMessage.trim();
         updates.auto_reply_unlock_enabled = autoReplyUnlockEnabled;
         updates.auto_reply_unlock_message = autoReplyUnlockMessage.trim();
+
+        // Voice calls
+        const rate = parseFloat(voiceRate);
+        let minMins = parseInt(voiceMinMinutes, 10);
+        if (Number.isNaN(minMins) || minMins < 1) minMins = 1;
+        if (minMins > 15) minMins = 15;
+
+        updates.voice_calls_enabled = voiceCallsEnabled;
+        updates.voice_rate_per_minute =
+          Number.isNaN(rate) || rate < 0 ? 0 : Math.round(rate * 100) / 100;
+        updates.voice_min_minutes = minMins;
       }
 
       const { error: updateError } = await supabase
@@ -170,6 +180,7 @@ export default function SettingsPage() {
       if (updateError) throw updateError;
 
       setProfile({ ...profile, ...updates });
+      setVoiceMinMinutes(String(updates.voice_min_minutes ?? voiceMinMinutes));
       setMessage('Settings saved');
     } catch (err: any) {
       setError(err.message || 'Save failed');
@@ -198,15 +209,12 @@ export default function SettingsPage() {
       setError('Passwords do not match');
       return;
     }
-
     setSaving(true);
     setError('');
     setMessage('');
-
     const { error: pwError } = await supabase.auth.updateUser({
       password: newPassword,
     });
-
     if (pwError) {
       setError(pwError.message);
     } else {
@@ -214,7 +222,6 @@ export default function SettingsPage() {
       setNewPassword('');
       setConfirmPassword('');
     }
-
     setSaving(false);
   };
 
@@ -233,6 +240,12 @@ export default function SettingsPage() {
 
   const isCreator = profile?.account_type === 'creator';
   const initial = (displayName || username || 'U').charAt(0).toUpperCase();
+
+  const minHoldPreview = (() => {
+    const rate = parseFloat(voiceRate) || 0;
+    const mins = parseInt(voiceMinMinutes, 10) || 3;
+    return (rate * mins).toFixed(2);
+  })();
 
   return (
     <AuthGuard>
@@ -303,7 +316,6 @@ export default function SettingsPage() {
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <User size={18} className="text-pink-500" /> Profile
               </h2>
-
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">Display name</label>
                 <input
@@ -312,7 +324,6 @@ export default function SettingsPage() {
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 outline-none focus:border-pink-500"
                 />
               </div>
-
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">Username</label>
                 <input
@@ -322,7 +333,6 @@ export default function SettingsPage() {
                 />
                 <p className="text-xs text-zinc-500 mt-1">Username can only be changed every 30 days</p>
               </div>
-
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">Bio</label>
                 <textarea
@@ -333,7 +343,6 @@ export default function SettingsPage() {
                   placeholder="Tell people about yourself..."
                 />
               </div>
-
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">X (Twitter)</label>
                 {xUsername ? (
@@ -372,7 +381,6 @@ export default function SettingsPage() {
                   </div>
                 )}
               </div>
-
               <div>
                 <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
                 <input
@@ -443,6 +451,86 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* Voice calls */}
+            {isCreator && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Phone size={18} className="text-pink-500" /> Voice calls
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  Let subs request paid voice calls from chat. You’re charged on actual time, with a
+                  minimum hold upfront.
+                </p>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Enable voice calls</p>
+                    <p className="text-sm text-zinc-400">Subs can request a call when this is on</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={voiceCallsEnabled}
+                      onChange={() => setVoiceCallsEnabled(!voiceCallsEnabled)}
+                    />
+                    <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                  </label>
+                </div>
+
+                {voiceCallsEnabled && (
+                  <div className="space-y-4 pt-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm text-zinc-400 mb-1.5 block">
+                          Price per minute (£)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                            £
+                          </span>
+                          <input
+                            type="number"
+                            min="0.5"
+                            step="0.5"
+                            value={voiceRate}
+                            onChange={(e) => setVoiceRate(e.target.value)}
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-3 outline-none focus:border-pink-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-sm text-zinc-400 mb-1.5 block">
+                          Minimum minutes
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="15"
+                          value={voiceMinMinutes}
+                          onChange={(e) => setVoiceMinMinutes(e.target.value)}
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-3 outline-none focus:border-pink-500"
+                        />
+                        <p className="text-xs text-zinc-500 mt-1">Between 1 and 15</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-800/80 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-300">
+                      Subs will see:{' '}
+                      <span className="text-pink-400 font-medium">
+                        £{parseFloat(voiceRate || '0').toFixed(2)}/min
+                      </span>
+                      {' · '}
+                      minimum{' '}
+                      <span className="text-pink-400 font-medium">
+                        {voiceMinMinutes || 3} min (£{minHoldPreview} hold)
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Auto-replies */}
             {isCreator && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-6">
@@ -450,7 +538,6 @@ export default function SettingsPage() {
                   <Bot size={18} className="text-pink-500" /> Auto-replies
                 </h2>
 
-                {/* Offline */}
                 <div className="space-y-3 pb-6 border-b border-zinc-800">
                   <div className="flex items-center justify-between">
                     <div>
@@ -485,16 +572,13 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* Tip */}
                 <div className="space-y-3 pb-6 border-b border-zinc-800">
                   <div className="flex items-center justify-between">
                     <div className="flex items-start gap-2">
                       <DollarSign size={18} className="text-pink-400 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="font-medium">Tip thank-you</p>
-                        <p className="text-sm text-zinc-400">
-                          When someone tips you in chat
-                        </p>
+                        <p className="text-sm text-zinc-400">When someone tips you in chat</p>
                       </div>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
@@ -523,7 +607,6 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* Unlock */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-start gap-2">
@@ -610,7 +693,6 @@ export default function SettingsPage() {
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Bell size={18} className="text-pink-500" /> Notifications
               </h2>
-
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Tips</p>
@@ -626,7 +708,6 @@ export default function SettingsPage() {
                   <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
                 </label>
               </div>
-
               <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
                 <div>
                   <p className="font-medium">Messages</p>
@@ -642,7 +723,6 @@ export default function SettingsPage() {
                   <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
                 </label>
               </div>
-
               <div className="flex items-center justify-between pt-4 border-t border-zinc-800">
                 <div>
                   <p className="font-medium">Live alerts</p>
