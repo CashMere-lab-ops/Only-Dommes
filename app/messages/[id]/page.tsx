@@ -1935,7 +1935,7 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => setCallSheetError(''); setShowCallSheet(true)}
+              onClick={() => { setCallSheetError(''); setShowCallSheet(true); }}
               className="w-9 h-9 rounded-full bg-pink-600 text-white flex items-center justify-center"
               title="Voice call"
             >
@@ -2032,7 +2032,7 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => setCallSheetError(''); setShowCallSheet(true)}
+              onClick={() => { setCallSheetError(''); setShowCallSheet(true); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium"
             >
               <Phone size={16} />
