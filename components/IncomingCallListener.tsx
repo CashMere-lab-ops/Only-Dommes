@@ -362,77 +362,80 @@ export default function IncomingCallListener() {
   const minMins = incoming.min_minutes || 1;
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/75 flex items-end sm:items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-3xl p-6 shadow-2xl">
-        <div className="flex justify-end mb-1">
-          <button
-            type="button"
-            onClick={() => setShowDeclineReasons(true)}
-            disabled={loading}
-            className="text-zinc-500 hover:text-zinc-300 p-1"
-            aria-label="Dismiss"
-          >
-            <X size={18} />
-          </button>
-        </div>
+    <>
+      <div className="fixed inset-0 z-[200] bg-black/75 flex items-end sm:items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-3xl p-6 shadow-2xl">
+          <div className="flex justify-end mb-1">
+            <button
+              type="button"
+              onClick={() => setShowDeclineReasons(true)}
+              disabled={loading}
+              className="text-zinc-500 hover:text-zinc-300 p-1"
+              aria-label="Dismiss"
+            >
+              <X size={18} />
+            </button>
+          </div>
 
-        <div className="text-center mb-6">
-          <div className="relative mx-auto w-20 h-20 mb-4">
-            <div className="absolute inset-0 rounded-full bg-pink-500/20 animate-ping" />
-            <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-2xl font-bold">
-              {caller?.avatar_url ? (
-                <img
-                  src={caller.avatar_url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                initial
-              )}
+          <div className="text-center mb-6">
+            <div className="relative mx-auto w-20 h-20 mb-4">
+              <div className="absolute inset-0 rounded-full bg-pink-500/20 animate-ping" />
+              <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-2xl font-bold">
+                {caller?.avatar_url ? (
+                  <img
+                    src={caller.avatar_url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  initial
+                )}
+              </div>
             </div>
+
+            <div className="flex items-center justify-center gap-2 text-pink-400 mb-2">
+              <Phone size={18} className="animate-pulse" />
+              <span className="text-sm font-medium">Incoming voice call</span>
+            </div>
+
+            <h3 className="text-xl font-semibold text-white">{displayName}</h3>
+            {caller?.username && (
+              <p className="text-sm text-zinc-400">@{caller.username}</p>
+            )}
+            <p className="text-sm text-zinc-400 mt-3">
+              £{rate}/min · min {minMins} min
+            </p>
           </div>
 
-          <div className="flex items-center justify-center gap-2 text-pink-400 mb-2">
-            <Phone size={18} className="animate-pulse" />
-            <span className="text-sm font-medium">Incoming voice call</span>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setShowDeclineReasons(true)}
+              disabled={loading}
+              className="py-3.5 rounded-2xl border border-zinc-600 text-zinc-200 font-semibold hover:bg-zinc-800 disabled:opacity-50"
+            >
+              Decline
+            </button>
+            <button
+              type="button"
+              onClick={() => respond(true)}
+              disabled={loading}
+              className="py-3.5 rounded-2xl bg-pink-600 hover:bg-pink-700 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <Phone size={18} />
+              {loading ? '…' : 'Accept'}
+            </button>
           </div>
-
-          <h3 className="text-xl font-semibold text-white">{displayName}</h3>
-          {caller?.username && (
-            <p className="text-sm text-zinc-400">@{caller.username}</p>
-          )}
-          <p className="text-sm text-zinc-400 mt-3">
-            £{rate}/min · min {minMins} min
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setShowDeclineReasons(true)}
-            disabled={loading}
-            className="py-3.5 rounded-2xl border border-zinc-600 text-zinc-200 font-semibold hover:bg-zinc-800 disabled:opacity-50"
-          >
-            Decline
-          </button>
-          <button
-            type="button"
-            onClick={() => respond(true)}
-            disabled={loading}
-            className="py-3.5 rounded-2xl bg-pink-600 hover:bg-pink-700 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            <Phone size={18} />
-            {loading ? '…' : 'Accept'}
-          </button>
         </div>
       </div>
-    </div>
 
       {showDeclineReasons && incoming && (
         <div className="fixed inset-0 z-[206] bg-black/80 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
             <h3 className="text-lg font-semibold text-center mb-1">Decline call</h3>
-            <p className="text-sm text-zinc-400 text-center mb-4">Optional — let them know why</p>
+            <p className="text-sm text-zinc-400 text-center mb-4">
+              Optional — let them know why
+            </p>
             <div className="space-y-2 mb-4">
               {['Busy right now', 'Try me later', 'Not available'].map((reason) => (
                 <button
@@ -471,6 +474,7 @@ export default function IncomingCallListener() {
           </div>
         </div>
       )}
-
+    </>
   );
 }
+
