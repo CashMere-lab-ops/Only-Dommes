@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { PhoneOff, Mic, MicOff } from 'lucide-react';
-import { Room, RoomEvent, Track, ConnectionState } from 'livekit-client';
+import { Room, RoomEvent, Track, ConnectionState, ConnectionQuality } from 'livekit-client';
 import { createClient } from '../lib/supabase';
 
 type CallRow = {
@@ -40,6 +40,7 @@ export default function ActiveVoiceCall() {
   const [seconds, setSeconds] = useState(0);
   const [phase, setPhase] = useState<UiPhase>('connecting');
   const [error, setError] = useState('');
+  const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'poor' | 'unknown'>('unknown');
   const [endSummary, setEndSummary] = useState<string | null>(null);
 
   const roomRef = useRef<Room | null>(null);
@@ -258,6 +259,15 @@ export default function ActiveVoiceCall() {
         checkBothConnected(room, c);
       });
 
+      room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+        // Prefer remote quality when available; else local
+        const q = quality;
+        if (q === ConnectionQuality.Excellent) setConnectionQuality('excellent');
+        else if (q === ConnectionQuality.Good) setConnectionQuality('good');
+        else if (q === ConnectionQuality.Poor) setConnectionQuality('poor');
+        else setConnectionQuality('unknown');
+      });
+
       room.on(RoomEvent.ParticipantDisconnected, () => {
         // Other person left — end for both
         if (billingStarted.current || room.remoteParticipants.size === 0) {
@@ -466,6 +476,39 @@ export default function ActiveVoiceCall() {
 
         <p className="text-sm text-pink-400 font-medium mb-1">{statusLine()}</p>
         <h2 className="text-2xl font-semibold text-white mb-2">{otherName}</h2>
+        {phase === 'in_call' && (
+          <div className="flex items-center justify-center gap-1.5 mb-3">
+            {[0, 1, 2].map((i) => {
+              const level =
+                connectionQuality === 'excellent'
+                  ? 3
+                  : connectionQuality === 'good'
+                  ? 2
+                  : connectionQuality === 'poor'
+                  ? 1
+                  : 0;
+              const on = i < level;
+              return (
+                <div
+                  key={i}
+                  className={`w-1.5 rounded-full transition ${
+                    on ? 'bg-emerald-400' : 'bg-zinc-700'
+                  }`}
+                  style={{ height: 6 + i * 4 }}
+                />
+              );
+            })}
+            <span className="text-[11px] text-zinc-500 ml-1">
+              {connectionQuality === 'excellent'
+                ? 'Excellent'
+                : connectionQuality === 'good'
+                ? 'Good'
+                : connectionQuality === 'poor'
+                ? 'Weak signal'
+                : 'Connecting'}
+            </span>
+          </div>
+        )}
 
         {phase === 'in_call' ? (
           <>
