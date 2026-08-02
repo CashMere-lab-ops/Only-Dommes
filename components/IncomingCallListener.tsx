@@ -39,6 +39,7 @@ export default function IncomingCallListener() {
   } | null>(null);
   const userIdRef = useRef<string | null>(null);
   const incomingIdRef = useRef<string | null>(null);
+  const notifRef = useRef<Notification | null>(null);
 
   const stopRingtone = () => {
     if (ringRef.current) {
@@ -72,7 +73,58 @@ export default function IncomingCallListener() {
       const interval = setInterval(beep, 1800);
       ringRef.current = { ctx, interval };
     } catch {
-      /* autoplay / audio blocked — UI still shows */
+      /* autoplay blocked — overlay still shows */
+    }
+  };
+
+  const closeBrowserNotif = () => {
+    try {
+      notifRef.current?.close();
+    } catch {
+      /* ignore */
+    }
+    notifRef.current = null;
+  };
+
+  const ensureNotifPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'denied';
+    if (Notification.permission === 'granted') return 'granted';
+    if (Notification.permission === 'denied') return 'denied';
+    try {
+      return await Notification.requestPermission();
+    } catch {
+      return 'denied';
+    }
+  };
+
+  const showBrowserNotif = async (profile: CallerProfile | null, call: CallRow) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    // Only when tab is in the background
+    if (!document.hidden) return;
+
+    const permission = await ensureNotifPermission();
+    if (permission !== 'granted') return;
+
+    const name = profile?.display_name || profile?.username || 'Someone';
+    const rate = Number(call.rate_per_minute || 0).toFixed(2);
+
+    closeBrowserNotif();
+
+    try {
+      const n = new Notification('Incoming voice call', {
+        body: `${name} · £${rate}/min`,
+        tag: `voice-call-${call.id}`,
+        renotify: true,
+        requireInteraction: true,
+        icon: profile?.avatar_url || '/favicon.ico',
+      });
+      notifRef.current = n;
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {
+      /* ignore */
     }
   };
 
@@ -83,6 +135,7 @@ export default function IncomingCallListener() {
       .eq('id', subscriberId)
       .single();
     setCaller(data || null);
+    return data as CallerProfile | null;
   };
 
   const insertDeclineReceipt = async (call: CallRow, creatorId: string) => {
@@ -102,9 +155,18 @@ export default function IncomingCallListener() {
 
   const clearIncoming = () => {
     stopRingtone();
+    closeBrowserNotif();
     incomingIdRef.current = null;
     setIncoming(null);
     setCaller(null);
+  };
+
+  const presentIncoming = async (row: CallRow) => {
+    setIncoming(row);
+    incomingIdRef.current = row.id;
+    const profile = await loadCaller(row.subscriber_id);
+    startRingtone();
+    await showBrowserNotif(profile, row);
   };
 
   useEffect(() => {
@@ -119,7 +181,13 @@ export default function IncomingCallListener() {
       setUserId(user.id);
       userIdRef.current = user.id;
 
-      // Any pending request for this creator
+      // Soft-ask permission early so background calls can notify
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'default') {
+          // Don't force popup on load — wait until first interaction or first call
+        }
+      }
+
       const { data: pending } = await supabase
         .from('voice_calls')
         .select('*')
@@ -130,10 +198,7 @@ export default function IncomingCallListener() {
         .maybeSingle();
 
       if (pending && alive) {
-        setIncoming(pending as CallRow);
-        incomingIdRef.current = pending.id;
-        await loadCaller(pending.subscriber_id);
-        startRingtone();
+        await presentIncoming(pending as CallRow);
       }
     };
 
@@ -141,6 +206,7 @@ export default function IncomingCallListener() {
     return () => {
       alive = false;
       stopRingtone();
+      closeBrowserNotif();
     };
   }, []);
 
@@ -160,10 +226,7 @@ export default function IncomingCallListener() {
           const row = payload.new as CallRow;
           if (!row || row.creator_id !== userIdRef.current) return;
           if (row.status !== 'requested') return;
-          setIncoming(row);
-          incomingIdRef.current = row.id;
-          await loadCaller(row.subscriber_id);
-          startRingtone();
+          await presentIncoming(row);
         }
       )
       .on(
@@ -190,9 +253,9 @@ export default function IncomingCallListener() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId, incoming?.id]);
+  }, [userId]);
 
-  // Local 60s safety — miss handled by chat page too; just stop UI here
+  // 60s UI timeout
   useEffect(() => {
     if (!incoming || incoming.status !== 'requested') return;
     const created = new Date(incoming.created_at).getTime();
@@ -200,6 +263,12 @@ export default function IncomingCallListener() {
     const t = setTimeout(() => clearIncoming(), wait);
     return () => clearTimeout(t);
   }, [incoming?.id, incoming?.created_at, incoming?.status]);
+
+  // Request permission once user interacts with Accept/Decline area (browser rules)
+  useEffect(() => {
+    if (!incoming) return;
+    ensureNotifPermission();
+  }, [incoming?.id]);
 
   const respond = async (accept: boolean) => {
     if (!incoming || !userId || loading) return;
@@ -222,17 +291,12 @@ export default function IncomingCallListener() {
       if (error) throw error;
 
       if (accept) {
-        const name =
-          (await supabase.auth.getUser()).data.user?.id === userId
-            ? 'Creator'
-            : 'Creator';
         const { data: me } = await supabase
           .from('profiles')
           .select('display_name, username')
           .eq('id', userId)
           .single();
-        const actor =
-          me?.display_name || me?.username || name;
+        const actor = me?.display_name || me?.username || 'Creator';
 
         await createNotification({
           userId: incoming.subscriber_id,
@@ -245,11 +309,9 @@ export default function IncomingCallListener() {
             : '/messages',
         });
 
+        const convoId = incoming.conversation_id;
         clearIncoming();
-        if (incoming.conversation_id) {
-          router.push(`/messages/${incoming.conversation_id}`);
-        }
-        // LiveKit audio next step
+        if (convoId) router.push(`/messages/${convoId}`);
       } else {
         await insertDeclineReceipt(incoming, userId);
         clearIncoming();
@@ -263,8 +325,7 @@ export default function IncomingCallListener() {
 
   if (!incoming) return null;
 
-  const displayName =
-    caller?.display_name || caller?.username || 'Someone';
+  const displayName = caller?.display_name || caller?.username || 'Someone';
   const initial = displayName.charAt(0).toUpperCase();
   const rate = Number(incoming.rate_per_minute || 0).toFixed(2);
   const minMins = incoming.min_minutes || 1;
