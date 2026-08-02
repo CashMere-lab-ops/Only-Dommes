@@ -46,6 +46,7 @@ export default function ActiveVoiceCall() {
   const [rating, setRating] = useState(0);
   const [ratingSaving, setRatingSaving] = useState(false);
   const [ratingDone, setRatingDone] = useState(false);
+  const [extending, setExtending] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -267,6 +268,28 @@ export default function ActiveVoiceCall() {
     setEndSummary(null);
     setPhase('connecting');
     setError('');
+  };
+
+  const extendHold = async () => {
+    if (!call || extending || phase !== 'in_call') return;
+    setExtending(true);
+    try {
+      const extra = Math.round(rateNum * 5 * 100) / 100; // +5 minutes worth
+      const next = Math.round((Number(call.amount_held || 0) + extra) * 100) / 100;
+      const { error } = await supabase
+        .from('voice_calls')
+        .update({ amount_held: next })
+        .eq('id', call.id)
+        .eq('status', 'active');
+      if (error) throw error;
+      setCall({ ...call, amount_held: next });
+      callRef.current = { ...call, amount_held: next };
+    } catch (e) {
+      console.error(e);
+      setError('Could not extend hold');
+    } finally {
+      setExtending(false);
+    }
   };
 
   const connectToCall = async (c: CallRow, uid: string) => {
@@ -670,7 +693,7 @@ export default function ActiveVoiceCall() {
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-        <div className="flex items-center justify-center gap-6">
+        <div className="flex items-center justify-center gap-5">
           <button
             type="button"
             onClick={toggleMute}
@@ -691,7 +714,29 @@ export default function ActiveVoiceCall() {
           >
             <PhoneOff size={26} />
           </button>
+
+          {phase === 'in_call' && (
+            <button
+              type="button"
+              onClick={extendHold}
+              disabled={extending}
+              className="w-14 h-14 rounded-full flex flex-col items-center justify-center border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-pink-500 text-[10px] font-semibold leading-tight disabled:opacity-50"
+              title="Add 5 minutes to hold"
+            >
+              {extending ? '…' : (
+                <>
+                  <span className="text-sm text-pink-400">+5</span>
+                  <span>min</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
+        {phase === 'in_call' && Number(call.amount_held || 0) > 0 && (
+          <p className="text-xs text-zinc-600 mt-3">
+            Hold: £{Number(call.amount_held).toFixed(2)}
+          </p>
+        )}
 
         <p className="text-xs text-zinc-600 mt-8">
           {phase === 'in_call'
