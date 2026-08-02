@@ -169,7 +169,10 @@ export default function ActiveVoiceCall() {
       // Never both connected — no charge
       status = 'failed';
       amountCharged = 0;
-      label = 'Call ended · no charge';
+      label =
+        reason === 'failed'
+          ? 'Call failed · you were not charged'
+          : 'Call ended · you were not charged';
     } else {
       const usedMins = Math.max(minMins, Math.ceil(Math.max(durationSeconds, 1) / 60));
       amountCharged = Math.round(rate * usedMins * 100) / 100;
@@ -474,7 +477,7 @@ export default function ActiveVoiceCall() {
       console.error(err);
       setError(err.message || 'Failed to connect');
       setPhase('ended');
-      setEndSummary('Could not connect');
+      setEndSummary('Call failed · you were not charged');
       callIdRef.current = null;
       callRef.current = null;
       setCall(null);
@@ -552,7 +555,11 @@ export default function ActiveVoiceCall() {
               const charged = Number(row.amount_charged || 0);
               const dur = Number(row.duration_seconds || 0);
               if (row.status === 'failed' || charged === 0) {
-                setEndSummary('Call ended · no charge');
+                setEndSummary(
+                  row.status === 'failed'
+                    ? 'Call failed · you were not charged'
+                    : 'Call ended · you were not charged'
+                );
               } else {
                 const m = Math.floor(dur / 60);
                 const s = dur % 60;
