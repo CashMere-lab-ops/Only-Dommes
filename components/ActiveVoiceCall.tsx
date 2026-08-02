@@ -103,6 +103,13 @@ export default function ActiveVoiceCall() {
     setPhase('in_call');
     setSeconds(0);
     secondsRef.current = 0;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([40, 30, 40]);
+      }
+    } catch {
+      /* ignore */
+    }
     const now = new Date().toISOString();
     await supabase
       .from('voice_calls')

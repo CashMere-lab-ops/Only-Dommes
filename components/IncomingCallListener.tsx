@@ -306,6 +306,13 @@ export default function IncomingCallListener() {
       if (error) throw error;
 
       if (accept) {
+        try {
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate([50, 40, 50]);
+          }
+        } catch {
+          /* ignore */
+        }
         const { data: me } = await supabase
           .from('profiles')
           .select('display_name, username')
