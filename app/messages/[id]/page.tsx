@@ -1,4 +1,16 @@
-'use client';
+/div>
+
+      {/* DESKTOP */}
+      <main className="hidden lg:flex flex-1 flex-col h-screen">
+        <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
+          <Link href="/messages" className="text-zinc-400 hover:text-white">
+            <ArrowLeft size={22} />
+          </Link>
+          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 flex-1">
+            <div className="relative">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
+                {otherUser?.avatar_url ? (
+                  <img s'use client';
 
 import { useEffect, useState, useRef, memo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -518,7 +530,6 @@ export default function ChatPage() {
               setMyOutgoingCall(row);
             } else if (['declined', 'cancelled', 'missed', 'ended', 'failed'].includes(row.status)) {
               setMyOutgoingCall(null);
-              if (row.status === 'declined') alert('Call declined');
             } else if (row.status === 'active') {
               setMyOutgoingCall(row);
               // LiveKit connect next step
@@ -535,6 +546,22 @@ export default function ChatPage() {
       supabase.removeChannel(callChannel);
     };
   }, [conversationId, userId]);
+
+  // Auto-miss after 60s if still ringing / requested
+  useEffect(() => {
+    const call = myOutgoingCall || incomingCall;
+    if (!call || call.status !== 'requested') return;
+
+    const created = new Date(call.created_at).getTime();
+    const elapsed = Date.now() - created;
+    const wait = Math.max(1000, 60000 - elapsed);
+
+    const t = setTimeout(() => {
+      markCallMissed(call);
+    }, wait);
+
+    return () => clearTimeout(t);
+  }, [myOutgoingCall?.id, incomingCall?.id, myOutgoingCall?.status, incomingCall?.status]);
 
   useEffect(() => {
     return () => {
@@ -747,6 +774,67 @@ export default function ChatPage() {
   const voiceMin = Number(otherUser?.voice_min_minutes ?? 3);
   const voiceHold = Math.round(voiceRate * voiceMin * 100) / 100;
 
+  const CALL_PREFIX = '__CALL_EVENT__:';
+
+  const parseCallEvent = (content?: string | null) => {
+    if (!content || !content.startsWith(CALL_PREFIX)) return null;
+    // __CALL_EVENT__:missed|£5.00/min
+    const rest = content.slice(CALL_PREFIX.length);
+    const [kind, detail] = rest.split('|');
+    return { kind, detail: detail || '' };
+  };
+
+  const insertCallReceipt = async (
+    kind: 'missed' | 'declined' | 'cancelled' | 'ended',
+    opts: {
+      senderId: string;
+      rate?: number;
+      minMinutes?: number;
+      durationSeconds?: number;
+      amountCharged?: number;
+    }
+  ) => {
+    let label = '';
+    if (kind === 'missed') {
+      label = `Missed voice call${opts.rate != null ? ` · £${Number(opts.rate).toFixed(2)}/min` : ''}`;
+    } else if (kind === 'declined') {
+      label = 'Voice call declined';
+    } else if (kind === 'cancelled') {
+      label = 'Voice call cancelled';
+    } else if (kind === 'ended') {
+      const mins = Math.floor((opts.durationSeconds || 0) / 60);
+      const secs = (opts.durationSeconds || 0) % 60;
+      const dur = `${mins}:${String(secs).padStart(2, '0')}`;
+      const money =
+        opts.amountCharged != null ? ` · £${Number(opts.amountCharged).toFixed(2)}` : '';
+      label = `Voice call · ${dur}${money}`;
+    }
+
+    const content = `${CALL_PREFIX}${kind}|${label}`;
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_id: opts.senderId,
+        content,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setMessages((prev) => {
+        if (prev.find((m) => m.id === data.id)) return prev;
+        return [...prev, data];
+      });
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversationId);
+      setTimeout(scrollBottom, 80);
+    }
+  };
+
   const requestVoiceCall = async () => {
     if (!userId || !otherUserId || requestingCall || !canRequestCall) return;
     setRequestingCall(true);
@@ -794,9 +882,37 @@ export default function ChatPage() {
         .update({ status: 'cancelled' })
         .eq('id', myOutgoingCall.id)
         .eq('subscriber_id', userId);
+
+      await insertCallReceipt('cancelled', {
+        senderId: userId,
+        rate: Number(myOutgoingCall.rate_per_minute),
+      });
+
       setMyOutgoingCall(null);
     } finally {
       setCallActionLoading(false);
+    }
+  };
+
+  const markCallMissed = async (call: any) => {
+    if (!call?.id || !userId) return;
+    const { data, error } = await supabase
+      .from('voice_calls')
+      .update({ status: 'missed' })
+      .eq('id', call.id)
+      .eq('status', 'requested')
+      .select()
+      .maybeSingle();
+
+    // only the updater who wins writes the receipt
+    if (!error && data) {
+      await insertCallReceipt('missed', {
+        senderId: call.subscriber_id,
+        rate: Number(call.rate_per_minute),
+        minMinutes: Number(call.min_minutes),
+      });
+      setMyOutgoingCall(null);
+      setIncomingCall(null);
     }
   };
 
@@ -808,7 +924,6 @@ export default function ChatPage() {
       const updates: any = { status };
       if (accept) {
         updates.started_at = new Date().toISOString();
-        // LiveKit room will be wired next
         updates.livekit_room = `call-${incomingCall.id}`;
       }
       await supabase
@@ -826,8 +941,12 @@ export default function ChatPage() {
           body: 'Connecting…',
           link: `/messages/${conversationId}`,
         });
-        // Audio room in next step
         alert('Call accepted — live audio coming in the next step');
+      } else {
+        await insertCallReceipt('declined', {
+          senderId: userId,
+          rate: Number(incomingCall.rate_per_minute),
+        });
       }
       setIncomingCall(null);
     } catch (err: any) {
@@ -1128,12 +1247,27 @@ export default function ChatPage() {
     const mine = msg.sender_id === userId;
     const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
     const isAudio = msg.media_type === 'audio';
+    const callEvent = parseCallEvent(msg.content) || (msg.media_type === 'call_event' ? parseCallEvent(msg.content) : null);
     const locked = msg.is_locked && !canSeeMedia(msg);
     const replied = msg.reply_to_id
       ? messages.find((m) => m.id === msg.reply_to_id)
       : null;
     const reacts = groupedReactions(msg.id);
     const showReactPicker = reactFor === msg.id;
+
+    if (callEvent) {
+      const label = callEvent.detail || 'Voice call';
+      return (
+        <div key={msg.id} className="flex justify-center py-1">
+          <div className="max-w-[90%] px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-center">
+            <p className="text-xs text-zinc-400 flex items-center justify-center gap-1.5">
+              <Phone size={12} className="text-pink-400 flex-shrink-0" />
+              <span>{label}</span>
+            </p>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'} group`}>
@@ -1827,19 +1961,7 @@ export default function ChatPage() {
         >
           {composerUI}
         </div>
-      </div>
-
-      {/* DESKTOP */}
-      <main className="hidden lg:flex flex-1 flex-col h-screen">
-        <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
-          <Link href="/messages" className="text-zinc-400 hover:text-white">
-            <ArrowLeft size={22} />
-          </Link>
-          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 flex-1">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
-                {otherUser?.avatar_url ? (
-                  <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+      <rc={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
                 ) : (
                   initial
                 )}
