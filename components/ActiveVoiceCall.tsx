@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { PhoneOff, Mic, MicOff } from 'lucide-react';
-import { Room, RoomEvent, Track } from 'livekit-client';
+import { Room, RoomEvent, Track, ConnectionState } from 'livekit-client';
 import { createClient } from '../lib/supabase';
 
 type CallRow = {
@@ -18,22 +18,34 @@ type CallRow = {
   livekit_room?: string | null;
 };
 
+type UiPhase =
+  | 'connecting'
+  | 'waiting'
+  | 'in_call'
+  | 'reconnecting'
+  | 'ended';
+
 const CALL_PREFIX = '__CALL_EVENT__:';
 
 export default function ActiveVoiceCall() {
   const supabase = createClient();
   const [userId, setUserId] = useState<string | null>(null);
   const [call, setCall] = useState<CallRow | null>(null);
-  const [otherName, setOtherName] = useState('Connecting…');
+  const [otherName, setOtherName] = useState('…');
   const [otherAvatar, setOtherAvatar] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [connecting, setConnecting] = useState(false);
+  const [phase, setPhase] = useState<UiPhase>('connecting');
   const [error, setError] = useState('');
+  const [endSummary, setEndSummary] = useState<string | null>(null);
+
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
   const callIdRef = useRef<string | null>(null);
+  const callRef = useRef<CallRow | null>(null);
   const hangingUp = useRef(false);
+  const billingStarted = useRef(false);
+  const secondsRef = useRef(0);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -42,11 +54,10 @@ export default function ActiveVoiceCall() {
   };
 
   const runningCost = () => {
-    if (!call) return 0;
+    if (!call || !billingStarted.current) return 0;
     const rate = Number(call.rate_per_minute || 0);
-    const mins = Math.max(call.min_minutes || 1, Math.ceil(seconds / 60) || 1);
-    // While in call show projected charge: at least min, else rate * full minutes used
-    const usedMins = Math.max(call.min_minutes || 1, Math.ceil(Math.max(seconds, 1) / 60));
+    const minMins = call.min_minutes || 1;
+    const usedMins = Math.max(minMins, Math.ceil(Math.max(seconds, 1) / 60));
     return Math.round(rate * usedMins * 100) / 100;
   };
 
@@ -55,6 +66,7 @@ export default function ActiveVoiceCall() {
     roomRef.current = null;
     if (room) {
       try {
+        room.removeAllListeners();
         await room.disconnect();
       } catch {
         /* ignore */
@@ -62,18 +74,14 @@ export default function ActiveVoiceCall() {
     }
   };
 
-  const insertEndedReceipt = async (
+  const insertReceipt = async (
     c: CallRow,
-    durationSeconds: number,
-    amountCharged: number,
+    kind: 'ended' | 'failed',
+    label: string,
     senderId: string
   ) => {
     if (!c.conversation_id) return;
-    const mins = Math.floor(durationSeconds / 60);
-    const secs = durationSeconds % 60;
-    const dur = `${mins}:${String(secs).padStart(2, '0')}`;
-    const label = `Voice call · ${dur} · £${amountCharged.toFixed(2)}`;
-    const content = `${CALL_PREFIX}ended|${label}`;
+    const content = `${CALL_PREFIX}${kind}|${label}`;
     await supabase.from('messages').insert({
       conversation_id: c.conversation_id,
       sender_id: senderId,
@@ -85,47 +93,118 @@ export default function ActiveVoiceCall() {
       .eq('id', c.conversation_id);
   };
 
-  const hangUp = async () => {
-    if (!call || !userId || hangingUp.current) return;
+  const markBillingStarted = async (c: CallRow) => {
+    if (billingStarted.current) return;
+    billingStarted.current = true;
+    setPhase('in_call');
+    setSeconds(0);
+    secondsRef.current = 0;
+    const now = new Date().toISOString();
+    await supabase
+      .from('voice_calls')
+      .update({ started_at: now })
+      .eq('id', c.id)
+      .eq('status', 'active');
+    setCall((prev) => (prev ? { ...prev, started_at: now } : prev));
+  };
+
+  const checkBothConnected = async (room: Room, c: CallRow) => {
+    // Local + at least one remote participant
+    const remoteCount = room.remoteParticipants.size;
+    if (remoteCount >= 1 && room.state === ConnectionState.Connected) {
+      await markBillingStarted(c);
+    } else if (!billingStarted.current) {
+      setPhase('waiting');
+    }
+  };
+
+  const hangUp = async (reason: 'local' | 'remote' | 'failed' = 'local') => {
+    if (hangingUp.current) return;
+    const c = callRef.current;
+    const uid = userIdRef.current;
+    if (!c || !uid) return;
     hangingUp.current = true;
 
-    const durationSeconds = seconds;
-    const rate = Number(call.rate_per_minute || 0);
-    const minMins = call.min_minutes || 1;
-    const usedMins = Math.max(minMins, Math.ceil(Math.max(durationSeconds, 1) / 60));
-    const amountCharged = Math.round(rate * usedMins * 100) / 100;
+    const durationSeconds = billingStarted.current ? secondsRef.current : 0;
+    const rate = Number(c.rate_per_minute || 0);
+    const minMins = c.min_minutes || 1;
+
+    let amountCharged = 0;
+    let status: string = 'ended';
+    let label = '';
+
+    if (!billingStarted.current) {
+      // Never both connected — no charge
+      status = 'failed';
+      amountCharged = 0;
+      label = 'Call ended · no charge';
+    } else {
+      const usedMins = Math.max(minMins, Math.ceil(Math.max(durationSeconds, 1) / 60));
+      amountCharged = Math.round(rate * usedMins * 100) / 100;
+      const mins = Math.floor(durationSeconds / 60);
+      const secs = durationSeconds % 60;
+      const dur = `${mins}:${String(secs).padStart(2, '0')}`;
+      label = `Voice call · ${dur} · £${amountCharged.toFixed(2)}`;
+    }
 
     await disconnectRoom();
 
     try {
-      await supabase
+      // Only first hang-up writer wins
+      const { data } = await supabase
         .from('voice_calls')
         .update({
-          status: 'ended',
+          status,
           ended_at: new Date().toISOString(),
           duration_seconds: durationSeconds,
           amount_charged: amountCharged,
         })
-        .eq('id', call.id)
-        .eq('status', 'active');
+        .eq('id', c.id)
+        .eq('status', 'active')
+        .select()
+        .maybeSingle();
 
-      await insertEndedReceipt(call, durationSeconds, amountCharged, userId);
+      if (data) {
+        await insertReceipt(
+          c,
+          status === 'failed' ? 'failed' : 'ended',
+          label,
+          uid
+        );
+      }
     } catch (e) {
       console.error(e);
     }
 
-    setCall(null);
-    callIdRef.current = null;
-    setSeconds(0);
-    hangingUp.current = false;
+    setEndSummary(label || 'Call ended');
+    setPhase('ended');
+    setTimeout(() => {
+      setCall(null);
+      callRef.current = null;
+      callIdRef.current = null;
+      setSeconds(0);
+      secondsRef.current = 0;
+      billingStarted.current = false;
+      setEndSummary(null);
+      setPhase('connecting');
+      setError('');
+      hangingUp.current = false;
+    }, 2500);
   };
 
   const connectToCall = async (c: CallRow, uid: string) => {
     if (callIdRef.current === c.id && roomRef.current) return;
-    setConnecting(true);
+
+    hangingUp.current = false;
+    billingStarted.current = false;
+    setPhase('connecting');
     setError('');
+    setEndSummary(null);
     callIdRef.current = c.id;
+    callRef.current = c;
     setCall(c);
+    setSeconds(0);
+    secondsRef.current = 0;
 
     const otherId = c.creator_id === uid ? c.subscriber_id : c.creator_id;
     const { data: profile } = await supabase
@@ -172,34 +251,52 @@ export default function ActiveVoiceCall() {
         }
       });
 
-      room.on(RoomEvent.Disconnected, () => {
-        if (!hangingUp.current && callIdRef.current === c.id) {
-          // Remote hang up — refresh status
-          setCall(null);
-          callIdRef.current = null;
+      room.on(RoomEvent.ParticipantConnected, () => {
+        checkBothConnected(room, c);
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, () => {
+        // Other person left — end for both
+        if (billingStarted.current || room.remoteParticipants.size === 0) {
+          hangUp('remote');
+        }
+      });
+
+      room.on(RoomEvent.ConnectionStateChanged, (state) => {
+        if (state === ConnectionState.Reconnecting) {
+          setPhase('reconnecting');
+        } else if (state === ConnectionState.Connected) {
+          checkBothConnected(room, c);
+        } else if (state === ConnectionState.Disconnected) {
+          if (!hangingUp.current && callIdRef.current === c.id) {
+            hangUp('remote');
+          }
         }
       });
 
       await room.connect(data.url, data.token);
       await room.localParticipant.setMicrophoneEnabled(true);
       setMuted(false);
-      setConnecting(false);
 
-      if (c.started_at) {
-        const elapsed = Math.floor(
-          (Date.now() - new Date(c.started_at).getTime()) / 1000
-        );
-        setSeconds(Math.max(0, elapsed));
-      } else {
-        setSeconds(0);
+      // If other already in room
+      await checkBothConnected(room, c);
+      if (!billingStarted.current) {
+        setPhase('waiting');
       }
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Failed to connect');
-      setConnecting(false);
+      setPhase('ended');
+      setEndSummary('Could not connect');
       callIdRef.current = null;
+      callRef.current = null;
       setCall(null);
       await disconnectRoom();
+      hangingUp.current = false;
+      setTimeout(() => {
+        setEndSummary(null);
+        setError('');
+      }, 2500);
     }
   };
 
@@ -219,7 +316,7 @@ export default function ActiveVoiceCall() {
         .select('*')
         .eq('status', 'active')
         .or(`creator_id.eq.${user.id},subscriber_id.eq.${user.id}`)
-        .order('started_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -263,10 +360,29 @@ export default function ActiveVoiceCall() {
               row.status
             )
           ) {
-            await disconnectRoom();
-            setCall(null);
-            callIdRef.current = null;
-            setSeconds(0);
+            if (!hangingUp.current) {
+              await disconnectRoom();
+              const charged = Number(row.amount_charged || 0);
+              const dur = Number(row.duration_seconds || 0);
+              if (row.status === 'failed' || charged === 0) {
+                setEndSummary('Call ended · no charge');
+              } else {
+                const m = Math.floor(dur / 60);
+                const s = dur % 60;
+                setEndSummary(
+                  `Voice call · ${m}:${String(s).padStart(2, '0')} · £${charged.toFixed(2)}`
+                );
+              }
+              setPhase('ended');
+              setTimeout(() => {
+                setCall(null);
+                callRef.current = null;
+                callIdRef.current = null;
+                billingStarted.current = false;
+                setEndSummary(null);
+                setSeconds(0);
+              }, 2500);
+            }
           }
         }
       )
@@ -277,12 +393,18 @@ export default function ActiveVoiceCall() {
     };
   }, [userId]);
 
-  // Timer
+  // Timer only after both connected (billing started)
   useEffect(() => {
-    if (!call || call.status !== 'active') return;
-    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    if (phase !== 'in_call') return;
+    const t = setInterval(() => {
+      setSeconds((s) => {
+        const n = s + 1;
+        secondsRef.current = n;
+        return n;
+      });
+    }, 1000);
     return () => clearInterval(t);
-  }, [call?.id, call?.status]);
+  }, [phase, call?.id]);
 
   const toggleMute = async () => {
     const room = roomRef.current;
@@ -292,15 +414,40 @@ export default function ActiveVoiceCall() {
     setMuted(next);
   };
 
-  if (!call && !connecting) return null;
+  if (phase === 'ended' && endSummary) {
+    return (
+      <div className="fixed inset-0 z-[210] bg-zinc-950/95 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-sm text-center">
+          <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+            <PhoneOff size={28} className="text-zinc-400" />
+          </div>
+          <p className="text-lg font-semibold text-white mb-1">Call ended</p>
+          <p className="text-sm text-zinc-400">{endSummary}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!call) return null;
 
   const initial = (otherName || 'U').charAt(0).toUpperCase();
+
+  const statusLine = () => {
+    if (phase === 'connecting') return 'Connecting…';
+    if (phase === 'waiting') return 'Waiting for them to join…';
+    if (phase === 'reconnecting') return 'Reconnecting…';
+    return 'Voice call';
+  };
 
   return (
     <div className="fixed inset-0 z-[210] bg-zinc-950 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm text-center">
         <div className="relative mx-auto w-28 h-28 mb-6">
-          <div className="absolute inset-0 rounded-full bg-pink-500/15 animate-pulse" />
+          <div
+            className={`absolute inset-0 rounded-full bg-pink-500/15 ${
+              phase === 'in_call' ? 'animate-pulse' : ''
+            }`}
+          />
           <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-3xl font-bold">
             {otherAvatar ? (
               <img
@@ -314,29 +461,34 @@ export default function ActiveVoiceCall() {
           </div>
         </div>
 
-        <p className="text-sm text-pink-400 font-medium mb-1">
-          {connecting ? 'Connecting…' : 'Voice call'}
-        </p>
+        <p className="text-sm text-pink-400 font-medium mb-1">{statusLine()}</p>
         <h2 className="text-2xl font-semibold text-white mb-2">{otherName}</h2>
-        <p className="text-3xl font-mono text-white tabular-nums mb-1">
-          {formatTime(seconds)}
-        </p>
-        {call && (
-          <p className="text-sm text-zinc-400 mb-8">
-            £{Number(call.rate_per_minute).toFixed(2)}/min · ~£
-            {runningCost().toFixed(2)}
+
+        {phase === 'in_call' ? (
+          <>
+            <p className="text-3xl font-mono text-white tabular-nums mb-1">
+              {formatTime(seconds)}
+            </p>
+            <p className="text-sm text-zinc-400 mb-8">
+              £{Number(call.rate_per_minute).toFixed(2)}/min · ~£
+              {runningCost().toFixed(2)}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-zinc-500 mb-8">
+            {phase === 'waiting'
+              ? 'Timer starts when both of you are connected'
+              : 'Please allow microphone access'}
           </p>
         )}
 
-        {error && (
-          <p className="text-sm text-red-400 mb-4">{error}</p>
-        )}
+        {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
         <div className="flex items-center justify-center gap-6">
           <button
             type="button"
             onClick={toggleMute}
-            disabled={connecting}
+            disabled={phase === 'connecting'}
             className={`w-14 h-14 rounded-full flex items-center justify-center border transition ${
               muted
                 ? 'bg-zinc-800 border-zinc-600 text-white'
@@ -348,8 +500,7 @@ export default function ActiveVoiceCall() {
 
           <button
             type="button"
-            onClick={hangUp}
-            disabled={connecting && !call}
+            onClick={() => hangUp('local')}
             className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg shadow-red-900/40"
           >
             <PhoneOff size={26} />
@@ -357,7 +508,9 @@ export default function ActiveVoiceCall() {
         </div>
 
         <p className="text-xs text-zinc-600 mt-8">
-          Minimum {call?.min_minutes || 1} min charged
+          {phase === 'in_call'
+            ? `Minimum ${call.min_minutes || 1} min charged`
+            : 'No charge until both join'}
         </p>
       </div>
     </div>

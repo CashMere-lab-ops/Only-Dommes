@@ -162,6 +162,19 @@ export default function IncomingCallListener() {
   };
 
   const presentIncoming = async (row: CallRow) => {
+    // Don't interrupt an active call with another ring
+    const uid = userIdRef.current;
+    if (uid) {
+      const { data: busy } = await supabase
+        .from('voice_calls')
+        .select('id')
+        .eq('status', 'active')
+        .or(`creator_id.eq.${uid},subscriber_id.eq.${uid}`)
+        .limit(1)
+        .maybeSingle();
+      if (busy) return;
+    }
+
     // Load profile first so UI never flashes "Someone"
     const profile = await loadCaller(row.subscriber_id);
     setCaller(profile);

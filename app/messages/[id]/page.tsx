@@ -827,6 +827,32 @@ export default function ChatPage() {
     if (!userId || !otherUserId || requestingCall || !canRequestCall) return;
     setRequestingCall(true);
     try {
+      // Block if either side already on a call / pending request
+      const { data: busyMe } = await supabase
+        .from('voice_calls')
+        .select('id')
+        .in('status', ['requested', 'ringing', 'active'])
+        .or(`creator_id.eq.${userId},subscriber_id.eq.${userId}`)
+        .limit(1)
+        .maybeSingle();
+      if (busyMe) {
+        alert('You already have an active or pending call');
+        setRequestingCall(false);
+        return;
+      }
+      const { data: busyThem } = await supabase
+        .from('voice_calls')
+        .select('id')
+        .in('status', ['requested', 'ringing', 'active'])
+        .or(`creator_id.eq.${otherUserId},subscriber_id.eq.${otherUserId}`)
+        .limit(1)
+        .maybeSingle();
+      if (busyThem) {
+        alert('This creator is busy on another call');
+        setRequestingCall(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('voice_calls')
         .insert({
