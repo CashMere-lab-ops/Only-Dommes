@@ -169,7 +169,12 @@ export default function ActiveVoiceCall() {
       const mins = Math.floor(durationSeconds / 60);
       const secs = durationSeconds % 60;
       const dur = `${mins}:${String(secs).padStart(2, '0')}`;
-      label = `Voice call · ${dur} · £${amountCharged.toFixed(2)}`;
+      const extra = Math.max(0, usedMins - minMins);
+      const breakdown =
+        extra > 0
+          ? `min ${minMins} min + ${extra} extra`
+          : `min ${minMins} min`;
+      label = `Voice call · ${dur} · £${amountCharged.toFixed(2)} · ${breakdown}`;
     }
 
     await disconnectRoom();
