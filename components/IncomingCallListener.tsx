@@ -162,9 +162,11 @@ export default function IncomingCallListener() {
   };
 
   const presentIncoming = async (row: CallRow) => {
+    // Load profile first so UI never flashes "Someone"
+    const profile = await loadCaller(row.subscriber_id);
+    setCaller(profile);
     setIncoming(row);
     incomingIdRef.current = row.id;
-    const profile = await loadCaller(row.subscriber_id);
     startRingtone();
     await showBrowserNotif(profile, row);
   };
@@ -323,9 +325,10 @@ export default function IncomingCallListener() {
     }
   };
 
-  if (!incoming) return null;
+  // Wait until caller profile is ready — avoids "Someone" flash
+  if (!incoming || !caller) return null;
 
-  const displayName = caller?.display_name || caller?.username || 'Someone';
+  const displayName = caller.display_name || caller.username || 'Fan';
   const initial = displayName.charAt(0).toUpperCase();
   const rate = Number(incoming.rate_per_minute || 0).toFixed(2);
   const minMins = incoming.min_minutes || 1;
