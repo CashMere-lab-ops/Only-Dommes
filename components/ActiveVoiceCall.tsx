@@ -164,9 +164,9 @@ export default function ActiveVoiceCall() {
 
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind === Track.Kind.Audio) {
-          const el = track.attach();
+          const el = track.attach() as HTMLAudioElement;
           el.autoplay = true;
-          el.playsInline = true;
+          el.setAttribute('playsinline', 'true');
           el.style.display = 'none';
           document.body.appendChild(el);
         }
