@@ -61,13 +61,21 @@ export default function ActiveVoiceCall() {
     return `${m}:${String(sec).padStart(2, '0')}`;
   };
 
-  const runningCost = () => {
-    if (!call || !billingStarted.current) return 0;
-    const rate = Number(call.rate_per_minute || 0);
-    const minMins = call.min_minutes || 1;
-    const usedMins = Math.max(minMins, Math.ceil(Math.max(seconds, 1) / 60));
-    return Math.round(rate * usedMins * 100) / 100;
+  const rateNum = call ? Number(call.rate_per_minute || 0) : 0;
+  const minMinsNum = call ? call.min_minutes || 1 : 1;
+
+  // Live estimate: pro-rate by seconds, but never show below minimum once connected
+  const liveCost = () => {
+    if (!call || phase !== 'in_call') return 0;
+    const elapsedMins = Math.max(seconds, 1) / 60;
+    const raw = rateNum * elapsedMins;
+    const minCharge = rateNum * minMinsNum;
+    // Until min duration reached, show minimum; after that tick up
+    const cost = Math.max(minCharge, raw);
+    return Math.round(cost * 100) / 100;
   };
+
+  const runningCost = liveCost;
 
   const disconnectRoom = async () => {
     const room = roomRef.current;
@@ -632,10 +640,17 @@ export default function ActiveVoiceCall() {
             <p className="text-3xl font-mono text-white tabular-nums mb-1">
               {formatTime(seconds)}
             </p>
-            <p className="text-sm text-zinc-400 mb-8">
-              £{Number(call.rate_per_minute).toFixed(2)}/min · ~£
-              {runningCost().toFixed(2)}
-            </p>
+            <div className="mb-8">
+              <p className="text-2xl font-semibold text-pink-400 tabular-nums">
+                £{liveCost().toFixed(2)}
+              </p>
+              <p className="text-xs text-zinc-500 mt-1">
+                £{rateNum.toFixed(2)}/min
+                {seconds < minMinsNum * 60
+                  ? ` · min charge £${(rateNum * minMinsNum).toFixed(2)} until ${minMinsNum} min`
+                  : ' · running'}
+              </p>
+            </div>
           </>
         ) : (
           <p className="text-sm text-zinc-500 mb-8">
