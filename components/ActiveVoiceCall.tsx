@@ -444,8 +444,19 @@ export default function ActiveVoiceCall() {
         } else if (state === ConnectionState.Connected) {
           checkBothConnected(room, c);
         } else if (state === ConnectionState.Disconnected) {
+          // Give LiveKit a moment to recover before treating as hang-up
           if (!hangingUp.current && callIdRef.current === c.id) {
-            hangUp('remote');
+            setPhase('reconnecting');
+            setTimeout(() => {
+              const room = roomRef.current;
+              if (
+                !hangingUp.current &&
+                callIdRef.current === c.id &&
+                (!room || room.state === ConnectionState.Disconnected)
+              ) {
+                hangUp('remote');
+              }
+            }, 8000);
           }
         }
       });
@@ -742,7 +753,7 @@ export default function ActiveVoiceCall() {
   const statusLine = () => {
     if (phase === 'connecting') return 'Connecting…';
     if (phase === 'waiting') return 'Waiting for them to join…';
-    if (phase === 'reconnecting') return 'Reconnecting…';
+    if (phase === 'reconnecting') return 'Connection lost — reconnecting…';
     return 'Voice call';
   };
 
@@ -790,6 +801,14 @@ export default function ActiveVoiceCall() {
 
         <p className="text-sm text-pink-400 font-medium mb-1">{statusLine()}</p>
         <h2 className="text-2xl font-semibold text-white mb-2">{otherName}</h2>
+        {phase === 'reconnecting' && (
+          <div className="mb-4 rounded-xl border border-amber-500/50 bg-amber-500/15 px-4 py-3 text-sm text-amber-100">
+            <p className="font-medium">Reconnecting…</p>
+            <p className="text-xs text-amber-200/80 mt-1">
+              Check your Wi‑Fi or mobile data. You won&apos;t be charged for dead air if the call drops.
+            </p>
+          </div>
+        )}
         {phase === 'in_call' && (
           <div className="flex items-center justify-center gap-1.5 mb-3">
             {[0, 1, 2].map((i) => {
