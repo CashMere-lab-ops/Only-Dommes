@@ -42,6 +42,10 @@ export default function ActiveVoiceCall() {
   const [error, setError] = useState('');
   const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'poor' | 'unknown'>('unknown');
   const [endSummary, setEndSummary] = useState<string | null>(null);
+  const [showRating, setShowRating] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [ratingSaving, setRatingSaving] = useState(false);
+  const [ratingDone, setRatingDone] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -189,18 +193,72 @@ export default function ActiveVoiceCall() {
 
     setEndSummary(label || 'Call ended');
     setPhase('ended');
-    setTimeout(() => {
-      setCall(null);
-      callRef.current = null;
-      callIdRef.current = null;
-      setSeconds(0);
-      secondsRef.current = 0;
-      billingStarted.current = false;
-      setEndSummary(null);
-      setPhase('connecting');
-      setError('');
+    const isSub = uid === c.subscriber_id;
+    const offerRating = isSub && status === 'ended' && amountCharged > 0;
+    if (offerRating) {
+      setShowRating(true);
+      setRating(0);
+      setRatingDone(false);
       hangingUp.current = false;
-    }, 2500);
+    } else {
+      setTimeout(() => {
+        setCall(null);
+        callRef.current = null;
+        callIdRef.current = null;
+        setSeconds(0);
+        secondsRef.current = 0;
+        billingStarted.current = false;
+        setEndSummary(null);
+        setShowRating(false);
+        setPhase('connecting');
+        setError('');
+        hangingUp.current = false;
+      }, 2500);
+    }
+  };
+
+  const submitRating = async (stars: number) => {
+    if (!callRef.current || !userIdRef.current || ratingSaving) return;
+    setRating(stars);
+    setRatingSaving(true);
+    try {
+      await supabase
+        .from('voice_calls')
+        .update({ rating: stars, rated_by: userIdRef.current })
+        .eq('id', callRef.current.id);
+      setRatingDone(true);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRatingSaving(false);
+      setTimeout(() => {
+        setCall(null);
+        callRef.current = null;
+        callIdRef.current = null;
+        setSeconds(0);
+        secondsRef.current = 0;
+        billingStarted.current = false;
+        setEndSummary(null);
+        setShowRating(false);
+        setRating(0);
+        setRatingDone(false);
+        setPhase('connecting');
+        setError('');
+      }, 1200);
+    }
+  };
+
+  const skipRating = () => {
+    setShowRating(false);
+    setCall(null);
+    callRef.current = null;
+    callIdRef.current = null;
+    setSeconds(0);
+    secondsRef.current = 0;
+    billingStarted.current = false;
+    setEndSummary(null);
+    setPhase('connecting');
+    setError('');
   };
 
   const connectToCall = async (c: CallRow, uid: string) => {
@@ -442,7 +500,39 @@ export default function ActiveVoiceCall() {
             <PhoneOff size={28} className="text-zinc-400" />
           </div>
           <p className="text-lg font-semibold text-white mb-1">Call ended</p>
-          <p className="text-sm text-zinc-400">{endSummary}</p>
+          <p className="text-sm text-zinc-400 mb-6">{endSummary}</p>
+
+          {showRating && !ratingDone && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <p className="text-sm text-zinc-300 mb-4">How was the call?</p>
+              <div className="flex items-center justify-center gap-2 mb-4">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    disabled={ratingSaving}
+                    onClick={() => submitRating(star)}
+                    className={`text-3xl transition ${
+                      star <= rating ? 'text-pink-400' : 'text-zinc-600 hover:text-pink-300'
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={skipRating}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                Skip
+              </button>
+            </div>
+          )}
+
+          {ratingDone && (
+            <p className="text-sm text-pink-400">Thanks for your feedback</p>
+          )}
         </div>
       </div>
     );
