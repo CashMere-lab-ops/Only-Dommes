@@ -453,15 +453,35 @@ export default function ActiveVoiceCall() {
   };
 
   return (
-    <div className="fixed inset-0 z-[210] bg-zinc-950 flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-sm text-center">
+    <div className="fixed inset-0 z-[210] bg-zinc-950 flex flex-col items-center justify-center p-6 overflow-hidden">
+      {/* Studio blurred background */}
+      <div className="absolute inset-0 pointer-events-none">
+        {otherAvatar ? (
+          <>
+            <img
+              src={otherAvatar}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl opacity-40"
+            />
+            <div className="absolute inset-0 bg-zinc-950/70" />
+            <div className="absolute inset-0 bg-gradient-to-b from-pink-950/30 via-transparent to-zinc-950/90" />
+          </>
+        ) : (
+          <>
+            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-pink-600/25 blur-3xl" />
+            <div className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full bg-rose-600/15 blur-3xl" />
+          </>
+        )}
+      </div>
+
+      <div className="relative w-full max-w-sm text-center">
         <div className="relative mx-auto w-28 h-28 mb-6">
           <div
-            className={`absolute inset-0 rounded-full bg-pink-500/15 ${
+            className={`absolute inset-0 rounded-full bg-pink-500/20 ${
               phase === 'in_call' ? 'animate-pulse' : ''
             }`}
           />
-          <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-3xl font-bold">
+          <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-3xl font-bold ring-2 ring-white/10 shadow-2xl shadow-pink-900/40">
             {otherAvatar ? (
               <img
                 src={otherAvatar}
