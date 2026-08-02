@@ -49,6 +49,10 @@ export default function ActiveVoiceCall() {
   const [ratingDone, setRatingDone] = useState(false);
   const [extending, setExtending] = useState(false);
   const [earningsToast, setEarningsToast] = useState<string | null>(null);
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reporting, setReporting] = useState(false);
+  const [reportDone, setReportDone] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -280,6 +284,30 @@ export default function ActiveVoiceCall() {
     setPhase('connecting');
     setError('');
   };
+
+  const submitCallReport = async () => {
+    if (!callRef.current || !userIdRef.current || !reportReason || reporting) return;
+    setReporting(true);
+    try {
+      await supabase.from('call_reports').insert({
+        call_id: callRef.current.id,
+        reporter_id: userIdRef.current,
+        reported_id:
+          userIdRef.current === callRef.current.creator_id
+            ? callRef.current.subscriber_id
+            : callRef.current.creator_id,
+        reason: reportReason,
+      });
+      setReportDone(true);
+      setShowReport(false);
+    } catch (e) {
+      console.error(e);
+      setError('Could not submit report');
+    } finally {
+      setReporting(false);
+    }
+  };
+
 
   const extendHold = async () => {
     if (!call || extending || phase !== 'in_call') return;
@@ -588,6 +616,68 @@ export default function ActiveVoiceCall() {
 
           {ratingDone && (
             <p className="text-sm text-pink-400">Thanks for your feedback</p>
+          )}
+
+          {!showReport && !reportDone && (
+            <button
+              type="button"
+              onClick={() => setShowReport(true)}
+              className="mt-6 text-xs text-zinc-500 hover:text-zinc-300 underline"
+            >
+              Report this call
+            </button>
+          )}
+
+          {reportDone && (
+            <p className="mt-4 text-xs text-zinc-400">Report submitted. Thank you.</p>
+          )}
+
+          {showReport && (
+            <div className="mt-6 text-left bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+              <p className="text-sm font-medium mb-3">Why are you reporting?</p>
+              <div className="space-y-2 mb-4">
+                {[
+                  'Spam or scam',
+                  'Harassment or abuse',
+                  'Inappropriate behaviour',
+                  'Technical issue / fraud',
+                  'Other',
+                ].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setReportReason(r)}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition ${
+                      reportReason === r
+                        ? 'bg-pink-600/20 border border-pink-500 text-pink-300'
+                        : 'bg-zinc-800 border border-zinc-700 text-zinc-300'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReport(false);
+                    setReportReason('');
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!reportReason || reporting}
+                  onClick={submitCallReport}
+                  className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-sm font-medium disabled:opacity-50"
+                >
+                  {reporting ? 'Sending…' : 'Submit'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
