@@ -14,7 +14,10 @@ type CallRow = {
   rate_per_minute: number;
   min_minutes: number;
   amount_held?: number;
+  amount_charged?: number;
+  duration_seconds?: number;
   started_at?: string | null;
+  ended_at?: string | null;
   livekit_room?: string | null;
 };
 
