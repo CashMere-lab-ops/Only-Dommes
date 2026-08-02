@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock,
-  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid
+  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid, Phone
 } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
@@ -212,6 +212,13 @@ export default function ChatPage() {
   const [messagePrice, setMessagePrice] = useState(0);
   const [autoReplySent, setAutoReplySent] = useState(false);
 
+  // Voice calls
+  const [showCallSheet, setShowCallSheet] = useState(false);
+  const [requestingCall, setRequestingCall] = useState(false);
+  const [incomingCall, setIncomingCall] = useState<any | null>(null);
+  const [myOutgoingCall, setMyOutgoingCall] = useState<any | null>(null);
+  const [callActionLoading, setCallActionLoading] = useState(false);
+
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
@@ -336,7 +343,7 @@ export default function ChatPage() {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
-          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message'
+          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes'
         )
         .eq('id', otherId)
         .single();
@@ -383,6 +390,27 @@ export default function ChatPage() {
       }
 
       await markAsRead(user.id);
+
+      // Pending voice call for this conversation
+      const { data: pendingCalls } = await supabase
+        .from('voice_calls')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .in('status', ['requested', 'ringing'])
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (pendingCalls && pendingCalls.length > 0) {
+        const asCreator = pendingCalls.find(
+          (c: any) => c.creator_id === user.id && c.status === 'requested'
+        );
+        const asSub = pendingCalls.find(
+          (c: any) => c.subscriber_id === user.id
+        );
+        if (asCreator) setIncomingCall(asCreator);
+        if (asSub) setMyOutgoingCall(asSub);
+      }
+
       setTimeout(scrollBottom, 200);
     };
 
@@ -463,6 +491,48 @@ export default function ChatPage() {
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, [conversationId, userId]);
+
+  useEffect(() => {
+    if (!conversationId || !userId) return;
+
+    const callChannel = supabase
+      .channel(`voice-calls-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'voice_calls',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row) return;
+          if (row.creator_id === userId && row.status === 'requested') {
+            setIncomingCall(row);
+          }
+          if (row.subscriber_id === userId) {
+            if (row.status === 'requested' || row.status === 'ringing') {
+              setMyOutgoingCall(row);
+            } else if (['declined', 'cancelled', 'missed', 'ended', 'failed'].includes(row.status)) {
+              setMyOutgoingCall(null);
+              if (row.status === 'declined') alert('Call declined');
+            } else if (row.status === 'active') {
+              setMyOutgoingCall(row);
+              // LiveKit connect next step
+            }
+          }
+          if (row.creator_id === userId && row.status !== 'requested') {
+            setIncomingCall(null);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(callChannel);
     };
   }, [conversationId, userId]);
 
@@ -664,6 +734,107 @@ export default function ChatPage() {
     setFile(f);
     setPreview(URL.createObjectURL(f));
     setPreviewType('image');
+  };
+
+
+  const canRequestCall =
+    myProfile?.account_type !== 'creator' &&
+    otherUser?.account_type === 'creator' &&
+    !!otherUser?.voice_calls_enabled &&
+    !needsUnlock;
+
+  const voiceRate = Number(otherUser?.voice_rate_per_minute ?? 3);
+  const voiceMin = Number(otherUser?.voice_min_minutes ?? 3);
+  const voiceHold = Math.round(voiceRate * voiceMin * 100) / 100;
+
+  const requestVoiceCall = async () => {
+    if (!userId || !otherUserId || requestingCall || !canRequestCall) return;
+    setRequestingCall(true);
+    try {
+      const { data, error } = await supabase
+        .from('voice_calls')
+        .insert({
+          creator_id: otherUserId,
+          subscriber_id: userId,
+          conversation_id: conversationId,
+          status: 'requested',
+          rate_per_minute: voiceRate,
+          min_minutes: voiceMin,
+          amount_held: voiceHold,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+
+      setMyOutgoingCall(data);
+      setShowCallSheet(false);
+
+      await createNotification({
+        userId: otherUserId,
+        actorId: userId,
+        type: 'message',
+        title: `${actorName()} is requesting a voice call`,
+        body: `£${voiceRate.toFixed(2)}/min · min ${voiceMin} min (£${voiceHold.toFixed(2)} hold)`,
+        link: `/messages/${conversationId}`,
+      });
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Could not request call');
+    } finally {
+      setRequestingCall(false);
+    }
+  };
+
+  const cancelOutgoingCall = async () => {
+    if (!myOutgoingCall || !userId) return;
+    setCallActionLoading(true);
+    try {
+      await supabase
+        .from('voice_calls')
+        .update({ status: 'cancelled' })
+        .eq('id', myOutgoingCall.id)
+        .eq('subscriber_id', userId);
+      setMyOutgoingCall(null);
+    } finally {
+      setCallActionLoading(false);
+    }
+  };
+
+  const respondIncomingCall = async (accept: boolean) => {
+    if (!incomingCall || !userId) return;
+    setCallActionLoading(true);
+    try {
+      const status = accept ? 'active' : 'declined';
+      const updates: any = { status };
+      if (accept) {
+        updates.started_at = new Date().toISOString();
+        // LiveKit room will be wired next
+        updates.livekit_room = `call-${incomingCall.id}`;
+      }
+      await supabase
+        .from('voice_calls')
+        .update(updates)
+        .eq('id', incomingCall.id)
+        .eq('creator_id', userId);
+
+      if (accept) {
+        await createNotification({
+          userId: incomingCall.subscriber_id,
+          actorId: userId,
+          type: 'message',
+          title: `${actorName()} accepted your call`,
+          body: 'Connecting…',
+          link: `/messages/${conversationId}`,
+        });
+        // Audio room in next step
+        alert('Call accepted — live audio coming in the next step');
+      }
+      setIncomingCall(null);
+    } catch (err: any) {
+      alert(err.message || 'Could not update call');
+    } finally {
+      setCallActionLoading(false);
+    }
   };
 
   const send = async () => {
@@ -1459,6 +1630,109 @@ export default function ChatPage() {
         </div>
       )}
 
+
+      {/* Voice call request sheet (sub) */}
+      {showCallSheet && (
+        <div className="fixed inset-0 z-[90] bg-black/70 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Phone size={20} className="text-pink-400" /> Voice call
+              </h3>
+              <button type="button" onClick={() => setShowCallSheet(false)} className="text-zinc-400">
+                <X size={22} />
+              </button>
+            </div>
+            <p className="text-sm text-zinc-400 mb-4">
+              Request a paid voice call with {displayName}
+            </p>
+            <div className="bg-zinc-800 border border-zinc-700 rounded-2xl p-4 mb-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-zinc-400">Rate</span>
+                <span className="font-medium text-pink-400">£{voiceRate.toFixed(2)}/min</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-400">Minimum</span>
+                <span className="font-medium">{voiceMin} minutes</span>
+              </div>
+              <div className="flex justify-between border-t border-zinc-700 pt-2">
+                <span className="text-zinc-400">Hold (up front)</span>
+                <span className="font-semibold text-white">£{voiceHold.toFixed(2)}</span>
+              </div>
+            </div>
+            <p className="text-xs text-zinc-500 mb-4">
+              We hold the minimum on your wallet. You only pay for time used (at least the minimum if you hang up early).
+            </p>
+            <button
+              type="button"
+              onClick={requestVoiceCall}
+              disabled={requestingCall}
+              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3.5 rounded-xl font-semibold text-white"
+            >
+              {requestingCall ? 'Requesting...' : 'Request call'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Outgoing call waiting */}
+      {myOutgoingCall && myOutgoingCall.status === 'requested' && (
+        <div className="fixed top-0 left-0 right-0 z-[85] p-3 pointer-events-none">
+          <div className="max-w-md mx-auto pointer-events-auto bg-zinc-900 border border-pink-500/40 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl">
+            <div className="w-10 h-10 rounded-full bg-pink-600/20 flex items-center justify-center">
+              <Phone size={18} className="text-pink-400 animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Calling {displayName}…</p>
+              <p className="text-xs text-zinc-400">Waiting for them to accept</p>
+            </div>
+            <button
+              type="button"
+              onClick={cancelOutgoingCall}
+              disabled={callActionLoading}
+              className="text-xs text-red-400 font-medium px-3 py-1.5 rounded-lg border border-red-500/40"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Incoming call (creator) */}
+      {incomingCall && (
+        <div className="fixed inset-0 z-[90] bg-black/70 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div className="text-center mb-5">
+              <div className="w-16 h-16 rounded-full bg-pink-600/20 flex items-center justify-center mx-auto mb-3">
+                <Phone size={28} className="text-pink-400" />
+              </div>
+              <h3 className="text-lg font-semibold">Incoming voice call</h3>
+              <p className="text-sm text-zinc-400 mt-1">
+                £{Number(incomingCall.rate_per_minute).toFixed(2)}/min · min {incomingCall.min_minutes} min
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => respondIncomingCall(false)}
+                disabled={callActionLoading}
+                className="py-3 rounded-xl border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800"
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                onClick={() => respondIncomingCall(true)}
+                disabled={callActionLoading}
+                className="py-3 rounded-xl bg-pink-600 hover:bg-pink-700 text-white font-medium"
+              >
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE */}
       <div className="lg:hidden fixed inset-0 z-50 bg-zinc-950 flex flex-col">
         <div className="border-b border-zinc-800 px-3 py-3 flex items-center gap-3">
@@ -1503,6 +1777,16 @@ export default function ChatPage() {
           >
             <DollarSign size={18} />
           </button>
+          {canRequestCall && (
+            <button
+              type="button"
+              onClick={() => setShowCallSheet(true)}
+              className="w-9 h-9 rounded-full bg-pink-600 text-white flex items-center justify-center"
+              title="Voice call"
+            >
+              <Phone size={18} />
+            </button>
+          )}
         </div>
 
         <div
@@ -1590,6 +1874,16 @@ export default function ChatPage() {
             <DollarSign size={16} />
             Tip
           </button>
+          {canRequestCall && (
+            <button
+              type="button"
+              onClick={() => setShowCallSheet(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium"
+            >
+              <Phone size={16} />
+              Call
+            </button>
+          )}
         </div>
 
         <div
