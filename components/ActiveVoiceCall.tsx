@@ -47,6 +47,7 @@ export default function ActiveVoiceCall() {
   const [ratingSaving, setRatingSaving] = useState(false);
   const [ratingDone, setRatingDone] = useState(false);
   const [extending, setExtending] = useState(false);
+  const [earningsToast, setEarningsToast] = useState<string | null>(null);
 
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -195,6 +196,10 @@ export default function ActiveVoiceCall() {
           label,
           uid
         );
+        if (uid === c.creator_id && amountCharged > 0) {
+          setEarningsToast(`You earned £${amountCharged.toFixed(2)}`);
+          setTimeout(() => setEarningsToast(null), 4000);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -481,6 +486,10 @@ export default function ActiveVoiceCall() {
                 setEndSummary(
                   `Voice call · ${m}:${String(s).padStart(2, '0')} · £${charged.toFixed(2)}`
                 );
+                if (uid === row.creator_id && charged > 0) {
+                  setEarningsToast(`You earned £${charged.toFixed(2)}`);
+                  setTimeout(() => setEarningsToast(null), 4000);
+                }
               }
               setPhase('ended');
               setTimeout(() => {
@@ -526,6 +535,11 @@ export default function ActiveVoiceCall() {
   if (phase === 'ended' && endSummary) {
     return (
       <div className="fixed inset-0 z-[210] bg-zinc-950/95 flex flex-col items-center justify-center p-6">
+        {earningsToast && (
+          <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl">
+            {earningsToast}
+          </div>
+        )}
         <div className="w-full max-w-sm text-center">
           <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
             <PhoneOff size={28} className="text-zinc-400" />
@@ -569,7 +583,16 @@ export default function ActiveVoiceCall() {
     );
   }
 
-  if (!call) return null;
+  if (!call) {
+    if (!earningsToast) return null;
+    return (
+      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[220] px-4">
+        <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl shadow-pink-900/40">
+          {earningsToast}
+        </div>
+      </div>
+    );
+  }
 
   const initial = (otherName || 'U').charAt(0).toUpperCase();
 
