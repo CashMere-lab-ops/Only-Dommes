@@ -53,6 +53,8 @@ export default function ActiveVoiceCall() {
   const [reportReason, setReportReason] = useState('');
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
+  const [blocking, setBlocking] = useState(false);
+  const [blockDone, setBlockDone] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -307,6 +309,32 @@ export default function ActiveVoiceCall() {
       setReporting(false);
     }
   };
+
+  const blockOtherUser = async () => {
+    if (!callRef.current || !userIdRef.current || blocking || blockDone) return;
+    setBlocking(true);
+    try {
+      const otherId =
+        userIdRef.current === callRef.current.creator_id
+          ? callRef.current.subscriber_id
+          : callRef.current.creator_id;
+      const { error } = await supabase.from('blocks').insert({
+        blocker_id: userIdRef.current,
+        blocked_id: otherId,
+      });
+      // ignore unique violation (already blocked)
+      if (error && !String(error.message || '').toLowerCase().includes('duplicate')) {
+        throw error;
+      }
+      setBlockDone(true);
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'Could not block user');
+    } finally {
+      setBlocking(false);
+    }
+  };
+
 
 
   const extendHold = async () => {
@@ -618,15 +646,29 @@ export default function ActiveVoiceCall() {
             <p className="text-sm text-pink-400">Thanks for your feedback</p>
           )}
 
-          {!showReport && !reportDone && (
-            <button
-              type="button"
-              onClick={() => setShowReport(true)}
-              className="mt-6 text-xs text-zinc-500 hover:text-zinc-300 underline"
-            >
-              Report this call
-            </button>
-          )}
+          <div className="mt-6 flex flex-col items-center gap-2">
+            {!showReport && !reportDone && (
+              <button
+                type="button"
+                onClick={() => setShowReport(true)}
+                className="text-xs text-zinc-500 hover:text-zinc-300 underline"
+              >
+                Report this call
+              </button>
+            )}
+            {!blockDone ? (
+              <button
+                type="button"
+                disabled={blocking}
+                onClick={blockOtherUser}
+                className="text-xs text-red-400/80 hover:text-red-300 underline disabled:opacity-50"
+              >
+                {blocking ? 'Blocking…' : 'Block this user'}
+              </button>
+            ) : (
+              <p className="text-xs text-zinc-400">User blocked</p>
+            )}
+          </div>
 
           {reportDone && (
             <p className="mt-4 text-xs text-zinc-400">Report submitted. Thank you.</p>
