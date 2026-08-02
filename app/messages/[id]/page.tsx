@@ -217,6 +217,7 @@ export default function ChatPage() {
   const [requestingCall, setRequestingCall] = useState(false);
   const [incomingCall, setIncomingCall] = useState<any | null>(null);
   const [myOutgoingCall, setMyOutgoingCall] = useState<any | null>(null);
+  const [callSheetError, setCallSheetError] = useState('');
   const [callActionLoading, setCallActionLoading] = useState(false);
 
   const [recording, setRecording] = useState(false);
@@ -836,7 +837,7 @@ export default function ChatPage() {
         .limit(1)
         .maybeSingle();
       if (busyMe) {
-        alert('You already have an active or pending call');
+        setCallSheetError('You already have a call in progress. End it before starting another.');
         setRequestingCall(false);
         return;
       }
@@ -848,10 +849,11 @@ export default function ChatPage() {
         .limit(1)
         .maybeSingle();
       if (busyThem) {
-        alert('This creator is busy on another call');
+        setCallSheetError('This creator is on another call right now. Try again in a few minutes.');
         setRequestingCall(false);
         return;
       }
+      setCallSheetError('');
 
       const { data, error } = await supabase
         .from('voice_calls')
@@ -881,7 +883,7 @@ export default function ChatPage() {
       });
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Could not request call');
+      setCallSheetError(err.message || 'Could not request call. Please try again.');
     } finally {
       setRequestingCall(false);
     }
@@ -1811,6 +1813,11 @@ export default function ChatPage() {
             <p className="text-xs text-zinc-500 mb-4">
               We hold the minimum on your wallet. You only pay for time used (at least the minimum if you hang up early).
             </p>
+            {callSheetError && (
+              <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                {callSheetError}
+              </div>
+            )}
             <button
               type="button"
               onClick={requestVoiceCall}
@@ -1824,7 +1831,7 @@ export default function ChatPage() {
       )}
 
       {/* Outgoing call waiting */}
-      {myOutgoingCall && myOutgoingCall.status === 'requested' && (
+      {false && myOutgoingCall && myOutgoingCall.status === 'requested' && (
         <div className="fixed top-0 left-0 right-0 z-[85] p-3 pointer-events-none">
           <div className="max-w-md mx-auto pointer-events-auto bg-zinc-900 border border-pink-500/40 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl">
             <div className="w-10 h-10 rounded-full bg-pink-600/20 flex items-center justify-center">
@@ -1928,7 +1935,7 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => setShowCallSheet(true)}
+              onClick={() => setCallSheetError(''); setShowCallSheet(true)}
               className="w-9 h-9 rounded-full bg-pink-600 text-white flex items-center justify-center"
               title="Voice call"
             >
@@ -2025,7 +2032,7 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => setShowCallSheet(true)}
+              onClick={() => setCallSheetError(''); setShowCallSheet(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium"
             >
               <Phone size={16} />
