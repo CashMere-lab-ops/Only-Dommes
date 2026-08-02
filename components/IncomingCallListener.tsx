@@ -114,7 +114,7 @@ export default function IncomingCallListener() {
       const n = new Notification('Incoming voice call', {
         body: `${name} · £${rate}/min`,
         tag: `voice-call-${call.id}`,
-        renotify: true,
+        
         requireInteraction: true,
         icon: profile?.avatar_url || '/favicon.ico',
       });
