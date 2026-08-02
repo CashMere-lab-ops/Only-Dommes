@@ -18,10 +18,11 @@ import { createClient } from '../../lib/supabase';
 
 type Filter = 'all' | 'unread' | 'fans' | 'subscribers' | 'archived';
 
+const CALL_PREFIX = '__CALL_EVENT__:';
+
 export default function MessagesPage() {
   const router = useRouter();
   const supabase = createClient();
-
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -31,7 +32,6 @@ export default function MessagesPage() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [fanIds, setFanIds] = useState<Set<string>>(new Set());
   const [subIds, setSubIds] = useState<Set<string>>(new Set());
-
   const userIdRef = useRef<string | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -41,20 +41,16 @@ export default function MessagesPage() {
       setSubIds(new Set());
       return;
     }
-
     const { data: fans } = await supabase
       .from('follows')
       .select('follower_id')
       .eq('following_id', userId);
-
     setFanIds(new Set((fans || []).map((f: any) => f.follower_id)));
-
     const { data: subs } = await supabase
       .from('subscriptions')
       .select('subscriber_id')
       .eq('creator_id', userId)
       .eq('status', 'active');
-
     setSubIds(new Set((subs || []).map((s: any) => s.subscriber_id)));
   };
 
@@ -65,13 +61,11 @@ export default function MessagesPage() {
         .select('*')
         .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
         .order('last_message_at', { ascending: false });
-
       if (error || !convos) {
         setConversations([]);
         setLoading(false);
         return;
       }
-
       const enriched = await Promise.all(
         convos.map(async (convo) => {
           const isP1 = convo.participant_1 === userId;
@@ -79,41 +73,33 @@ export default function MessagesPage() {
           const isArchived = isP1
             ? !!convo.participant_1_archived
             : !!convo.participant_2_archived;
-
           const { data: profile } = await supabase
             .from('profiles')
             .select('username, display_name, avatar_url, account_type')
             .eq('id', otherId)
             .single();
-
           const { data: lastMessages } = await supabase
             .from('messages')
             .select('*')
             .eq('conversation_id', convo.id)
             .order('created_at', { ascending: false })
             .limit(1);
-
           const lastMessage = lastMessages?.[0] || null;
-
-          // ALL message text in this chat (for full search)
           const { data: allMsgs } = await supabase
             .from('messages')
             .select('content')
             .eq('conversation_id', convo.id)
             .not('content', 'is', null);
-
           const searchBlob = (allMsgs || [])
             .map((m: any) => m.content || '')
             .join(' ')
             .toLowerCase();
-
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
             .eq('conversation_id', convo.id)
             .neq('sender_id', userId)
             .eq('is_read', false);
-
           return {
             ...convo,
             otherId,
@@ -125,7 +111,6 @@ export default function MessagesPage() {
           };
         })
       );
-
       setConversations(enriched);
       setLoading(false);
     },
@@ -141,29 +126,23 @@ export default function MessagesPage() {
         router.push('/login');
         return;
       }
-
       setCurrentUserId(user.id);
       userIdRef.current = user.id;
-
       const { data: profile } = await supabase
         .from('profiles')
         .select('account_type')
         .eq('id', user.id)
         .single();
-
       const creator = profile?.account_type === 'creator';
       setIsCreator(creator);
-
       await loadMeta(user.id, creator);
       await loadConversations(user.id);
     };
-
     init();
   }, []);
 
   useEffect(() => {
     if (!currentUserId) return;
-
     const channel = supabase
       .channel('messages-list')
       .on(
@@ -177,7 +156,6 @@ export default function MessagesPage() {
         }
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
@@ -192,21 +170,16 @@ export default function MessagesPage() {
 
   const toggleArchive = async (convo: any) => {
     if (!currentUserId) return;
-
     const isP1 = convo.participant_1 === currentUserId;
     const field = isP1 ? 'participant_1_archived' : 'participant_2_archived';
     const next = !convo.isArchived;
-
     const { error } = await supabase
       .from('conversations')
       .update({ [field]: next })
       .eq('id', convo.id);
-
     if (!error) {
       setConversations((prev) =>
-        prev.map((c) =>
-          c.id === convo.id ? { ...c, isArchived: next } : c
-        )
+        prev.map((c) => (c.id === convo.id ? { ...c, isArchived: next } : c))
       );
     }
     setMenuOpenId(null);
@@ -228,19 +201,33 @@ export default function MessagesPage() {
 
   const previewText = (msg: any, isFromMe: boolean) => {
     if (!msg) return 'No messages yet';
+
+    const content = msg.content || '';
+
+    // Voice call system receipts — clean labels only
+    if (content.startsWith(CALL_PREFIX)) {
+      const label = content.slice(CALL_PREFIX.length).split('|')[1] || 'Voice call';
+      return label;
+    }
+
     const prefix = isFromMe ? 'You: ' : '';
-    if (msg.media_type === 'image' || msg.media_url?.match(/\.(jpg|jpeg|png|gif|webp)/i)) {
+    if (
+      msg.media_type === 'image' ||
+      msg.media_url?.match(/\.(jpg|jpeg|png|gif|webp)/i)
+    ) {
       return `${prefix}Photo`;
     }
     if (msg.media_type === 'video' || msg.media_url?.match(/\.(mp4|webm|mov)/i)) {
       return `${prefix}Video`;
     }
+    if (msg.media_type === 'audio') {
+      return `${prefix}Voice note`;
+    }
     if (msg.is_locked) return `${prefix}Locked content`;
-    return `${prefix}${msg.content || ''}`;
+    return `${prefix}${content}`;
   };
 
   const q = search.trim().toLowerCase();
-
   const filtered = conversations.filter((c) => {
     if (filter === 'archived') {
       if (!c.isArchived) return false;
@@ -250,18 +237,14 @@ export default function MessagesPage() {
       if (filter === 'fans' && !fanIds.has(c.otherId)) return false;
       if (filter === 'subscribers' && !subIds.has(c.otherId)) return false;
     }
-
     if (!q) return true;
-
     const displayName = (c.otherProfile?.display_name || '').toLowerCase();
     const username = (c.otherProfile?.username || '').toLowerCase();
     const nameMatch =
       displayName.includes(q) ||
       username.includes(q) ||
       `@${username}`.includes(q);
-
     const messageMatch = (c.searchBlob || '').includes(q);
-
     return nameMatch || messageMatch;
   });
 
@@ -304,7 +287,6 @@ export default function MessagesPage() {
               </Link>
             )}
           </div>
-
           <div className="max-w-3xl mx-auto px-4 pb-3 flex gap-2 overflow-x-auto scrollbar-none">
             {tabs.map((tab) => (
               <button
@@ -320,7 +302,6 @@ export default function MessagesPage() {
               </button>
             ))}
           </div>
-
           <div className="max-w-3xl mx-auto px-4 pb-3">
             <div className="relative">
               <Search
@@ -345,7 +326,6 @@ export default function MessagesPage() {
             </div>
           </div>
         </div>
-
         <div className="flex-1 max-w-3xl w-full mx-auto">
           {loading ? (
             <div className="flex items-center justify-center py-20 text-zinc-500">
@@ -386,7 +366,6 @@ export default function MessagesPage() {
                 const initial = (name || '?')[0].toUpperCase();
                 const hasUnread = convo.unreadCount > 0;
                 const isFromMe = convo.lastMessage?.sender_id === currentUserId;
-
                 return (
                   <div
                     key={convo.id}
@@ -414,12 +393,13 @@ export default function MessagesPage() {
                           </div>
                         )}
                       </div>
-
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p
                             className={`truncate ${
-                              hasUnread ? 'font-bold text-white' : 'font-semibold text-zinc-100'
+                              hasUnread
+                                ? 'font-bold text-white'
+                                : 'font-semibold text-zinc-100'
                             }`}
                           >
                             {name}
@@ -427,7 +407,9 @@ export default function MessagesPage() {
                           {convo.lastMessage && (
                             <span
                               className={`text-xs flex-shrink-0 ${
-                                hasUnread ? 'text-pink-400 font-medium' : 'text-zinc-500'
+                                hasUnread
+                                  ? 'text-pink-400 font-medium'
+                                  : 'text-zinc-500'
                               }`}
                             >
                               {formatTime(convo.lastMessage.created_at)}
@@ -443,7 +425,6 @@ export default function MessagesPage() {
                         </p>
                       </div>
                     </Link>
-
                     <div className="relative flex-shrink-0">
                       <button
                         onClick={(e) => {
