@@ -10,6 +10,7 @@ import {
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
 import { createNotification } from '../../../lib/notifications';
+import { isWithinVoiceDnd } from '../../../lib/voiceDnd';
 
 const TIP_AMOUNTS = [5, 10, 20, 50];
 const REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👍'];
@@ -344,7 +345,7 @@ export default function ChatPage() {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
-          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes'
+          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end'
         )
         .eq('id', otherId)
         .single();
@@ -854,6 +855,20 @@ export default function ChatPage() {
         return;
       }
       setCallSheetError('');
+
+      if (
+        isWithinVoiceDnd(
+          otherUser?.voice_dnd_enabled,
+          otherUser?.voice_dnd_start,
+          otherUser?.voice_dnd_end
+        )
+      ) {
+        setCallSheetError(
+          'This creator is unavailable for calls right now (Do Not Disturb). Try again later.'
+        );
+        setRequestingCall(false);
+        return;
+      }
 
       const { data, error } = await supabase
         .from('voice_calls')

@@ -48,6 +48,9 @@ export default function SettingsPage() {
   const [voiceCallsEnabled, setVoiceCallsEnabled] = useState(false);
   const [voiceRate, setVoiceRate] = useState('3.00');
   const [voiceMinMinutes, setVoiceMinMinutes] = useState('3');
+  const [voiceDndEnabled, setVoiceDndEnabled] = useState(false);
+  const [voiceDndStart, setVoiceDndStart] = useState('22:00');
+  const [voiceDndEnd, setVoiceDndEnd] = useState('08:00');
 
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
@@ -62,15 +65,12 @@ export default function SettingsPage() {
         router.push('/login');
         return;
       }
-
       setUserEmail(user.email || '');
-
       const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
-
       if (data) {
         setProfile(data);
         setDisplayName(data.display_name || '');
@@ -90,6 +90,9 @@ export default function SettingsPage() {
         setVoiceCallsEnabled(!!data.voice_calls_enabled);
         setVoiceRate(String(data.voice_rate_per_minute ?? 3));
         setVoiceMinMinutes(String(data.voice_min_minutes ?? 3));
+        setVoiceDndEnabled(!!data.voice_dnd_enabled);
+        setVoiceDndStart(data.voice_dnd_start || '22:00');
+        setVoiceDndEnd(data.voice_dnd_end || '08:00');
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
@@ -141,14 +144,12 @@ export default function SettingsPage() {
     setSaving(true);
     setError('');
     setMessage('');
-
     try {
       const updates: any = {
         display_name: displayName.trim(),
         bio: bio.trim(),
         x_username: xUsername.trim() || null,
       };
-
       if (profile.account_type === 'creator') {
         updates.subscriptions_enabled = subscriptionsEnabled;
         updates.subscription_price = parseFloat(subscriptionPrice) || 0;
@@ -160,25 +161,23 @@ export default function SettingsPage() {
         updates.auto_reply_unlock_enabled = autoReplyUnlockEnabled;
         updates.auto_reply_unlock_message = autoReplyUnlockMessage.trim();
 
-        // Voice calls
         const rate = parseFloat(voiceRate);
         let minMins = parseInt(voiceMinMinutes, 10);
         if (Number.isNaN(minMins) || minMins < 1) minMins = 1;
         if (minMins > 15) minMins = 15;
-
         updates.voice_calls_enabled = voiceCallsEnabled;
         updates.voice_rate_per_minute =
           Number.isNaN(rate) || rate < 0 ? 0 : Math.round(rate * 100) / 100;
         updates.voice_min_minutes = minMins;
+        updates.voice_dnd_enabled = voiceDndEnabled;
+        updates.voice_dnd_start = voiceDndStart || '22:00';
+        updates.voice_dnd_end = voiceDndEnd || '08:00';
       }
-
       const { error: updateError } = await supabase
         .from('profiles')
         .update(updates)
         .eq('id', profile.id);
-
       if (updateError) throw updateError;
-
       setProfile({ ...profile, ...updates });
       setVoiceMinMinutes(String(updates.voice_min_minutes ?? voiceMinMinutes));
       setMessage('Settings saved');
@@ -240,7 +239,6 @@ export default function SettingsPage() {
 
   const isCreator = profile?.account_type === 'creator';
   const initial = (displayName || username || 'U').charAt(0).toUpperCase();
-
   const minHoldPreview = (() => {
     const rate = parseFloat(voiceRate) || 0;
     const mins = parseInt(voiceMinMinutes, 10) || 3;
@@ -258,13 +256,11 @@ export default function SettingsPage() {
             </Link>
             <h1 className="text-xl font-semibold">Settings</h1>
           </div>
-
           <div className="max-w-2xl mx-auto px-4 lg:px-8 py-8 space-y-8">
             <div className="hidden lg:block">
               <h1 className="text-3xl font-bold mb-1">Settings</h1>
               <p className="text-zinc-400">Manage your profile and preferences</p>
             </div>
-
             {(message || error) && (
               <div
                 className={`rounded-xl px-4 py-3 text-sm ${
@@ -461,7 +457,6 @@ export default function SettingsPage() {
                   Let subs request paid voice calls from chat. You’re charged on actual time, with a
                   minimum hold upfront.
                 </p>
-
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium">Enable voice calls</p>
@@ -477,7 +472,6 @@ export default function SettingsPage() {
                     <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
                   </label>
                 </div>
-
                 {voiceCallsEnabled && (
                   <div className="space-y-4 pt-2">
                     <div className="grid grid-cols-2 gap-4">
@@ -514,7 +508,6 @@ export default function SettingsPage() {
                         <p className="text-xs text-zinc-500 mt-1">Between 1 and 15</p>
                       </div>
                     </div>
-
                     <div className="bg-zinc-800/80 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-300">
                       Subs will see:{' '}
                       <span className="text-pink-400 font-medium">
@@ -525,6 +518,53 @@ export default function SettingsPage() {
                       <span className="text-pink-400 font-medium">
                         {voiceMinMinutes || 3} min (£{minHoldPreview} hold)
                       </span>
+                    </div>
+
+                    {/* Do Not Disturb */}
+                    <div className="pt-4 border-t border-zinc-800 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">Do Not Disturb</p>
+                          <p className="text-sm text-zinc-400">
+                            Block new call requests during these hours
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={voiceDndEnabled}
+                            onChange={() => setVoiceDndEnabled(!voiceDndEnabled)}
+                          />
+                          <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                        </label>
+                      </div>
+                      {voiceDndEnabled && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-sm text-zinc-400 mb-1.5 block">From</label>
+                            <input
+                              type="time"
+                              value={voiceDndStart}
+                              onChange={(e) => setVoiceDndStart(e.target.value)}
+                              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-3 outline-none focus:border-pink-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-sm text-zinc-400 mb-1.5 block">Until</label>
+                            <input
+                              type="time"
+                              value={voiceDndEnd}
+                              onChange={(e) => setVoiceDndEnd(e.target.value)}
+                              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-3 outline-none focus:border-pink-500"
+                            />
+                          </div>
+                          <p className="col-span-2 text-xs text-zinc-500">
+                            Overnight works (e.g. 22:00 → 08:00). Subs see “unavailable” if they
+                            try to call during DND.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -537,7 +577,6 @@ export default function SettingsPage() {
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <Bot size={18} className="text-pink-500" /> Auto-replies
                 </h2>
-
                 <div className="space-y-3 pb-6 border-b border-zinc-800">
                   <div className="flex items-center justify-between">
                     <div>
@@ -571,7 +610,6 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-
                 <div className="space-y-3 pb-6 border-b border-zinc-800">
                   <div className="flex items-center justify-between">
                     <div className="flex items-start gap-2">
@@ -606,7 +644,6 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-start gap-2">
