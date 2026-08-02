@@ -640,7 +640,7 @@ export default function ActiveVoiceCall() {
             <p className="text-3xl font-mono text-white tabular-nums mb-1">
               {formatTime(seconds)}
             </p>
-            <div className="mb-8">
+            <div className="mb-6">
               <p className="text-2xl font-semibold text-pink-400 tabular-nums">
                 £{liveCost().toFixed(2)}
               </p>
@@ -650,6 +650,14 @@ export default function ActiveVoiceCall() {
                   ? ` · min charge £${(rateNum * minMinsNum).toFixed(2)} until ${minMinsNum} min`
                   : ' · running'}
               </p>
+              {Number(call.amount_held || 0) > 0 &&
+                liveCost() >= Number(call.amount_held) * 0.8 && (
+                <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  {liveCost() >= Number(call.amount_held)
+                    ? 'Hold limit reached — call may end soon'
+                    : 'Running low on hold (80%+)'}
+                </div>
+              )}
             </div>
           </>
         ) : (
