@@ -51,6 +51,7 @@ export default function SettingsPage() {
   const [voiceDndEnabled, setVoiceDndEnabled] = useState(false);
   const [voiceDndStart, setVoiceDndStart] = useState('22:00');
   const [voiceDndEnd, setVoiceDndEnd] = useState('08:00');
+  const [voiceMaxMinutes, setVoiceMaxMinutes] = useState('30');
 
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
@@ -93,6 +94,7 @@ export default function SettingsPage() {
         setVoiceDndEnabled(!!data.voice_dnd_enabled);
         setVoiceDndStart(data.voice_dnd_start || '22:00');
         setVoiceDndEnd(data.voice_dnd_end || '08:00');
+        setVoiceMaxMinutes(String(data.voice_max_minutes ?? 30));
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
@@ -172,6 +174,10 @@ export default function SettingsPage() {
         updates.voice_dnd_enabled = voiceDndEnabled;
         updates.voice_dnd_start = voiceDndStart || '22:00';
         updates.voice_dnd_end = voiceDndEnd || '08:00';
+        let maxMins = parseInt(voiceMaxMinutes, 10);
+        if (Number.isNaN(maxMins) || maxMins < 1) maxMins = 30;
+        if (maxMins > 120) maxMins = 120;
+        updates.voice_max_minutes = maxMins;
       }
       const { error: updateError } = await supabase
         .from('profiles')
@@ -518,6 +524,23 @@ export default function SettingsPage() {
                       <span className="text-pink-400 font-medium">
                         {voiceMinMinutes || 3} min (£{minHoldPreview} hold)
                       </span>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">
+                        Maximum call length (minutes)
+                      </label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="120"
+                        value={voiceMaxMinutes}
+                        onChange={(e) => setVoiceMaxMinutes(e.target.value)}
+                        className="w-32 bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-3 outline-none focus:border-pink-500"
+                      />
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Call auto-ends at this limit (5–120). Default 30.
+                      </p>
                     </div>
 
                     {/* Do Not Disturb */}

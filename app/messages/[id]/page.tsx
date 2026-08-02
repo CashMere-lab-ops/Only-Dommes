@@ -345,7 +345,7 @@ export default function ChatPage() {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
-          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end'
+          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes'
         )
         .eq('id', otherId)
         .single();
@@ -879,6 +879,7 @@ export default function ChatPage() {
           status: 'requested',
           rate_per_minute: voiceRate,
           min_minutes: voiceMin,
+          max_minutes: otherUser?.voice_max_minutes || 30,
           amount_held: voiceHold,
         })
         .select()

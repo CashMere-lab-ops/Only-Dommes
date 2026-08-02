@@ -13,6 +13,7 @@ type CallRow = {
   status: string;
   rate_per_minute: number;
   min_minutes: number;
+  max_minutes?: number;
   amount_held?: number;
   amount_charged?: number;
   duration_seconds?: number;
@@ -523,6 +524,11 @@ export default function ActiveVoiceCall() {
       setSeconds((s) => {
         const n = s + 1;
         secondsRef.current = n;
+        const maxMins = callRef.current?.max_minutes || 0;
+        if (maxMins > 0 && n >= maxMins * 60) {
+          // Hard stop
+          setTimeout(() => hangUp('local'), 0);
+        }
         return n;
       });
     }, 1000);
@@ -697,9 +703,12 @@ export default function ActiveVoiceCall() {
               </p>
               <p className="text-xs text-zinc-500 mt-1">
                 £{rateNum.toFixed(2)}/min
-                {seconds < minMinsNum * 60
+{seconds < minMinsNum * 60
                   ? ` · min charge £${(rateNum * minMinsNum).toFixed(2)} until ${minMinsNum} min`
                   : ' · running'}
+                {call.max_minutes
+                  ? ` · max ${call.max_minutes} min`
+                  : ''}
               </p>
               {Number(call.amount_held || 0) > 0 &&
                 liveCost() >= Number(call.amount_held) * 0.8 && (
