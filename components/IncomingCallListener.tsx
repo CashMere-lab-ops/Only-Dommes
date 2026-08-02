@@ -33,6 +33,7 @@ export default function IncomingCallListener() {
   const [incoming, setIncoming] = useState<CallRow | null>(null);
   const [caller, setCaller] = useState<CallerProfile | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showDeclineReasons, setShowDeclineReasons] = useState(false);
   const ringRef = useRef<{
     ctx: AudioContext;
     interval: ReturnType<typeof setInterval>;
@@ -138,9 +139,15 @@ export default function IncomingCallListener() {
     return data as CallerProfile | null;
   };
 
-  const insertDeclineReceipt = async (call: CallRow, creatorId: string) => {
+  const insertDeclineReceipt = async (
+    call: CallRow,
+    creatorId: string,
+    declineReason?: string
+  ) => {
     if (!call.conversation_id) return;
-    const label = 'Voice call declined';
+    const label = declineReason
+      ? `Voice call declined · ${declineReason}`
+      : 'Voice call declined';
     const content = `${CALL_PREFIX}declined|${label}`;
     await supabase.from('messages').insert({
       conversation_id: call.conversation_id,
@@ -158,6 +165,7 @@ export default function IncomingCallListener() {
     closeBrowserNotif();
     incomingIdRef.current = null;
     setIncoming(null);
+    setShowDeclineReasons(false);
     setCaller(null);
   };
 
@@ -285,7 +293,7 @@ export default function IncomingCallListener() {
     ensureNotifPermission();
   }, [incoming?.id]);
 
-  const respond = async (accept: boolean) => {
+  const respond = async (accept: boolean, declineReason?: string) => {
     if (!incoming || !userId || loading) return;
     setLoading(true);
     try {
@@ -335,7 +343,7 @@ export default function IncomingCallListener() {
         clearIncoming();
         if (convoId) router.push(`/messages/${convoId}`);
       } else {
-        await insertDeclineReceipt(incoming, userId);
+        await insertDeclineReceipt(incoming, userId, declineReason);
         clearIncoming();
       }
     } catch (err: any) {
@@ -359,7 +367,7 @@ export default function IncomingCallListener() {
         <div className="flex justify-end mb-1">
           <button
             type="button"
-            onClick={() => respond(false)}
+            onClick={() => setShowDeclineReasons(true)}
             disabled={loading}
             className="text-zinc-500 hover:text-zinc-300 p-1"
             aria-label="Dismiss"
@@ -401,7 +409,7 @@ export default function IncomingCallListener() {
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => respond(false)}
+            onClick={() => setShowDeclineReasons(true)}
             disabled={loading}
             className="py-3.5 rounded-2xl border border-zinc-600 text-zinc-200 font-semibold hover:bg-zinc-800 disabled:opacity-50"
           >
@@ -419,5 +427,50 @@ export default function IncomingCallListener() {
         </div>
       </div>
     </div>
+
+      {showDeclineReasons && incoming && (
+        <div className="fixed inset-0 z-[206] bg-black/80 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <h3 className="text-lg font-semibold text-center mb-1">Decline call</h3>
+            <p className="text-sm text-zinc-400 text-center mb-4">Optional — let them know why</p>
+            <div className="space-y-2 mb-4">
+              {['Busy right now', 'Try me later', 'Not available'].map((reason) => (
+                <button
+                  key={reason}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setShowDeclineReasons(false);
+                    respond(false, reason);
+                  }}
+                  className="w-full py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-sm font-medium transition"
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                setShowDeclineReasons(false);
+                respond(false);
+              }}
+              className="w-full py-3 rounded-xl text-sm text-zinc-400 hover:text-white transition"
+            >
+              Decline without reason
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => setShowDeclineReasons(false)}
+              className="w-full mt-2 py-2 text-xs text-zinc-500"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
   );
 }
