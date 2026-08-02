@@ -1,16 +1,4 @@
-/div>
-
-      {/* DESKTOP */}
-      <main className="hidden lg:flex flex-1 flex-col h-screen">
-        <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
-          <Link href="/messages" className="text-zinc-400 hover:text-white">
-            <ArrowLeft size={22} />
-          </Link>
-          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 flex-1">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
-                {otherUser?.avatar_url ? (
-                  <img s'use client';
+'use client';
 
 import { useEffect, useState, useRef, memo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -1961,7 +1949,19 @@ export default function ChatPage() {
         >
           {composerUI}
         </div>
-      <rc={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+      </div>
+
+      {/* DESKTOP */}
+      <main className="hidden lg:flex flex-1 flex-col h-screen">
+        <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
+          <Link href="/messages" className="text-zinc-400 hover:text-white">
+            <ArrowLeft size={22} />
+          </Link>
+          <Link href={`/${otherUser?.username}`} className="flex items-center gap-3 flex-1">
+            <div className="relative">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center font-bold">
+                {otherUser?.avatar_url ? (
+                  <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
                 ) : (
                   initial
                 )}
