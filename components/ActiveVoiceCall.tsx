@@ -619,8 +619,21 @@ export default function ActiveVoiceCall() {
         secondsRef.current = n;
         const maxMins = callRef.current?.max_minutes || 0;
         if (maxMins > 0 && n >= maxMins * 60) {
-          // Hard stop
           setTimeout(() => hangUp('local'), 0);
+          return n;
+        }
+        // Auto-end when prepaid hold is exhausted
+        const c = callRef.current;
+        if (c && billingStarted.current) {
+          const rate = Number(c.rate_per_minute || 0);
+          const minM = Number(c.min_minutes || 1);
+          const held = Number(c.amount_held || 0);
+          if (held > 0 && rate > 0) {
+            const cost = Math.max(rate * (n / 60), rate * minM);
+            if (cost >= held - 0.001) {
+              setTimeout(() => hangUp('local'), 0);
+            }
+          }
         }
         return n;
       });
