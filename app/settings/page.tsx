@@ -546,8 +546,6 @@ export default function SettingsPage() {
                       </p>
                     </div>
 
-                    </div>
-
                     <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
                       <div>
                         <p className="font-medium">Away mode</p>
@@ -566,8 +564,8 @@ export default function SettingsPage() {
                       </label>
                     </div>
 
-
                     {/* Do Not Disturb */}
+
                     <div className="pt-4 border-t border-zinc-800 space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
