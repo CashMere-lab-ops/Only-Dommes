@@ -351,7 +351,7 @@ export default function ChatPage() {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
-          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes'
+          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away'
         )
         .eq('id', otherId)
         .single();
@@ -910,6 +910,14 @@ export default function ChatPage() {
         return;
       }
       setCallSheetError('');
+
+      if (otherUser?.voice_away) {
+        setCallSheetError(
+          'This creator is Away and not taking voice calls right now.'
+        );
+        setRequestingCall(false);
+        return;
+      }
 
       if (
         isWithinVoiceDnd(

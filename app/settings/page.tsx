@@ -52,6 +52,7 @@ export default function SettingsPage() {
   const [voiceDndStart, setVoiceDndStart] = useState('22:00');
   const [voiceDndEnd, setVoiceDndEnd] = useState('08:00');
   const [voiceMaxMinutes, setVoiceMaxMinutes] = useState('30');
+  const [voiceAway, setVoiceAway] = useState(false);
 
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
@@ -95,6 +96,7 @@ export default function SettingsPage() {
         setVoiceDndStart(data.voice_dnd_start || '22:00');
         setVoiceDndEnd(data.voice_dnd_end || '08:00');
         setVoiceMaxMinutes(String(data.voice_max_minutes ?? 30));
+        setVoiceAway(!!data.voice_away);
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
@@ -178,6 +180,7 @@ export default function SettingsPage() {
         if (Number.isNaN(maxMins) || maxMins < 1) maxMins = 30;
         if (maxMins > 120) maxMins = 120;
         updates.voice_max_minutes = maxMins;
+        updates.voice_away = voiceAway;
       }
       const { error: updateError } = await supabase
         .from('profiles')
@@ -542,6 +545,27 @@ export default function SettingsPage() {
                         Call auto-ends at this limit (5–120). Default 30.
                       </p>
                     </div>
+
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+                      <div>
+                        <p className="font-medium">Away mode</p>
+                        <p className="text-sm text-zinc-400">
+                          One-tap: block all voice calls until you turn this off
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={voiceAway}
+                          onChange={() => setVoiceAway(!voiceAway)}
+                        />
+                        <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                      </label>
+                    </div>
+
 
                     {/* Do Not Disturb */}
                     <div className="pt-4 border-t border-zinc-800 space-y-4">
