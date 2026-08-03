@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye,
   ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon,
-  ChevronLeft, ChevronRight, Heart, Users, Clock, Search
+  ChevronLeft, ChevronRight, Heart, Users, Clock, Search, Phone
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -26,7 +26,6 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
-
   const [showUpload, setShowUpload] = useState(false);
   const [showItemForm, setShowItemForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -35,14 +34,12 @@ export default function DashboardPage() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
-
   const [clipForm, setClipForm] = useState({
     title: '',
     description: '',
     price: 9.99,
     category: '',
   });
-
   const [itemForm, setItemForm] = useState({
     title: '',
     description: '',
@@ -51,25 +48,18 @@ export default function DashboardPage() {
     condition: 'Worn',
     photos: [] as string[],
   });
-
   const [pricing, setPricing] = useState({
     privatePerMinute: 8,
     minPrivateMinutes: 5,
     tipMenuEnabled: true,
   });
-
   const [myClips] = useState([
     { id: 1, title: 'Morning Stretch Session', price: 12.99, sales: 0 },
     { id: 2, title: 'Private JOI Custom', price: 45.0, sales: 0 },
   ]);
-
   const [myItems, setMyItems] = useState<Item[]>([]);
-
-  // Creators: their subscribers
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
-
-  // Subs: creators they subscribe to
   const [mySubscriptions, setMySubscriptions] = useState<any[]>([]);
   const [mySubCount, setMySubCount] = useState(0);
 
@@ -79,15 +69,12 @@ export default function DashboardPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
-
       const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
-
       setProfile(data);
-
       if (data?.account_type === 'creator') {
         const { data: subs } = await supabase
           .from('subscriptions')
@@ -95,14 +82,12 @@ export default function DashboardPage() {
           .eq('creator_id', user.id)
           .eq('status', 'active')
           .order('started_at', { ascending: false });
-
         if (subs && subs.length > 0) {
           const ids = subs.map((s) => s.subscriber_id);
           const { data: profiles } = await supabase
             .from('profiles')
             .select('id, username, display_name, avatar_url')
             .in('id', ids);
-
           const map = new Map((profiles || []).map((p) => [p.id, p]));
           const enriched = subs.map((s) => ({
             ...s,
@@ -115,21 +100,18 @@ export default function DashboardPage() {
           setSubCount(0);
         }
       } else {
-        // Sub: load creators they are subscribed to
         const { data: subs } = await supabase
           .from('subscriptions')
           .select('*')
           .eq('subscriber_id', user.id)
           .eq('status', 'active')
           .order('started_at', { ascending: false });
-
         if (subs && subs.length > 0) {
           const ids = subs.map((s) => s.creator_id);
           const { data: profiles } = await supabase
             .from('profiles')
             .select('id, username, display_name, avatar_url')
             .in('id', ids);
-
           const map = new Map((profiles || []).map((p) => [p.id, p]));
           const enriched = subs.map((s) => ({
             ...s,
@@ -142,10 +124,8 @@ export default function DashboardPage() {
           setMySubCount(0);
         }
       }
-
       setLoading(false);
     };
-
     loadProfile();
   }, []);
 
@@ -302,12 +282,20 @@ export default function DashboardPage() {
                   <h1 className="text-3xl font-bold">Welcome back, {displayName}</h1>
                   <p className="text-zinc-400 mt-1">Here’s what’s happening with your account</p>
                 </div>
-                <Link
-                  href="/discover"
-                  className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 px-5 py-2.5 rounded-xl text-sm font-medium transition"
-                >
-                  <Search size={18} /> Discover Creators
-                </Link>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href="/calls"
+                    className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-700 hover:border-pink-500/50 px-4 py-2.5 rounded-xl text-sm font-medium transition"
+                  >
+                    <Phone size={18} className="text-pink-400" /> Call history
+                  </Link>
+                  <Link
+                    href="/discover"
+                    className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 px-5 py-2.5 rounded-xl text-sm font-medium transition"
+                  >
+                    <Search size={18} /> Discover Creators
+                  </Link>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -341,7 +329,6 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* Your Subscriptions — list of creators */}
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col">
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -351,7 +338,6 @@ export default function DashboardPage() {
                       View all
                     </Link>
                   </div>
-
                   {mySubscriptions.length === 0 ? (
                     <div className="text-center py-10 text-zinc-500 flex-1">
                       <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
@@ -408,7 +394,6 @@ export default function DashboardPage() {
                       )}
                     </div>
                   )}
-
                   <Link
                     href="/subscriptions"
                     className="w-full text-center px-5 py-2.5 bg-pink-600 hover:bg-pink-700 rounded-xl text-sm font-medium transition text-white"
@@ -420,18 +405,26 @@ export default function DashboardPage() {
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-lg font-semibold flex items-center gap-2">
-                      <Film size={20} className="text-pink-400" /> Your Library
+                      <Phone size={20} className="text-pink-400" /> Call history
                     </h2>
-                    <Link href="/library" className="text-sm text-pink-400 hover:text-pink-300">
+                    <Link href="/calls" className="text-sm text-pink-400 hover:text-pink-300">
                       View all
                     </Link>
                   </div>
-                  <div className="text-center py-12 text-zinc-500">
+                  <div className="text-center py-10 text-zinc-500">
                     <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-                      <Film size={28} className="opacity-40" />
+                      <Phone size={28} className="opacity-40" />
                     </div>
-                    <p className="text-sm mb-1">No purchased clips yet</p>
-                    <p className="text-xs text-zinc-600">Clips you buy will appear here</p>
+                    <p className="text-sm mb-1">Voice calls with creators</p>
+                    <p className="text-xs text-zinc-600 mb-5">
+                      Past calls and spend appear here
+                    </p>
+                    <Link
+                      href="/calls"
+                      className="inline-flex items-center gap-2 text-sm text-pink-400 hover:text-pink-300 font-medium"
+                    >
+                      Open call history →
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -454,17 +447,25 @@ export default function DashboardPage() {
                 <h1 className="text-3xl font-bold">Welcome, {displayName}</h1>
                 <p className="text-zinc-400 mt-1">Manage your content and earnings</p>
               </div>
-              <button
-                onClick={() => setIsLive(!isLive)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition ${
-                  isLive
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90'
-                }`}
-              >
-                <Radio size={18} />
-                {isLive ? 'End Stream' : 'Go Live'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/calls"
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium border border-zinc-700 hover:border-pink-500/50 bg-zinc-900 transition text-sm"
+                >
+                  <Phone size={18} className="text-pink-400" /> Call history
+                </Link>
+                <button
+                  onClick={() => setIsLive(!isLive)}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition ${
+                    isLive
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90'
+                  }`}
+                >
+                  <Radio size={18} />
+                  {isLive ? 'End Stream' : 'Go Live'}
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -492,6 +493,26 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-2xl font-bold text-pink-400">{subCount}</p>
               </div>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center">
+                  <Phone className="text-pink-400" size={22} />
+                </div>
+                <div>
+                  <p className="font-semibold">Voice call history</p>
+                  <p className="text-sm text-zinc-400">
+                    Past calls, duration, earnings and ratings
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/calls"
+                className="px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-sm font-medium transition text-center"
+              >
+                View calls
+              </Link>
             </div>
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">

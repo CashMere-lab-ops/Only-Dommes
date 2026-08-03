@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Edit3, TrendingUp, Users, DollarSign, Heart,
-  Settings, Bell, Shield, LogOut
+  Settings, Bell, Shield, LogOut, Phone
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -26,35 +26,28 @@ export default function MyAccountPage() {
         router.push('/login');
         return;
       }
-
       const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
-
       setProfile(data);
 
-      // Followers
       const { count: fCount } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', user.id);
-
       setFollowersCount(fCount || 0);
 
-      // Active subscribers (people subscribed TO you)
       const { count: sCount } = await supabase
         .from('subscriptions')
         .select('*', { count: 'exact', head: true })
         .eq('creator_id', user.id)
         .eq('status', 'active');
-
       setSubscribersCount(sCount || 0);
 
       setLoading(false);
     };
-
     loadProfile();
   }, []);
 
@@ -207,6 +200,16 @@ export default function MyAccountPage() {
                   <div className="text-sm text-zinc-400">Update bio, photos & links</div>
                 </Link>
                 <Link
+                  href="/calls"
+                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
+                >
+                  <Phone className="text-pink-400 mb-3" size={24} />
+                  <div className="font-semibold">Call history</div>
+                  <div className="text-sm text-zinc-400">
+                    {isCreator ? 'Earnings & ratings' : 'Your past calls'}
+                  </div>
+                </Link>
+                <Link
                   href="/earnings"
                   className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
                 >
@@ -233,14 +236,6 @@ export default function MyAccountPage() {
                     <div className="text-sm text-zinc-400">Creators you support</div>
                   </Link>
                 )}
-                <Link
-                  href="/settings"
-                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
-                >
-                  <DollarSign className="text-pink-400 mb-3" size={24} />
-                  <div className="font-semibold">Payout Settings</div>
-                  <div className="text-sm text-zinc-400">Bank & crypto details</div>
-                </Link>
               </div>
             </div>
 
@@ -282,8 +277,17 @@ export default function MyAccountPage() {
                 <h2 className="text-xl font-semibold mb-4 px-1">Billing & Support</h2>
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
                   <Link
-                    href="/earnings"
+                    href="/calls"
                     className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Phone size={20} /> Call history
+                    </div>
+                    <span className="text-zinc-400">→</span>
+                  </Link>
+                  <Link
+                    href="/earnings"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
                   >
                     <div className="flex items-center gap-3">
                       <DollarSign size={20} /> Payout History
