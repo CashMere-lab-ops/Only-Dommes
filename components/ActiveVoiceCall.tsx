@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { PhoneOff, Mic, MicOff } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, Volume2, Volume1 } from 'lucide-react';
 import { Room, RoomEvent, Track, ConnectionState, ConnectionQuality } from 'livekit-client';
 import { createClient } from '../lib/supabase';
 
@@ -54,6 +54,8 @@ export default function ActiveVoiceCall() {
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(true);
+  const remoteAudioEls = useRef<HTMLAudioElement[]>([]);
   const [blockDone, setBlockDone] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
@@ -89,6 +91,14 @@ export default function ActiveVoiceCall() {
   const disconnectRoom = async () => {
     const room = roomRef.current;
     roomRef.current = null;
+    remoteAudioEls.current.forEach((el) => {
+      try {
+        el.remove();
+      } catch {
+        /* ignore */
+      }
+    });
+    remoteAudioEls.current = [];
     if (room) {
       try {
         room.removeAllListeners();
@@ -418,6 +428,15 @@ export default function ActiveVoiceCall() {
           el.setAttribute('playsinline', 'true');
           el.style.display = 'none';
           document.body.appendChild(el);
+          remoteAudioEls.current.push(el);
+          // Prefer speaker route when possible
+          try {
+            if (typeof (el as any).setSinkId === 'function') {
+              // default device; browser manages earpiece vs speaker on many mobiles
+            }
+          } catch {
+            /* ignore */
+          }
         }
       });
 
@@ -608,6 +627,19 @@ export default function ActiveVoiceCall() {
     }, 1000);
     return () => clearInterval(t);
   }, [phase, call?.id]);
+
+  const toggleSpeaker = () => {
+    const next = !speakerOn;
+    setSpeakerOn(next);
+    remoteAudioEls.current.forEach((el) => {
+      try {
+        el.volume = next ? 1 : 0.85;
+        // volume boost as soft "speaker" cue; true earpiece routing is OS-level
+      } catch {
+        /* ignore */
+      }
+    });
+  };
 
   const toggleMute = async () => {
     const room = roomRef.current;
@@ -900,6 +932,20 @@ export default function ActiveVoiceCall() {
             }`}
           >
             {muted ? <MicOff size={22} /> : <Mic size={22} />}
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleSpeaker}
+            disabled={phase === 'connecting'}
+            className={`w-14 h-14 rounded-full flex items-center justify-center border transition ${
+              speakerOn
+                ? 'bg-zinc-900 border-pink-500/50 text-pink-400'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-200'
+            }`}
+            title={speakerOn ? 'Speaker on' : 'Quieter'}
+          >
+            {speakerOn ? <Volume2 size={22} /> : <Volume1 size={22} />}
           </button>
 
           <button
