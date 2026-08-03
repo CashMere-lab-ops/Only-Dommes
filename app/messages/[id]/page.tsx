@@ -219,6 +219,12 @@ export default function ChatPage() {
   const [incomingCall, setIncomingCall] = useState<any | null>(null);
   const [myOutgoingCall, setMyOutgoingCall] = useState<any | null>(null);
   const [callSheetError, setCallSheetError] = useState('');
+  const [micReady, setMicReady] = useState(false);
+  const [micTesting, setMicTesting] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [micError, setMicError] = useState('');
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micAnimRef = useRef<number | null>(null);
   const [callActionLoading, setCallActionLoading] = useState(false);
 
   const [recording, setRecording] = useState(false);
@@ -825,6 +831,55 @@ export default function ChatPage() {
     }
   };
 
+  
+  const stopMicTest = () => {
+    if (micAnimRef.current) {
+      cancelAnimationFrame(micAnimRef.current);
+      micAnimRef.current = null;
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((tr) => tr.stop());
+      micStreamRef.current = null;
+    }
+    setMicTesting(false);
+    setMicLevel(0);
+  };
+
+  const startMicTest = async () => {
+    setMicError('');
+    setMicReady(false);
+    stopMicTest();
+    setMicTesting(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length;
+        setMicLevel(Math.min(100, Math.round((avg / 80) * 100)));
+        micAnimRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+      setMicReady(true);
+    } catch (e: any) {
+      setMicError(e.message || 'Microphone permission denied');
+      setMicTesting(false);
+      setMicReady(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => stopMicTest();
+  }, []);
+
   const requestVoiceCall = async () => {
     if (!userId || !otherUserId || requestingCall || !canRequestCall) return;
     setRequestingCall(true);
@@ -888,6 +943,7 @@ export default function ChatPage() {
 
       setMyOutgoingCall(data);
       setShowCallSheet(false);
+      stopMicTest();
 
       await createNotification({
         userId: otherUserId,
@@ -1829,6 +1885,39 @@ export default function ChatPage() {
             <p className="text-xs text-zinc-500 mb-4">
               We hold the minimum on your wallet. You only pay for time used (at least the minimum if you hang up early).
             </p>
+            <div className="mb-4 rounded-xl border border-zinc-700 bg-zinc-800/80 px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-zinc-200">Microphone check</p>
+                <button
+                  type="button"
+                  onClick={startMicTest}
+                  className="text-xs text-pink-400 hover:text-pink-300"
+                >
+                  Retry
+                </button>
+              </div>
+              {micError ? (
+                <p className="text-xs text-red-400">{micError}</p>
+              ) : (
+                <>
+                  <div className="h-2 rounded-full bg-zinc-900 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-pink-500 to-rose-400 transition-all duration-75"
+                      style={{ width: `${micLevel}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-2">
+                    {micReady
+                      ? micLevel > 5
+                        ? 'Looking good — speak to see the bar move'
+                        : 'Mic on — say something'
+                      : micTesting
+                      ? 'Asking for microphone access…'
+                      : 'Tap Retry to test your mic'}
+                  </p>
+                </>
+              )}
+            </div>
             {callSheetError && (
               <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
                 {callSheetError}
@@ -1837,7 +1926,7 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={requestVoiceCall}
-              disabled={requestingCall}
+              disabled={requestingCall || !micReady}
               className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 py-3.5 rounded-xl font-semibold text-white"
             >
               {requestingCall ? 'Requesting...' : 'Request call'}
@@ -1951,7 +2040,7 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => { setCallSheetError(''); setShowCallSheet(true); }}
+              onClick={() => { setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
               className="w-9 h-9 rounded-full bg-pink-600 text-white flex items-center justify-center"
               title="Voice call"
             >
@@ -2048,7 +2137,7 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => { setCallSheetError(''); setShowCallSheet(true); }}
+              onClick={() => { setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium"
             >
               <Phone size={16} />
