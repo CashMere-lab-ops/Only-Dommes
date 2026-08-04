@@ -4,6 +4,7 @@ import "./globals.css";
 import IncomingCallListener from "../components/IncomingCallListener";
 import OutgoingCallListener from "../components/OutgoingCallListener";
 import ActiveVoiceCall from "../components/ActiveVoiceCall";
+import SessionTimeout from "../components/SessionTimeout";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <SessionTimeout />
         <IncomingCallListener />
         <OutgoingCallListener />
         <ActiveVoiceCall />
