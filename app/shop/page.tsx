@@ -188,13 +188,27 @@ export default function ShopPage() {
       }
 
       if (convoId) {
-        const note = buyNote.trim()
-          ? `\nNote: ${buyNote.trim()}`
-          : '';
+        const cover = viewer.photos?.[0] || null;
+        const noteLine = buyNote.trim() ? buyNote.trim() : '';
+        const content = [
+          '🛒 ORDER_REQUEST',
+          `order:${order.id}`,
+          `title:${viewer.title}`,
+          `price:${Number(viewer.price).toFixed(2)}`,
+          `category:${viewer.category || ''}`,
+          `condition:${viewer.condition || ''}`,
+          noteLine ? `note:${noteLine}` : '',
+          'Open Dashboard → Accept or Decline',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
         await supabase.from('messages').insert({
           conversation_id: convoId,
           sender_id: currentUserId,
-          content: `🛒 Order request: "${viewer.title}" · £${Number(viewer.price).toFixed(2)}${note}\n\n(Payment setup coming soon — please confirm if available.)`,
+          content,
+          media_url: cover,
+          media_type: cover ? 'order_request' : 'order_request',
         });
         await supabase
           .from('conversations')

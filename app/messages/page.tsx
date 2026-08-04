@@ -211,6 +211,11 @@ export default function MessagesPage() {
     }
 
     const prefix = isFromMe ? 'You: ' : '';
+    if (msg.media_type === 'order_request' || content.includes('ORDER_REQUEST')) {
+      const titleLine = content.split('\n').find((l: string) => l.startsWith('title:'));
+      const title = titleLine ? titleLine.slice(6) : 'item';
+      return `${prefix}🛒 Order · ${title}`;
+    }
     if (
       msg.media_type === 'image' ||
       msg.media_url?.match(/\.(jpg|jpeg|png|gif|webp)/i)

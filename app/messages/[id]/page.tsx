@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock,
-  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid, Phone
+  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid, Phone,
+  ShoppingBag, ExternalLink, Package
 } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
@@ -1329,7 +1330,28 @@ export default function ChatPage() {
     return formatLastSeen(otherUser?.last_seen_at) || `@${otherUser?.username}`;
   };
 
+  const parseOrderRequest = (content?: string | null) => {
+    if (!content || !content.includes('ORDER_REQUEST')) return null;
+    const lines = content.split('\n');
+    const get = (key: string) => {
+      const line = lines.find((l) => l.startsWith(`${key}:`));
+      return line ? line.slice(key.length + 1) : '';
+    };
+    return {
+      orderId: get('order'),
+      title: get('title') || 'Item',
+      price: get('price') || '0.00',
+      category: get('category'),
+      condition: get('condition'),
+      note: get('note'),
+    };
+  };
+
   const mediaLabel = (m: any) => {
+    if (m?.media_type === 'order_request' || (m?.content || '').includes('ORDER_REQUEST')) {
+      const o = parseOrderRequest(m.content);
+      return o ? `🛒 Order · ${o.title}` : '🛒 Order request';
+    }
     if (m?.media_type === 'audio') return '🎤 Voice note';
     if (m?.media_type === 'video') return '🎬 Video';
     if (m?.media_type === 'image') return '📷 Photo';
@@ -1389,6 +1411,91 @@ export default function ChatPage() {
               <Phone size={12} className="text-pink-400 flex-shrink-0" />
               <span>{label}</span>
             </p>
+          </div>
+        </div>
+      );
+    }
+
+    const orderReq =
+      msg.media_type === 'order_request' || (msg.content || '').includes('ORDER_REQUEST')
+        ? parseOrderRequest(msg.content)
+        : null;
+
+    if (orderReq) {
+      return (
+        <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+          <div
+            className={`max-w-[85%] sm:max-w-[320px] rounded-2xl overflow-hidden border ${
+              mine
+                ? 'border-pink-500/30 rounded-br-md'
+                : 'border-zinc-700 rounded-bl-md'
+            } bg-zinc-900 shadow-lg`}
+          >
+            {/* Photo */}
+            <div className="relative aspect-[4/3] bg-zinc-800">
+              {msg.media_url ? (
+                <img
+                  src={msg.media_url}
+                  alt={orderReq.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                  <Package size={40} />
+                </div>
+              )}
+              <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-black/70 text-white text-[11px] font-semibold px-2.5 py-1 rounded-full">
+                <ShoppingBag size={12} className="text-pink-400" />
+                Order request
+              </div>
+            </div>
+
+            {/* Details */}
+            <div className="p-3.5 space-y-2">
+              <div>
+                <p className="font-semibold text-[15px] leading-snug">{orderReq.title}</p>
+                <p className="text-pink-400 font-bold text-lg mt-0.5">
+                  £{orderReq.price}
+                </p>
+                {(orderReq.category || orderReq.condition) && (
+                  <p className="text-xs text-zinc-500 mt-1">
+                    {[orderReq.category, orderReq.condition].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+
+              {orderReq.note && (
+                <div className="bg-zinc-800/80 rounded-xl px-3 py-2">
+                  <p className="text-[11px] text-zinc-500 mb-0.5">Buyer note</p>
+                  <p className="text-sm text-zinc-200">{orderReq.note}</p>
+                </div>
+              )}
+
+              {!mine && (
+                <Link
+                  href="/dashboard"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white text-sm font-semibold transition"
+                >
+                  Accept or decline
+                  <ExternalLink size={14} />
+                </Link>
+              )}
+              {mine && (
+                <p className="text-center text-xs text-zinc-500 py-1">
+                  Waiting for seller to respond
+                </p>
+              )}
+
+              <p className="text-[10px] text-zinc-500 text-right">
+                {time(msg.created_at)}
+                {mine &&
+                  (msg.is_read || msg.read_at ? (
+                    <CheckCheck size={12} className="inline ml-1 text-pink-300/80" />
+                  ) : (
+                    <Check size={12} className="inline ml-1 text-zinc-500" />
+                  ))}
+              </p>
+            </div>
           </div>
         </div>
       );
