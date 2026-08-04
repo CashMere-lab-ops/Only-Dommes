@@ -12,14 +12,30 @@ import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
 type Item = {
-  id: number;
+  id: string;
+  creator_id?: string;
   title: string;
-  description?: string;
+  description?: string | null;
   price: number;
   category: string;
   condition: string;
   photos: string[];
+  status?: 'available' | 'sold' | 'hidden';
+  created_at?: string;
 };
+
+const SHOP_CATEGORIES = [
+  'Underwear',
+  'Socks',
+  'Heels',
+  'Boots',
+  'Shoes',
+  'Sandals',
+  'Flip Flops',
+  'Tights / Stockings',
+  'Lingerie',
+  'Other',
+];
 
 export default function DashboardPage() {
   const supabase = createClient();
@@ -48,6 +64,7 @@ export default function DashboardPage() {
     condition: 'Worn',
     photos: [] as string[],
   });
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [pricing, setPricing] = useState({
     privatePerMinute: 8,
     minPrivateMinutes: 5,
@@ -124,6 +141,20 @@ export default function DashboardPage() {
           setMySubCount(0);
         }
       }
+      if (data?.account_type === 'creator') {
+        const { data: items } = await supabase
+          .from('shop_items')
+          .select('*')
+          .eq('creator_id', user.id)
+          .order('created_at', { ascending: false });
+        setMyItems(
+          (items || []).map((row: any) => ({
+            ...row,
+            photos: Array.isArray(row.photos) ? row.photos : [],
+          }))
+        );
+      }
+
       setLoading(false);
     };
     loadProfile();
@@ -145,6 +176,7 @@ export default function DashboardPage() {
 
   const openEditItem = (item: Item) => {
     setEditingItem(item);
+    setPhotoFiles([]);
     setItemForm({
       title: item.title,
       description: item.description || '',
@@ -165,51 +197,148 @@ export default function DashboardPage() {
       return;
     }
     const filesToAdd = Array.from(files).slice(0, remainingSlots);
-    const newPhotos = filesToAdd.map((file) => URL.createObjectURL(file));
+    const previews = filesToAdd.map((file) => URL.createObjectURL(file));
+    setPhotoFiles((prev) => [...prev, ...filesToAdd]);
     setItemForm((prev) => ({
       ...prev,
-      photos: [...prev.photos, ...newPhotos],
+      photos: [...prev.photos, ...previews],
     }));
+    e.target.value = '';
   };
 
   const removePhoto = (index: number) => {
-    setItemForm((prev) => ({
-      ...prev,
-      photos: prev.photos.filter((_, i) => i !== index),
-    }));
+    setItemForm((prev) => {
+      const url = prev.photos[index];
+      if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+      return { ...prev, photos: prev.photos.filter((_, i) => i !== index) };
+    });
+    // photoFiles only tracks NEW files in order after existing remote urls
+    setPhotoFiles((prev) => {
+      const remoteCount = itemForm.photos.filter((u) => !u.startsWith('blob:')).length;
+      const fileIndex = index - remoteCount;
+      if (fileIndex < 0) return prev;
+      return prev.filter((_, i) => i !== fileIndex);
+    });
   };
 
-  const handleSaveItem = () => {
-    if (!itemForm.title) return;
+  const resetItemForm = () => {
+    itemForm.photos.forEach((u) => {
+      if (u.startsWith('blob:')) URL.revokeObjectURL(u);
+    });
+    setItemForm({
+      title: '',
+      description: '',
+      price: 25,
+      category: 'Underwear',
+      condition: 'Worn',
+      photos: [],
+    });
+    setPhotoFiles([]);
+    setEditingItem(null);
+  };
+
+  const handleSaveItem = async () => {
+    if (!itemForm.title.trim()) return;
     setCreating(true);
-    setTimeout(() => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+
+      // Keep existing remote URLs; upload new blob files
+      const remotePhotos = itemForm.photos.filter((u) => !u.startsWith('blob:'));
+      const uploaded: string[] = [];
+      for (let i = 0; i < photoFiles.length; i++) {
+        const file = photoFiles[i];
+        const ext = file.name.split('.').pop() || 'jpg';
+        const path = `${user.id}/${Date.now()}-${i}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from('shop-items')
+          .upload(path, file, { contentType: file.type });
+        if (upErr) throw upErr;
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from('shop-items').getPublicUrl(path);
+        uploaded.push(publicUrl);
+      }
+      const photos = [...remotePhotos, ...uploaded].slice(0, 3);
+
       if (editingItem) {
+        const { data, error } = await supabase
+          .from('shop_items')
+          .update({
+            title: itemForm.title.trim(),
+            description: itemForm.description.trim() || null,
+            price: Number(itemForm.price) || 0,
+            category: itemForm.category,
+            condition: itemForm.condition,
+            photos,
+          })
+          .eq('id', editingItem.id)
+          .eq('creator_id', user.id)
+          .select()
+          .single();
+        if (error) throw error;
         setMyItems((prev) =>
           prev.map((item) =>
-            item.id === editingItem.id ? { ...item, ...itemForm } : item
+            item.id === editingItem.id
+              ? { ...item, ...data, photos: data.photos || [] }
+              : item
           )
         );
       } else {
-        const newItem: Item = { id: Date.now(), ...itemForm };
-        setMyItems((prev) => [newItem, ...prev]);
+        const { data, error } = await supabase
+          .from('shop_items')
+          .insert({
+            creator_id: user.id,
+            title: itemForm.title.trim(),
+            description: itemForm.description.trim() || null,
+            price: Number(itemForm.price) || 0,
+            category: itemForm.category,
+            condition: itemForm.condition,
+            photos,
+            status: 'available',
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        setMyItems((prev) => [{ ...data, photos: data.photos || [] }, ...prev]);
       }
-      setCreating(false);
+
       setShowItemForm(false);
-      setEditingItem(null);
-      setItemForm({
-        title: '',
-        description: '',
-        price: 25,
-        category: 'Underwear',
-        condition: 'Worn',
-        photos: [],
-      });
-    }, 800);
+      resetItemForm();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Failed to save item');
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleDeleteItem = (id: number) => {
-    if (confirm('Are you sure you want to delete this item?')) {
+  const handleDeleteItem = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    try {
+      const { error } = await supabase.from('shop_items').delete().eq('id', id);
+      if (error) throw error;
       setMyItems((prev) => prev.filter((item) => item.id !== id));
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete');
+    }
+  };
+
+  const markItemStatus = async (id: string, status: 'available' | 'sold' | 'hidden') => {
+    try {
+      const { error } = await supabase
+        .from('shop_items')
+        .update({ status })
+        .eq('id', id);
+      if (error) throw error;
+      setMyItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status } : item))
+      );
+    } catch (err: any) {
+      alert(err.message || 'Failed to update status');
     }
   };
 
@@ -734,7 +863,7 @@ export default function DashboardPage() {
                           <div>
                             <p className="font-medium leading-tight">{item.title}</p>
                             <p className="text-xs text-zinc-400 mt-1">
-                              {item.category} · {item.condition}
+                              {item.category} · {item.condition} · {item.status === 'sold' ? 'Sold' : 'Available'}
                             </p>
                           </div>
                           <span className="font-semibold text-pink-400 whitespace-nowrap">
@@ -979,11 +1108,11 @@ export default function DashboardPage() {
                       onChange={(e) => setItemForm({ ...itemForm, category: e.target.value })}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
                     >
-                      <option value="Underwear">Underwear</option>
-                      <option value="Heels">Heels / Shoes</option>
-                      <option value="Socks">Socks</option>
-                      <option value="Boots">Boots</option>
-                      <option value="Other">Other</option>
+                      {SHOP_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
