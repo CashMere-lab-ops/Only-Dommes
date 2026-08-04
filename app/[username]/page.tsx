@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle
+  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle, Package, ShoppingBag
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
@@ -18,6 +18,7 @@ export default function PublicProfilePage() {
 
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
+  const [shopItems, setShopItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -67,6 +68,23 @@ export default function PublicProfilePage() {
         .limit(20);
 
       setPosts(postsData || []);
+
+      if (profileData.account_type === 'creator') {
+        const { data: shopData } = await supabase
+          .from('shop_items')
+          .select('*')
+          .eq('creator_id', profileData.id)
+          .eq('status', 'available')
+          .order('created_at', { ascending: false });
+        setShopItems(
+          (shopData || []).map((row: any) => ({
+            ...row,
+            photos: Array.isArray(row.photos) ? row.photos : [],
+          }))
+        );
+      } else {
+        setShopItems([]);
+      }
 
       const { count: fCount } = await supabase
         .from('follows')
@@ -471,6 +489,56 @@ export default function PublicProfilePage() {
               <div className="text-3xl font-semibold">{posts.length}</div>
             </div>
           </div>
+
+          {profile?.account_type === 'creator' && shopItems.length > 0 && (
+            <div className="mb-10">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <ShoppingBag size={22} className="text-pink-400" />
+                  Shop
+                </h2>
+                <Link
+                  href="/shop"
+                  className="text-sm text-pink-400 hover:text-pink-300"
+                >
+                  View all →
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {shopItems.map((item) => (
+                  <Link
+                    key={item.id}
+                    href="/shop"
+                    className="bg-zinc-900 border border-zinc-800 hover:border-pink-500/40 rounded-2xl overflow-hidden transition group"
+                  >
+                    <div className="aspect-square bg-zinc-800 relative">
+                      {item.photos?.[0] ? (
+                        <img
+                          src={item.photos[0]}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                          <Package size={28} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2.5">
+                      <p className="text-sm font-medium truncate">{item.title}</p>
+                      <p className="text-pink-400 text-sm font-semibold">
+                        £{Number(item.price).toFixed(2)}
+                      </p>
+                      <p className="text-[11px] text-zinc-500 truncate">
+                        {item.category} · {item.condition}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <h2 className="text-xl font-semibold mb-4">Posts</h2>
