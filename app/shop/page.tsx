@@ -13,6 +13,7 @@ import {
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
+import { createNotification } from '../../lib/notifications';
 
 const CATEGORIES = [
   'All',
@@ -54,10 +55,20 @@ export default function ShopPage() {
   const [search, setSearch] = useState('');
   const [viewer, setViewer] = useState<ShopItem | null>(null);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [buying, setBuying] = useState(false);
+  const [buyNote, setBuyNote] = useState('');
+  const [buySuccess, setBuySuccess] = useState(false);
+  const [buyError, setBuyError] = useState('');
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUserId(user?.id || null);
+
       const { data, error } = await supabase
         .from('shop_items')
         .select('*')
@@ -111,6 +122,9 @@ export default function ShopPage() {
   const openItem = (item: ShopItem) => {
     setViewer(item);
     setPhotoIndex(0);
+    setBuySuccess(false);
+    setBuyError('');
+    setBuyNote('');
   };
 
   const nextPhoto = () => {
@@ -121,6 +135,90 @@ export default function ShopPage() {
   const prevPhoto = () => {
     if (!viewer || viewer.photos.length < 2) return;
     setPhotoIndex((i) => (i - 1 + viewer.photos.length) % viewer.photos.length);
+  };
+
+
+  const requestBuy = async () => {
+    if (!viewer || !currentUserId || buying) return;
+    if (viewer.creator_id === currentUserId) {
+      setBuyError("You can't order your own item");
+      return;
+    }
+    setBuying(true);
+    setBuyError('');
+    setBuySuccess(false);
+    try {
+      const { data: order, error } = await supabase
+        .from('shop_orders')
+        .insert({
+          item_id: viewer.id,
+          creator_id: viewer.creator_id,
+          buyer_id: currentUserId,
+          item_title: viewer.title,
+          item_price: viewer.price,
+          status: 'requested',
+          buyer_note: buyNote.trim() || null,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+
+      // Message creator in chat
+      const otherId = viewer.creator_id;
+      const { data: existing } = await supabase
+        .from('conversations')
+        .select('id')
+        .or(
+          `and(participant_1.eq.${currentUserId},participant_2.eq.${otherId}),and(participant_1.eq.${otherId},participant_2.eq.${currentUserId})`
+        )
+        .maybeSingle();
+
+      let convoId = existing?.id;
+      if (!convoId) {
+        const { data: created } = await supabase
+          .from('conversations')
+          .insert({
+            participant_1: currentUserId,
+            participant_2: otherId,
+            last_message_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single();
+        convoId = created?.id;
+      }
+
+      if (convoId) {
+        const note = buyNote.trim()
+          ? `\nNote: ${buyNote.trim()}`
+          : '';
+        await supabase.from('messages').insert({
+          conversation_id: convoId,
+          sender_id: currentUserId,
+          content: `🛒 Order request: "${viewer.title}" · £${Number(viewer.price).toFixed(2)}${note}\n\n(Payment setup coming soon — please confirm if available.)`,
+        });
+        await supabase
+          .from('conversations')
+          .update({ last_message_at: new Date().toISOString() })
+          .eq('id', convoId);
+      }
+
+      await createNotification({
+        userId: viewer.creator_id,
+        actorId: currentUserId,
+        type: 'unlock',
+        title: 'New shop order request',
+        body: `${viewer.title} · £${Number(viewer.price).toFixed(2)}`,
+        link: '/dashboard',
+      });
+
+      setBuySuccess(true);
+      setBuyNote('');
+    } catch (err: any) {
+      console.error(err);
+      setBuyError(err.message || 'Could not place order');
+    } finally {
+      setBuying(false);
+    }
   };
 
   return (
@@ -353,16 +451,44 @@ export default function ShopPage() {
                   </Link>
                 )}
 
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold opacity-60 cursor-not-allowed"
-                >
-                  Buy — coming next
-                </button>
-                <p className="text-center text-xs text-zinc-500">
-                  Orders & payment in the next step
-                </p>
+                {viewer.creator_id === currentUserId ? (
+                  <p className="text-center text-sm text-zinc-500 py-2">
+                    This is your listing
+                  </p>
+                ) : buySuccess ? (
+                  <div className="rounded-xl bg-green-500/10 border border-green-500/30 px-4 py-3 text-center">
+                    <p className="text-green-400 font-medium text-sm">
+                      Order requested
+                    </p>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      The creator was notified and messaged in chat
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      value={buyNote}
+                      onChange={(e) => setBuyNote(e.target.value)}
+                      placeholder="Optional note (size, shipping info…)"
+                      rows={2}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500 resize-none"
+                    />
+                    {buyError && (
+                      <p className="text-sm text-red-400">{buyError}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={requestBuy}
+                      disabled={buying || !currentUserId}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 font-semibold transition disabled:opacity-50"
+                    >
+                      {buying ? 'Sending…' : 'Request to buy'}
+                    </button>
+                    <p className="text-center text-xs text-zinc-500">
+                      No payment yet — creator confirms, then you arrange pay/ship
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>

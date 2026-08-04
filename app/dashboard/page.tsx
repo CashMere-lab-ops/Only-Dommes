@@ -75,6 +75,7 @@ export default function DashboardPage() {
     { id: 2, title: 'Private JOI Custom', price: 45.0, sales: 0 },
   ]);
   const [myItems, setMyItems] = useState<Item[]>([]);
+  const [shopOrders, setShopOrders] = useState<any[]>([]);
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
   const [mySubscriptions, setMySubscriptions] = useState<any[]>([]);
@@ -153,6 +154,14 @@ export default function DashboardPage() {
             photos: Array.isArray(row.photos) ? row.photos : [],
           }))
         );
+
+        const { data: orders } = await supabase
+          .from('shop_orders')
+          .select('*')
+          .eq('creator_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        setShopOrders(orders || []);
       }
 
       setLoading(false);
@@ -807,7 +816,69 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+                          {shopOrders.length > 0 && (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+                  <h2 className="text-lg font-semibold mb-4">Shop order requests</h2>
+                  <div className="space-y-3">
+                    {shopOrders.map((o) => (
+                      <div
+                        key={o.id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3 border-b border-zinc-800 last:border-0"
+                      >
+                        <div>
+                          <p className="font-medium text-sm">{o.item_title}</p>
+                          <p className="text-xs text-zinc-500">
+                            £{Number(o.item_price).toFixed(2)} · {o.status}
+                            {o.buyer_note ? ` · "${o.buyer_note}"` : ''}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          {o.status === 'requested' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase
+                                    .from('shop_orders')
+                                    .update({ status: 'accepted' })
+                                    .eq('id', o.id);
+                                  setShopOrders((prev) =>
+                                    prev.map((x) =>
+                                      x.id === o.id ? { ...x, status: 'accepted' } : x
+                                    )
+                                  );
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-pink-600 text-white"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase
+                                    .from('shop_orders')
+                                    .update({ status: 'cancelled' })
+                                    .eq('id', o.id);
+                                  setShopOrders((prev) =>
+                                    prev.map((x) =>
+                                      x.id === o.id ? { ...x, status: 'cancelled' } : x
+                                    )
+                                  );
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400"
+                              >
+                                Decline
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+<div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <Package size={20} className="text-pink-400" /> Physical Items for Sale
