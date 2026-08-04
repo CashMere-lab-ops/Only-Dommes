@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
+import { createImageThumbnail } from '../../../lib/createThumbnail';
 import { createNotification } from '../../../lib/notifications';
 import { isWithinVoiceDnd } from '../../../lib/voiceDnd';
 
@@ -165,7 +166,12 @@ const MediaBlock = memo(function MediaBlock({
       onClick={() => onOpenViewer(msg.media_url, 'image')}
       className="block w-full relative min-w-[200px]"
     >
-      <img src={msg.media_url} alt="" className="w-full max-h-[320px] object-cover" />
+      <img
+        src={msg.thumbnail_url || msg.media_url}
+        alt=""
+        className="w-full max-h-[320px] object-cover"
+        loading="lazy"
+      />
       {msg.is_locked && mine && (
         <span className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
           <Lock size={10} /> £{Number(msg.unlock_price || 0).toFixed(2)}
@@ -1079,6 +1085,7 @@ export default function ChatPage() {
     try {
       let mediaUrl: string | null = null;
       let mediaType: string | null = null;
+      let thumbnailUrl: string | null = null;
 
       if (audioBlob) {
         const ext = audioBlob.type.includes('webm') ? 'webm' : 'mp4';
@@ -1091,9 +1098,10 @@ export default function ChatPage() {
         mediaUrl = data.publicUrl;
         mediaType = 'audio';
       } else if (mediaFile && mediaKind) {
+        const stamp = Date.now();
         const ext =
           mediaFile.name.split('.').pop() || (mediaKind === 'video' ? 'mp4' : 'jpg');
-        const path = `${userId}/${Date.now()}.${ext}`;
+        const path = `${userId}/${stamp}.${ext}`;
         const { error: upError } = await supabase.storage
           .from('chat-media')
           .upload(path, mediaFile, { contentType: mediaFile.type });
@@ -1101,6 +1109,24 @@ export default function ChatPage() {
         const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
         mediaUrl = data.publicUrl;
         mediaType = mediaKind;
+
+        if (mediaKind === 'image') {
+          try {
+            const thumbFile = await createImageThumbnail(mediaFile, 600, 0.7);
+            const thumbPath = `${userId}/thumb-${stamp}.jpg`;
+            const { error: thumbErr } = await supabase.storage
+              .from('chat-media')
+              .upload(thumbPath, thumbFile, { contentType: 'image/jpeg' });
+            if (!thumbErr) {
+              const { data: td } = supabase.storage
+                .from('chat-media')
+                .getPublicUrl(thumbPath);
+              thumbnailUrl = td.publicUrl;
+            }
+          } catch (e) {
+            console.warn('chat thumb failed', e);
+          }
+        }
       }
 
       const { data, error } = await supabase
@@ -1114,6 +1140,7 @@ export default function ChatPage() {
               ? `🎤 Voice note (${formatDuration(audioDuration)})`
               : ''),
           media_url: mediaUrl,
+          thumbnail_url: thumbnailUrl,
           media_type: mediaType,
           is_locked: shouldLock,
           unlock_price: price,

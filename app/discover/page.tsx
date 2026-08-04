@@ -54,6 +54,7 @@ export default function DiscoverPage() {
   const [reporting, setReporting] = useState(false);
   const lastTap = useRef<Record<string, number>>({});
   const [likedAnimation, setLikedAnimation] = useState<string | null>(null);
+  const [photoViewer, setPhotoViewer] = useState<string | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -703,7 +704,27 @@ export default function DiscoverPage() {
                         {post.media_type === 'photo' && post.media_url && (
                           <div
                             className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative cursor-pointer"
-                            onClick={() => handleDoubleTap(post.id)}
+                            onClick={() => {
+                              const now = Date.now();
+                              const last = lastTap.current[post.id] || 0;
+                              lastTap.current[post.id] = now;
+                              if (now - last < 300) {
+                                // double tap → like
+                                if (!likedPosts.has(post.id)) handleLike(post.id);
+                                else {
+                                  setLikedAnimation(post.id);
+                                  setTimeout(() => setLikedAnimation(null), 600);
+                                }
+                              } else {
+                                // single tap → open full after short delay
+                                const tapId = now;
+                                setTimeout(() => {
+                                  if (lastTap.current[post.id] === tapId) {
+                                    setPhotoViewer(post.media_url);
+                                  }
+                                }, 280);
+                              }
+                            }}
                           >
                             <img
                               src={post.thumbnail_url || post.media_url}
@@ -1006,6 +1027,29 @@ export default function DiscoverPage() {
               </div>
             </div>
           )}
+
+          {/* Full-size photo viewer */}
+          {photoViewer && (
+            <div
+              className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4"
+              onClick={() => setPhotoViewer(null)}
+            >
+              <button
+                type="button"
+                onClick={() => setPhotoViewer(null)}
+                className="absolute top-4 right-4 z-[101] w-10 h-10 rounded-full bg-zinc-800 text-white flex items-center justify-center hover:bg-zinc-700"
+              >
+                <X size={22} />
+              </button>
+              <img
+                src={photoViewer}
+                alt="Full size"
+                className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          )}
+
         </main>
       </div>
     </AuthGuard>
