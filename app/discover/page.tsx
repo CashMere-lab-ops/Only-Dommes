@@ -194,11 +194,6 @@ export default function DiscoverPage() {
     const isLiked = likedPosts.has(postId);
     const post = posts.find((p) => p.id === postId);
 
-    if (!isLiked) {
-      setLikedAnimation(postId);
-      setTimeout(() => setLikedAnimation(null), 600);
-    }
-
     setLikedPosts((prev) => {
       const newSet = new Set(prev);
       if (isLiked) newSet.delete(postId);
@@ -249,18 +244,20 @@ export default function DiscoverPage() {
     }
   };
 
-  const handleDoubleTap = (postId: string) => {
-    const now = Date.now();
-    const last = lastTap.current[postId] || 0;
-    if (now - last < 300) {
-      if (!likedPosts.has(postId)) {
-        handleLike(postId);
-      } else {
-        setLikedAnimation(postId);
-        setTimeout(() => setLikedAnimation(null), 600);
-      }
+  const showDoubleTapHeart = (postId: string) => {
+    setLikedAnimation(postId);
+    window.setTimeout(() => {
+      setLikedAnimation((cur) => (cur === postId ? null : cur));
+    }, 700);
+  };
+
+  const handleDoubleTapLike = (postId: string) => {
+    // Always show one smooth heart
+    showDoubleTapHeart(postId);
+    // Only write like if not already liked
+    if (!likedPosts.has(postId)) {
+      handleLike(postId);
     }
-    lastTap.current[postId] = now;
   };
 
   const toggleComments = async (postId: string) => {
@@ -703,27 +700,24 @@ export default function DiscoverPage() {
 
                         {post.media_type === 'photo' && post.media_url && (
                           <div
-                            className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative cursor-pointer"
+                            className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative cursor-pointer select-none"
                             onClick={() => {
                               const now = Date.now();
                               const last = lastTap.current[post.id] || 0;
-                              lastTap.current[post.id] = now;
-                              if (now - last < 300) {
-                                // double tap → like
-                                if (!likedPosts.has(post.id)) handleLike(post.id);
-                                else {
-                                  setLikedAnimation(post.id);
-                                  setTimeout(() => setLikedAnimation(null), 600);
-                                }
-                              } else {
-                                // single tap → open full after short delay
-                                const tapId = now;
-                                setTimeout(() => {
-                                  if (lastTap.current[post.id] === tapId) {
-                                    setPhotoViewer(post.media_url);
-                                  }
-                                }, 280);
+                              if (now - last < 320) {
+                                // Double tap → one heart + like
+                                lastTap.current[post.id] = 0;
+                                handleDoubleTapLike(post.id);
+                                return;
                               }
+                              lastTap.current[post.id] = now;
+                              const tapId = now;
+                              window.setTimeout(() => {
+                                if (lastTap.current[post.id] === tapId) {
+                                  setPhotoViewer(post.media_url);
+                                  lastTap.current[post.id] = 0;
+                                }
+                              }, 300);
                             }}
                           >
                             <img
@@ -731,13 +725,14 @@ export default function DiscoverPage() {
                               alt="Post"
                               className="w-full max-h-[420px] object-cover"
                               loading="lazy"
+                              draggable={false}
                             />
                             {showHeartAnim && (
-                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                                 <Heart
-                                  size={80}
-                                  className="text-pink-500 fill-pink-500 animate-ping"
-                                  style={{ animationDuration: '0.6s' }}
+                                  size={88}
+                                  className="text-pink-500 fill-pink-500 drop-shadow-lg heart-pop"
+                                  strokeWidth={0}
                                 />
                               </div>
                             )}
@@ -747,15 +742,18 @@ export default function DiscoverPage() {
                         {post.media_type === 'video' && post.media_url && (
                           <div
                             className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative"
-                            onClick={() => handleDoubleTap(post.id)}
+                            onDoubleClick={(e) => {
+                              e.preventDefault();
+                              handleDoubleTapLike(post.id);
+                            }}
                           >
                             <video src={post.media_url} controls preload="metadata" className="w-full max-h-[420px]" />
                             {showHeartAnim && (
-                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                                 <Heart
-                                  size={80}
-                                  className="text-pink-500 fill-pink-500 animate-ping"
-                                  style={{ animationDuration: '0.6s' }}
+                                  size={88}
+                                  className="text-pink-500 fill-pink-500 drop-shadow-lg heart-pop"
+                                  strokeWidth={0}
                                 />
                               </div>
                             )}
