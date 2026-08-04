@@ -706,9 +706,10 @@ export default function DiscoverPage() {
                             onClick={() => handleDoubleTap(post.id)}
                           >
                             <img
-                              src={post.media_url}
+                              src={post.thumbnail_url || post.media_url}
                               alt="Post"
                               className="w-full max-h-[420px] object-cover"
+                              loading="lazy"
                             />
                             {showHeartAnim && (
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -727,7 +728,7 @@ export default function DiscoverPage() {
                             className="bg-zinc-800 border-y border-zinc-800 max-h-[420px] overflow-hidden relative"
                             onClick={() => handleDoubleTap(post.id)}
                           >
-                            <video src={post.media_url} controls className="w-full max-h-[420px]" />
+                            <video src={post.media_url} controls preload="metadata" className="w-full max-h-[420px]" />
                             {showHeartAnim && (
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <Heart

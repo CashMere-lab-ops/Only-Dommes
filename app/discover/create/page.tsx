@@ -7,6 +7,7 @@ import { ArrowLeft, Image as ImageIcon, Video, X, UploadCloud } from 'lucide-rea
 import Sidebar from '../../../components/Sidebar';
 import AuthGuard from '../../../components/AuthGuard';
 import { createClient } from '../../../lib/supabase';
+import { createImageThumbnail } from '../../../lib/createThumbnail';
 
 export default function CreatePostPage() {
   const router = useRouter();
@@ -27,7 +28,9 @@ export default function CreatePostPage() {
 
   useEffect(() => {
     const loadProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
@@ -100,16 +103,19 @@ export default function CreatePostPage() {
     setError('');
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
 
-      let mediaUrl = null;
-      let finalMediaType = 'text';
+      let mediaUrl: string | null = null;
+      let thumbnailUrl: string | null = null;
+      let finalMediaType: string = 'text';
 
-      // Upload media if exists
       if (mediaFile) {
-        const fileExt = mediaFile.name.split('.').pop();
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const stamp = Date.now();
+        const fileExt = mediaFile.name.split('.').pop() || 'bin';
+        const fileName = `${user.id}-${stamp}.${fileExt}`;
         const filePath = `${user.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
@@ -118,23 +124,43 @@ export default function CreatePostPage() {
 
         if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('posts')
-          .getPublicUrl(filePath);
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from('posts').getPublicUrl(filePath);
 
         mediaUrl = publicUrl;
         finalMediaType = mediaType;
+
+        // Photos: also upload a small thumbnail for the feed
+        if (mediaType === 'photo') {
+          try {
+            const thumbFile = await createImageThumbnail(mediaFile, 800, 0.72);
+            const thumbPath = `${user.id}/thumb-${stamp}.jpg`;
+            const { error: thumbErr } = await supabase.storage
+              .from('posts')
+              .upload(thumbPath, thumbFile, {
+                contentType: 'image/jpeg',
+                upsert: false,
+              });
+            if (!thumbErr) {
+              const {
+                data: { publicUrl: thumbPublic },
+              } = supabase.storage.from('posts').getPublicUrl(thumbPath);
+              thumbnailUrl = thumbPublic;
+            }
+          } catch (thumbError) {
+            console.warn('Thumbnail failed, using full image in feed', thumbError);
+          }
+        }
       }
 
-      // Save post to database
-      const { error: insertError } = await supabase
-        .from('posts')
-        .insert({
-          creator_id: user.id,
-          content: caption.trim() || null,
-          media_url: mediaUrl,
-          media_type: finalMediaType,
-        });
+      const { error: insertError } = await supabase.from('posts').insert({
+        creator_id: user.id,
+        content: caption.trim() || null,
+        media_url: mediaUrl,
+        thumbnail_url: thumbnailUrl,
+        media_type: finalMediaType,
+      });
 
       if (insertError) throw insertError;
 
@@ -165,7 +191,6 @@ export default function CreatePostPage() {
         <Sidebar />
 
         <main className="flex-1 overflow-y-auto">
-          {/* Top Bar */}
           <div className="sticky top-0 z-50 bg-zinc-950/95 backdrop-blur border-b border-zinc-800">
             <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
               <Link
@@ -189,14 +214,12 @@ export default function CreatePostPage() {
           </div>
 
           <div className="max-w-2xl mx-auto px-4 py-6">
-
             {error && (
               <div className="mb-6 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
                 {error}
               </div>
             )}
 
-            {/* User Info */}
             <div className="flex items-center gap-3 mb-6">
               <div className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
                 {profile?.avatar_url ? (
@@ -206,12 +229,13 @@ export default function CreatePostPage() {
                 )}
               </div>
               <div>
-                <p className="font-semibold text-sm">{profile?.display_name || profile?.username}</p>
+                <p className="font-semibold text-sm">
+                  {profile?.display_name || profile?.username}
+                </p>
                 <p className="text-xs text-zinc-400">@{profile?.username}</p>
               </div>
             </div>
 
-            {/* Caption */}
             <div className="mb-6">
               <textarea
                 value={caption}
@@ -225,13 +249,16 @@ export default function CreatePostPage() {
                 className="w-full bg-transparent border-none outline-none resize-none text-base placeholder:text-zinc-500"
               />
               <div className="flex justify-end mt-1">
-                <span className={`text-xs ${caption.length > 450 ? 'text-pink-400' : 'text-zinc-500'}`}>
+                <span
+                  className={`text-xs ${
+                    caption.length > 450 ? 'text-pink-400' : 'text-zinc-500'
+                  }`}
+                >
                   {caption.length}/{maxCaptionLength}
                 </span>
               </div>
             </div>
 
-            {/* Media Preview */}
             {mediaPreview && (
               <div className="mb-6 relative rounded-2xl overflow-hidden border border-zinc-800">
                 {mediaType === 'photo' && (
@@ -242,11 +269,7 @@ export default function CreatePostPage() {
                   />
                 )}
                 {mediaType === 'video' && (
-                  <video
-                    src={mediaPreview}
-                    controls
-                    className="w-full max-h-[480px]"
-                  />
+                  <video src={mediaPreview} controls className="w-full max-h-[480px]" />
                 )}
                 <button
                   onClick={removeMedia}
@@ -257,7 +280,6 @@ export default function CreatePostPage() {
               </div>
             )}
 
-            {/* Upload Area */}
             {!mediaPreview && (
               <div className="mb-8">
                 <div
