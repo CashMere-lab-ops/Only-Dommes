@@ -766,6 +766,8 @@ export default function ChatPage() {
   };
 
 
+  const isCreator = myProfile?.account_type === 'creator';
+
   const canRequestCall =
     myProfile?.account_type !== 'creator' &&
     otherUser?.account_type === 'creator' &&
@@ -1070,7 +1072,7 @@ export default function ChatPage() {
     const messageText = text.trim();
     const mediaFile = file;
     const mediaKind = previewType;
-    const shouldLock = lockPhoto && !!mediaFile;
+    const shouldLock = isCreator && lockPhoto && !!mediaFile;
     const price = shouldLock ? parseFloat(lockPrice) || 5 : null;
     const replyId = replyTo?.id || null;
     const audioBlob = voiceBlob;
@@ -1648,33 +1650,35 @@ export default function ChatPage() {
               <p className="text-xs text-zinc-400">
                 {previewType === 'video' ? 'Video ready (max 30s)' : 'Photo ready'}
               </p>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setLockPhoto(!lockPhoto)}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border font-medium ${
-                    lockPhoto
-                      ? 'bg-pink-600 border-pink-500 text-white'
-                      : 'bg-zinc-800 border-zinc-600 text-zinc-300'
-                  }`}
-                >
-                  <Lock size={12} />
-                  {lockPhoto ? 'Locked' : 'Lock'}
-                </button>
-                {lockPhoto && (
-                  <div className="flex items-center gap-1 bg-zinc-800 border border-zinc-600 rounded-full px-2 py-1">
-                    <span className="text-xs text-zinc-400">£</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="0.5"
-                      value={lockPrice}
-                      onChange={(e) => setLockPrice(e.target.value)}
-                      className="w-14 bg-transparent text-sm outline-none text-white"
-                    />
-                  </div>
-                )}
-              </div>
+              {isCreator && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setLockPhoto(!lockPhoto)}
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border font-medium ${
+                      lockPhoto
+                        ? 'bg-pink-600 border-pink-500 text-white'
+                        : 'bg-zinc-800 border-zinc-600 text-zinc-300'
+                    }`}
+                  >
+                    <Lock size={12} />
+                    {lockPhoto ? 'Locked' : 'Lock'}
+                  </button>
+                  {lockPhoto && (
+                    <div className="flex items-center gap-1 bg-zinc-800 border border-zinc-600 rounded-full px-2 py-1">
+                      <span className="text-xs text-zinc-400">£</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="0.5"
+                        value={lockPrice}
+                        onChange={(e) => setLockPrice(e.target.value)}
+                        className="w-14 bg-transparent text-sm outline-none text-white"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2065,13 +2069,16 @@ export default function ChatPage() {
           >
             <LayoutGrid size={18} />
           </button>
-          <button
-            type="button"
-            onClick={() => setShowTip(true)}
-            className="w-9 h-9 rounded-full bg-pink-600/20 border border-pink-500/40 text-pink-400 flex items-center justify-center"
-          >
-            <DollarSign size={18} />
-          </button>
+          {otherUser?.account_type === 'creator' && (
+            <button
+              type="button"
+              onClick={() => setShowTip(true)}
+              className="w-9 h-9 rounded-full bg-pink-600/20 border border-pink-500/40 text-pink-400 flex items-center justify-center"
+              title="Tip"
+            >
+              <DollarSign size={18} />
+            </button>
+          )}
           {canRequestCall && (
             <button
               type="button"
@@ -2161,14 +2168,16 @@ export default function ChatPage() {
           >
             <LayoutGrid size={18} />
           </button>
-          <button
-            type="button"
-            onClick={() => setShowTip(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600/20 border border-pink-500/40 text-pink-400 hover:bg-pink-600/30 text-sm font-medium"
-          >
-            <DollarSign size={16} />
-            Tip
-          </button>
+          {otherUser?.account_type === 'creator' && (
+            <button
+              type="button"
+              onClick={() => setShowTip(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600/20 border border-pink-500/40 text-pink-400 hover:bg-pink-600/30 text-sm font-medium"
+            >
+              <DollarSign size={16} />
+              Tip
+            </button>
+          )}
           {canRequestCall && (
             <button
               type="button"
