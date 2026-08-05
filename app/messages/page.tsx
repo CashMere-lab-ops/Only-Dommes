@@ -211,6 +211,10 @@ export default function MessagesPage() {
     }
 
     const prefix = isFromMe ? 'You: ' : '';
+    if (msg.media_type === 'system') {
+      const first = (content.split('\n')[0] || 'System update').slice(0, 60);
+      return first;
+    }
     if (msg.media_type === 'order_request' || content.includes('ORDER_REQUEST')) {
       const titleLine = content.split('\n').find((l: string) => l.startsWith('title:'));
       const title = titleLine ? titleLine.slice(6) : 'item';

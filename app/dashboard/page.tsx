@@ -117,6 +117,7 @@ export default function DashboardPage() {
   }, [reserveUsername]);
   const [shopOrders, setShopOrders] = useState<any[]>([]);
   const [buyerOrders, setBuyerOrders] = useState<any[]>([]);
+  const [showAllBuyerOrders, setShowAllBuyerOrders] = useState(false);
   const [trackingDraft, setTrackingDraft] = useState<Record<string, string>>({});
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
@@ -530,6 +531,7 @@ export default function DashboardPage() {
         conversation_id: convoId,
         sender_id: userId,
         content: chatText,
+        media_type: 'system',
       });
       await supabase
         .from('conversations')
@@ -615,6 +617,7 @@ export default function DashboardPage() {
           conversation_id: existing.id,
           sender_id: user.id,
           content: `✨ Order complete: "${order.item_title}"\n\nBuyer confirmed they received this order.`,
+          media_type: 'system',
         });
         await supabase
           .from('conversations')
@@ -741,9 +744,20 @@ export default function DashboardPage() {
 
               {buyerOrders.length > 0 && (
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
-                  <h2 className="text-lg font-semibold mb-4">My shop orders</h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold">My shop orders</h2>
+                    {buyerOrders.length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllBuyerOrders((v) => !v)}
+                        className="text-sm text-pink-400 hover:text-pink-300"
+                      >
+                        {showAllBuyerOrders ? 'Show less' : 'View all'}
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-3">
-                    {buyerOrders.map((o) => (
+                    {(showAllBuyerOrders ? buyerOrders : buyerOrders.slice(0, 3)).map((o) => (
                       <div
                         key={o.id}
                         className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3 border-b border-zinc-800 last:border-0"
@@ -1237,6 +1251,7 @@ export default function DashboardPage() {
                                         conversation_id: convoId,
                                         sender_id: user.id,
                                         content: `✅ Order accepted: "${o.item_title}" · £${Number(o.item_price).toFixed(2)}\n\nSeller confirmed your request. Payment to confirm will be available soon — your address stays private.`,
+                                        media_type: 'system',
                                       });
                                       await supabase
                                         .from('conversations')
@@ -1292,6 +1307,7 @@ export default function DashboardPage() {
                                         conversation_id: existing.id,
                                         sender_id: user.id,
                                         content: `❌ Order declined: "${o.item_title}"\n\nThis request was not accepted.`,
+                                        media_type: 'system',
                                       });
                                       await supabase
                                         .from('conversations')

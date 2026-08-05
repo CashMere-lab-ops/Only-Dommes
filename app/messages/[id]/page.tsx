@@ -1348,6 +1348,7 @@ export default function ChatPage() {
   };
 
   const mediaLabel = (m: any) => {
+    if (m?.media_type === 'system') return m?.content?.split('\n')[0] || 'System update';
     if (m?.media_type === 'order_request' || (m?.content || '').includes('ORDER_REQUEST')) {
       const o = parseOrderRequest(m.content);
       return o ? `🛒 Order · ${o.title}` : '🛒 Order request';
@@ -1411,6 +1412,23 @@ export default function ChatPage() {
               <Phone size={12} className="text-pink-400 flex-shrink-0" />
               <span>{label}</span>
             </p>
+          </div>
+        </div>
+      );
+    }
+
+
+    if (msg.media_type === 'system') {
+      return (
+        <div key={msg.id} className="flex justify-center py-2 px-2">
+          <div className="max-w-[90%] sm:max-w-md rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-4 py-3 text-center shadow-sm">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-pink-400/90 mb-1.5">
+              System
+            </p>
+            <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
+              {msg.content}
+            </p>
+            <p className="text-[10px] text-zinc-600 mt-2">{time(msg.created_at)}</p>
           </div>
         </div>
       );
