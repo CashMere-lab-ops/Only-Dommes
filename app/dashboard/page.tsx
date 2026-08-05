@@ -760,40 +760,42 @@ export default function DashboardPage() {
                     {(showAllBuyerOrders ? buyerOrders : buyerOrders.slice(0, 3)).map((o) => (
                       <div
                         key={o.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3 border-b border-zinc-800 last:border-0"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 border-b border-zinc-800 last:border-0"
                       >
-                        <div>
-                          <p className="font-medium text-sm">{o.item_title}</p>
-                          <p className="text-xs text-zinc-500">
-                            £{Number(o.item_price).toFixed(2)} · {o.status}
+                        <div className="min-w-0">
+                          <p className="font-semibold text-base leading-snug">{o.item_title}</p>
+                          <p className="text-sm text-zinc-400 mt-1">
+                            £{Number(o.item_price).toFixed(2)}
+                            <span className="text-zinc-600 mx-1.5">·</span>
+                            <span className="capitalize text-zinc-300">{o.status}</span>
                           </p>
                           {o.tracking_number && (
-                            <p className="text-[11px] text-zinc-400 mt-0.5">
-                              Tracking: {o.tracking_number}
+                            <p className="text-sm text-zinc-400 mt-1">
+                              Tracking: <span className="text-zinc-200">{o.tracking_number}</span>
                             </p>
                           )}
                         </div>
-                        <div>
+                        <div className="flex-shrink-0">
                           {o.status === 'shipped' && (
                             <button
                               type="button"
                               onClick={() => markOrderCompleteAsBuyer(o)}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-600 to-rose-500 text-white font-medium"
+                              className="text-sm px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-white font-medium"
                             >
                               Confirm received
                             </button>
                           )}
                           {o.status === 'completed' && (
-                            <span className="text-xs text-green-400 font-medium">Complete</span>
+                            <span className="text-sm text-green-400 font-medium">Complete</span>
                           )}
                           {o.status === 'requested' && (
-                            <span className="text-xs text-zinc-500">Awaiting seller</span>
+                            <span className="text-sm text-zinc-400">Awaiting seller</span>
                           )}
                           {o.status === 'accepted' && (
-                            <span className="text-xs text-pink-400">Accepted · shipping soon</span>
+                            <span className="text-sm text-pink-400">Accepted · shipping soon</span>
                           )}
                           {o.status === 'cancelled' && (
-                            <span className="text-xs text-zinc-500">Cancelled</span>
+                            <span className="text-sm text-zinc-500">Cancelled</span>
                           )}
                         </div>
                       </div>

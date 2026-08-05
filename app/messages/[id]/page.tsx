@@ -1420,15 +1420,18 @@ export default function ChatPage() {
 
     if (msg.media_type === 'system') {
       return (
-        <div key={msg.id} className="flex justify-center py-2 px-2">
-          <div className="max-w-[90%] sm:max-w-md rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-4 py-3 text-center shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-pink-400/90 mb-1.5">
-              System
-            </p>
-            <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
+        <div key={msg.id} className="flex justify-center py-3 px-3">
+          <div className="w-full max-w-[min(100%,380px)] rounded-2xl border border-zinc-700/60 bg-gradient-to-b from-zinc-900 to-zinc-950 px-5 py-4 text-center shadow-lg shadow-black/20">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-zinc-800/90 border border-zinc-700/80 px-2.5 py-0.5 mb-2.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-pink-500" />
+              <span className="text-[11px] font-semibold tracking-wide text-zinc-300">
+                System
+              </span>
+            </div>
+            <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
               {msg.content}
             </p>
-            <p className="text-[10px] text-zinc-600 mt-2">{time(msg.created_at)}</p>
+            <p className="text-[11px] text-zinc-500 mt-2.5">{time(msg.created_at)}</p>
           </div>
         </div>
       );
