@@ -56,7 +56,7 @@ const emptyAddress = {
   line1: '',
   line2: '',
   city: '',
-  region: '',
+  county: '',
   postcode: '',
   country: 'United Kingdom',
   phone: '',
@@ -189,6 +189,7 @@ export default function ShopPage() {
       !address.full_name.trim() ||
       !address.line1.trim() ||
       !address.city.trim() ||
+      !address.county.trim() ||
       !address.postcode.trim() ||
       !address.country.trim()
     ) {
@@ -227,8 +228,9 @@ export default function ShopPage() {
           item_price: viewer.price,
           status: 'requested',
           buyer_note: buyNote.trim() || null,
-          // Only city/country visible to creator — never full address
+          // Only county/country visible to creator — never full address
           shipping_city: address.city.trim(),
+          shipping_county: address.county.trim(),
           shipping_country: address.country.trim(),
         })
         .select()
@@ -243,7 +245,7 @@ export default function ShopPage() {
         line1: address.line1.trim(),
         line2: address.line2.trim() || null,
         city: address.city.trim(),
-        region: address.region.trim() || null,
+        region: address.county.trim() || null,
         postcode: address.postcode.trim(),
         country: address.country.trim(),
         phone: address.phone.trim() || null,
@@ -284,7 +286,7 @@ export default function ShopPage() {
           `category:${viewer.category || ''}`,
           `condition:${viewer.condition || ''}`,
           noteLine ? `note:${noteLine}` : '',
-          `ship:${address.city.trim()}, ${address.country.trim()}`,
+          `ship:${address.county.trim()}, ${address.country.trim()}`,
           'Address is private — ship via platform label',
           'Open Dashboard → Accept or Decline',
         ]
@@ -643,13 +645,21 @@ export default function ShopPage() {
                           placeholder="Address line 2 (optional)"
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                         />
+                        <input
+                          value={address.city}
+                          onChange={(e) =>
+                            setAddress({ ...address, city: e.target.value })
+                          }
+                          placeholder="Town / city"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                        />
                         <div className="grid grid-cols-2 gap-2">
                           <input
-                            value={address.city}
+                            value={address.county}
                             onChange={(e) =>
-                              setAddress({ ...address, city: e.target.value })
+                              setAddress({ ...address, county: e.target.value })
                             }
-                            placeholder="City"
+                            placeholder="County"
                             className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                           />
                           <input

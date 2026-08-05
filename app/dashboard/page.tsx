@@ -80,6 +80,40 @@ export default function DashboardPage() {
   const [itemFilter, setItemFilter] = useState<'all' | 'available' | 'reserved' | 'sold' | 'hidden'>('all');
   const [reserveUsername, setReserveUsername] = useState('');
   const [reservingId, setReservingId] = useState<string | null>(null);
+  const [reserveResults, setReserveResults] = useState<any[]>([]);
+  const [reserveSearching, setReserveSearching] = useState(false);
+  const [selectedReserveUser, setSelectedReserveUser] = useState<{
+    id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const q = reserveUsername.trim().toLowerCase().replace(/^@/, '');
+    if (q.length < 3) {
+      setReserveResults([]);
+      setReserveSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setReserveSearching(true);
+    const t = window.setTimeout(async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .ilike('username', `${q}%`)
+        .limit(8);
+      if (!cancelled) {
+        setReserveResults(data || []);
+        setReserveSearching(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [reserveUsername]);
   const [shopOrders, setShopOrders] = useState<any[]>([]);
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
@@ -357,21 +391,29 @@ export default function DashboardPage() {
   };
 
   const reserveItem = async (itemId: string) => {
-    const uname = reserveUsername.trim().toLowerCase().replace(/^@/, '');
-    if (!uname) {
-      alert('Enter a username to reserve for');
-      return;
-    }
     setReservingId(itemId);
     try {
-      const { data: target, error: pErr } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .eq('username', uname)
-        .maybeSingle();
-      if (pErr) throw pErr;
+      let target = selectedReserveUser
+        ? { id: selectedReserveUser.id, username: selectedReserveUser.username }
+        : null;
       if (!target) {
-        alert('No user found with that username');
+        const uname = reserveUsername.trim().toLowerCase().replace(/^@/, '');
+        if (uname.length < 3) {
+          alert('Type at least 3 letters and pick a user from the list');
+          setReservingId(null);
+          return;
+        }
+        const { data, error: pErr } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .eq('username', uname)
+          .maybeSingle();
+        if (pErr) throw pErr;
+        target = data;
+      }
+      if (!target) {
+        alert('No user found — pick someone from the list');
+        setReservingId(null);
         return;
       }
       const { error } = await supabase
@@ -396,6 +438,8 @@ export default function DashboardPage() {
         )
       );
       setReserveUsername('');
+      setSelectedReserveUser(null);
+      setReserveResults([]);
     } catch (err: any) {
       alert(err.message || 'Could not reserve item');
     } finally {
@@ -912,9 +956,9 @@ export default function DashboardPage() {
                             £{Number(o.item_price).toFixed(2)} · {o.status}
                             {o.buyer_note ? ` · "${o.buyer_note}"` : ''}
                           </p>
-                          {(o.shipping_city || o.shipping_country) && (
+                          {(o.shipping_county || o.shipping_country || o.shipping_city) && (
                             <p className="text-[11px] text-zinc-500 mt-0.5">
-                              Ship to: {[o.shipping_city, o.shipping_country]
+                              Ship to: {[o.shipping_county || o.shipping_city, o.shipping_country]
                                 .filter(Boolean)
                                 .join(', ')}{' '}
                               · full address private
@@ -1027,16 +1071,87 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2 mb-4">
-                <input
-                  value={reserveUsername}
-                  onChange={(e) => setReserveUsername(e.target.value)}
-                  placeholder="@username to reserve an item for…"
-                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500"
-                />
-                <p className="text-[11px] text-zinc-500 sm:max-w-[200px]">
-                  Open an available item → use Reserve. Only that sub can buy.
+              <div className="mb-4 relative">
+                <p className="text-xs text-zinc-500 mb-1.5">
+                  Reserve for a sub — type 3+ letters, pick from the list, then tap Reserve on an item
                 </p>
+                {selectedReserveUser ? (
+                  <div className="flex items-center gap-3 bg-zinc-800 border border-pink-500/40 rounded-xl px-3 py-2">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-sm font-bold flex-shrink-0">
+                      {selectedReserveUser.avatar_url ? (
+                        <img src={selectedReserveUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        (selectedReserveUser.display_name || selectedReserveUser.username).charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {selectedReserveUser.display_name || selectedReserveUser.username}
+                      </p>
+                      <p className="text-xs text-zinc-500">@{selectedReserveUser.username}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedReserveUser(null);
+                        setReserveUsername('');
+                      }}
+                      className="text-xs text-zinc-400 hover:text-white"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      value={reserveUsername}
+                      onChange={(e) => {
+                        setReserveUsername(e.target.value);
+                        setSelectedReserveUser(null);
+                      }}
+                      placeholder="Type username (min 3 letters)…"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                      autoComplete="off"
+                    />
+                    {(reserveResults.length > 0 || reserveSearching) &&
+                      reserveUsername.trim().length >= 3 && (
+                        <div className="absolute z-20 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-xl max-h-56 overflow-y-auto">
+                          {reserveSearching && (
+                            <p className="px-3 py-2 text-xs text-zinc-500">Searching…</p>
+                          )}
+                          {reserveResults.map((u) => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedReserveUser(u);
+                                setReserveUsername(u.username);
+                                setReserveResults([]);
+                              }}
+                              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800 transition text-left"
+                            >
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                {u.avatar_url ? (
+                                  <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  (u.display_name || u.username).charAt(0).toUpperCase()
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">
+                                  {u.display_name || u.username}
+                                </p>
+                                <p className="text-xs text-zinc-500">@{u.username}</p>
+                              </div>
+                            </button>
+                          ))}
+                          {!reserveSearching && reserveResults.length === 0 && (
+                            <p className="px-3 py-2 text-xs text-zinc-500">No users found</p>
+                          )}
+                        </div>
+                      )}
+                  </>
+                )}
               </div>
 
               {myItems.filter((i) =>
