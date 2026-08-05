@@ -9,31 +9,77 @@ export type ShippingPoint = {
   town: string;
   postcode: string;
   carrier: string;
-  distance?: string;
   meta?: string;
 };
 
+/** UK postcode: DE742YF → DE74 2YF */
+function formatUkPostcode(raw: string): string {
+  const clean = raw.replace(/\s+/g, '').toUpperCase();
+  if (clean.length < 5) return clean;
+  return `${clean.slice(0, -3)} ${clean.slice(-3)}`;
+}
+
+function mapInpostItem(item: any): ShippingPoint | null {
+  try {
+    const details = item?.address_details || {};
+    const building = details.building_number || item?.address?.line1 || '';
+    let name = item?.display_name || 'InPost Locker';
+    if (typeof building === 'string' && building.includes(' - ')) {
+      name = building.split(' - ').slice(1).join(' - ').trim() || name;
+    } else if (typeof building === 'string' && building.startsWith('InPost')) {
+      name = building.replace(/^InPost Locker\s*-?\s*/i, '').trim() || name;
+    }
+
+    const line =
+      details.street ||
+      (item?.address?.line1 ? String(item.address.line1).split(' InPost')[0] : '') ||
+      item?.location_description ||
+      '';
+
+    const town = details.city || '';
+    const postcode = details.post_code || '';
+    const id = String(item?.name || item?.id || '');
+    if (!id) return null;
+
+    const avail = item?.locker_availability?.details || {};
+    const metaParts = [
+      item?.distance != null ? `${Math.round(Number(item.distance))}m` : null,
+      avail.A != null ? `S:${avail.A}` : null,
+      avail.B != null ? `M:${avail.B}` : null,
+      avail.C != null ? `L:${avail.C}` : null,
+    ].filter(Boolean);
+
+    return {
+      id,
+      name: String(name),
+      line: String(line),
+      town: String(town),
+      postcode: String(postcode),
+      carrier: 'inpost',
+      meta: metaParts.length ? metaParts.join(' · ') : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
- * GET /api/shipping/points?carrier=inpost&postcode=SW1A1AA
- *
- * Live search:
- * - inpost → real UK lockers (via inpost package)
- * - evri | royal_mail | yodel → empty list + hint (need business API later)
+ * GET /api/shipping/points?carrier=inpost&postcode=DE74%202YF
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const carrier = (searchParams.get('carrier') || '').toLowerCase().trim();
-  const postcode = (searchParams.get('postcode') || '').trim().toUpperCase();
+  const postcodeRaw = (searchParams.get('postcode') || '').trim();
 
-  if (!carrier || !postcode) {
+  if (!carrier || !postcodeRaw) {
     return NextResponse.json(
       { error: 'carrier and postcode are required' },
       { status: 400 }
     );
   }
 
-  const cleanPostcode = postcode.replace(/\s+/g, '');
-  if (cleanPostcode.length < 5) {
+  const postcode = formatUkPostcode(postcodeRaw);
+  if (postcode.replace(/\s/g, '').length < 5) {
     return NextResponse.json(
       { error: 'Enter a full UK postcode' },
       { status: 400 }
@@ -42,50 +88,50 @@ export async function GET(request: Request) {
 
   try {
     if (carrier === 'inpost') {
-      const { findLocationsByPostcode } = await import('inpost');
-      const locations = await findLocationsByPostcode(postcode);
-
-      const points: ShippingPoint[] = (locations || []).slice(0, 15).map((loc: any) => {
-        const addr = loc.address || {};
-        const line = [addr.street, addr.building]
-          .filter(Boolean)
-          .join(', ') || loc.description || '';
-        const town = addr.city || addr.town || '';
-        const pc = addr.postcode || addr.postCode || postcode;
-        const avail = [
-          loc.smallLockerAvailability != null
-            ? `S:${loc.smallLockerAvailability}`
-            : null,
-          loc.mediumLockerAvailability != null
-            ? `M:${loc.mediumLockerAvailability}`
-            : null,
-          loc.largeLockerAvailability != null
-            ? `L:${loc.largeLockerAvailability}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(' ');
-
-        return {
-          id: String(loc.id || loc.name),
-          name: loc.name || 'InPost Locker',
-          line,
-          town,
-          postcode: pc,
-          carrier: 'inpost',
-          meta: avail || undefined,
-        };
+      const params = new URLSearchParams({
+        relative_post_code: postcode,
+        limit: '15',
+        max_distance: '25000',
+        status: 'Operating',
+        virtual: '0',
       });
+
+      const res = await fetch(
+        `https://api-uk-global-points.easypack24.net/v1/points?${params.toString()}`,
+        { headers: { Accept: 'application/json' } }
+      );
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error('InPost points HTTP', res.status, text);
+        return NextResponse.json(
+          {
+            error:
+              'Could not find lockers for that postcode. Check it and try again, or enter a point manually.',
+            points: [],
+          },
+          { status: 502 }
+        );
+      }
+
+      const body = await res.json();
+      const items = Array.isArray(body?.items) ? body.items : [];
+      const points = items
+        .map(mapInpostItem)
+        .filter(Boolean) as ShippingPoint[];
 
       return NextResponse.json({
         carrier: 'inpost',
         postcode,
         points,
         live: true,
+        message:
+          points.length === 0
+            ? 'No InPost lockers found near that postcode'
+            : undefined,
       });
     }
 
-    // Evri / Royal Mail / Yodel — structured for later business APIs
     return NextResponse.json({
       carrier,
       postcode,
