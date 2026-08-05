@@ -9,6 +9,8 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Shield,
+  Lock,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -39,12 +41,25 @@ type ShopItem = {
   condition: string;
   photos: string[];
   status: string;
+  reserved_for_id?: string | null;
+  reserved_for_username?: string | null;
   created_at: string;
   creator?: {
     username: string;
     display_name: string | null;
     avatar_url: string | null;
   } | null;
+};
+
+const emptyAddress = {
+  full_name: '',
+  line1: '',
+  line2: '',
+  city: '',
+  region: '',
+  postcode: '',
+  country: 'United Kingdom',
+  phone: '',
 };
 
 export default function ShopPage() {
@@ -60,6 +75,8 @@ export default function ShopPage() {
   const [buyNote, setBuyNote] = useState('');
   const [buySuccess, setBuySuccess] = useState(false);
   const [buyError, setBuyError] = useState('');
+  const [address, setAddress] = useState(emptyAddress);
+  const [showAddress, setShowAddress] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -69,10 +86,11 @@ export default function ShopPage() {
       } = await supabase.auth.getUser();
       setCurrentUserId(user?.id || null);
 
+      // Public: available + reserved (sold/hidden hidden by RLS for non-owners)
       const { data, error } = await supabase
         .from('shop_items')
         .select('*')
-        .eq('status', 'available')
+        .in('status', ['available', 'reserved'])
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -119,12 +137,24 @@ export default function ShopPage() {
     });
   }, [items, category, search]);
 
+  const canBuyItem = (item: ShopItem) => {
+    if (!currentUserId) return false;
+    if (item.creator_id === currentUserId) return false;
+    if (item.status === 'sold' || item.status === 'hidden') return false;
+    if (item.status === 'reserved') {
+      return item.reserved_for_id === currentUserId;
+    }
+    return item.status === 'available';
+  };
+
   const openItem = (item: ShopItem) => {
     setViewer(item);
     setPhotoIndex(0);
     setBuySuccess(false);
     setBuyError('');
     setBuyNote('');
+    setShowAddress(false);
+    setAddress(emptyAddress);
   };
 
   const nextPhoto = () => {
@@ -137,17 +167,56 @@ export default function ShopPage() {
     setPhotoIndex((i) => (i - 1 + viewer.photos.length) % viewer.photos.length);
   };
 
-
   const requestBuy = async () => {
     if (!viewer || !currentUserId || buying) return;
     if (viewer.creator_id === currentUserId) {
       setBuyError("You can't order your own item");
       return;
     }
+    if (!canBuyItem(viewer)) {
+      setBuyError(
+        viewer.status === 'reserved'
+          ? 'This item is reserved for another buyer'
+          : 'This item is not available'
+      );
+      return;
+    }
+    if (!showAddress) {
+      setShowAddress(true);
+      return;
+    }
+    if (
+      !address.full_name.trim() ||
+      !address.line1.trim() ||
+      !address.city.trim() ||
+      !address.postcode.trim() ||
+      !address.country.trim()
+    ) {
+      setBuyError('Please complete your shipping details');
+      return;
+    }
+
     setBuying(true);
     setBuyError('');
     setBuySuccess(false);
     try {
+      // Re-check item still available / reserved for me
+      const { data: fresh } = await supabase
+        .from('shop_items')
+        .select('id, status, reserved_for_id, creator_id, title, price, category, condition, photos')
+        .eq('id', viewer.id)
+        .single();
+      if (!fresh) throw new Error('Item not found');
+      if (fresh.status === 'sold' || fresh.status === 'hidden') {
+        throw new Error('This item is no longer available');
+      }
+      if (
+        fresh.status === 'reserved' &&
+        fresh.reserved_for_id !== currentUserId
+      ) {
+        throw new Error('This item is reserved for another buyer');
+      }
+
       const { data: order, error } = await supabase
         .from('shop_orders')
         .insert({
@@ -158,12 +227,29 @@ export default function ShopPage() {
           item_price: viewer.price,
           status: 'requested',
           buyer_note: buyNote.trim() || null,
+          // Only city/country visible to creator — never full address
+          shipping_city: address.city.trim(),
+          shipping_country: address.country.trim(),
         })
         .select()
         .single();
       if (error) throw error;
 
-      // Message creator in chat
+      // Full address — buyer only (creators have no RLS access)
+      const { error: addrErr } = await supabase.from('shop_order_addresses').insert({
+        order_id: order.id,
+        buyer_id: currentUserId,
+        full_name: address.full_name.trim(),
+        line1: address.line1.trim(),
+        line2: address.line2.trim() || null,
+        city: address.city.trim(),
+        region: address.region.trim() || null,
+        postcode: address.postcode.trim(),
+        country: address.country.trim(),
+        phone: address.phone.trim() || null,
+      });
+      if (addrErr) throw addrErr;
+
       const otherId = viewer.creator_id;
       const { data: existing } = await supabase
         .from('conversations')
@@ -198,6 +284,8 @@ export default function ShopPage() {
           `category:${viewer.category || ''}`,
           `condition:${viewer.condition || ''}`,
           noteLine ? `note:${noteLine}` : '',
+          `ship:${address.city.trim()}, ${address.country.trim()}`,
+          'Address is private — ship via platform label',
           'Open Dashboard → Accept or Decline',
         ]
           .filter(Boolean)
@@ -208,7 +296,7 @@ export default function ShopPage() {
           sender_id: currentUserId,
           content,
           media_url: cover,
-          media_type: cover ? 'order_request' : 'order_request',
+          media_type: 'order_request',
         });
         await supabase
           .from('conversations')
@@ -227,6 +315,7 @@ export default function ShopPage() {
 
       setBuySuccess(true);
       setBuyNote('');
+      setShowAddress(false);
     } catch (err: any) {
       console.error(err);
       setBuyError(err.message || 'Could not place order');
@@ -247,12 +336,12 @@ export default function ShopPage() {
                 <ShoppingBag className="text-pink-500" size={28} />
                 Shop
               </h1>
-              <p className="text-sm text-zinc-500">
-                Physical items from creators · ships from the seller
+              <p className="text-sm text-zinc-500 flex items-center gap-1.5">
+                <Shield size={14} className="text-pink-400" />
+                Private shipping · your address stays hidden from creators
               </p>
             </div>
 
-            {/* Search */}
             <div className="relative mb-4">
               <Search
                 size={18}
@@ -267,8 +356,7 @@ export default function ShopPage() {
               />
             </div>
 
-            {/* Categories */}
-            <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-thin">
+            <div className="flex gap-2 overflow-x-auto pb-3 mb-6">
               {CATEGORIES.map((c) => (
                 <button
                   key={c}
@@ -318,6 +406,9 @@ export default function ShopPage() {
                     item.creator?.display_name ||
                     item.creator?.username ||
                     'Creator';
+                  const isReserved = item.status === 'reserved';
+                  const reservedForMe =
+                    isReserved && item.reserved_for_id === currentUserId;
                   return (
                     <button
                       key={item.id}
@@ -341,6 +432,17 @@ export default function ShopPage() {
                         <span className="absolute top-2 left-2 text-[10px] font-semibold bg-black/70 text-white px-2 py-0.5 rounded-full">
                           {item.category}
                         </span>
+                        {isReserved && (
+                          <span
+                            className={`absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                              reservedForMe
+                                ? 'bg-pink-600 text-white'
+                                : 'bg-amber-500/90 text-black'
+                            }`}
+                          >
+                            {reservedForMe ? 'Reserved for you' : 'Reserved'}
+                          </span>
+                        )}
                       </div>
                       <div className="p-3">
                         <p className="font-medium text-sm truncate">{item.title}</p>
@@ -359,7 +461,6 @@ export default function ShopPage() {
           </div>
         </main>
 
-        {/* Item detail modal */}
         {viewer && (
           <div
             className="fixed inset-0 z-[80] bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -388,6 +489,13 @@ export default function ShopPage() {
                 >
                   <X size={18} />
                 </button>
+                {viewer.status === 'reserved' && (
+                  <span className="absolute top-3 left-3 text-xs font-semibold bg-amber-500 text-black px-2.5 py-1 rounded-full">
+                    {viewer.reserved_for_id === currentUserId
+                      ? 'Reserved for you'
+                      : 'Reserved'}
+                  </span>
+                )}
                 {viewer.photos.length > 1 && (
                   <>
                     <button
@@ -404,16 +512,6 @@ export default function ShopPage() {
                     >
                       <ChevronRight size={20} />
                     </button>
-                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
-                      {viewer.photos.map((_, i) => (
-                        <span
-                          key={i}
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            i === photoIndex ? 'bg-pink-500' : 'bg-white/40'
-                          }`}
-                        />
-                      ))}
-                    </div>
                   </>
                 )}
               </div>
@@ -465,6 +563,15 @@ export default function ShopPage() {
                   </Link>
                 )}
 
+                <div className="flex items-start gap-2 text-xs text-zinc-400 bg-zinc-800/50 rounded-xl px-3 py-2.5">
+                  <Lock size={14} className="text-pink-400 mt-0.5 flex-shrink-0" />
+                  <p>
+                    <span className="text-zinc-200 font-medium">Private shipping.</span>{' '}
+                    Your full address is never shown to the creator. They only see
+                    city & country. Labels are handled like Vinted — platform-protected.
+                  </p>
+                </div>
+
                 {viewer.creator_id === currentUserId ? (
                   <p className="text-center text-sm text-zinc-500 py-2">
                     This is your listing
@@ -475,32 +582,123 @@ export default function ShopPage() {
                       Order requested
                     </p>
                     <p className="text-xs text-zinc-400 mt-1">
-                      The creator was notified and messaged in chat
+                      Creator notified · address stored privately
                     </p>
                   </div>
+                ) : !canBuyItem(viewer) ? (
+                  <p className="text-center text-sm text-amber-400/90 py-2">
+                    {viewer.status === 'reserved'
+                      ? 'Reserved for another buyer'
+                      : 'Not available'}
+                  </p>
                 ) : (
                   <>
-                    <textarea
-                      value={buyNote}
-                      onChange={(e) => setBuyNote(e.target.value)}
-                      placeholder="Optional note (size, shipping info…)"
-                      rows={2}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500 resize-none"
-                    />
-                    {buyError && (
-                      <p className="text-sm text-red-400">{buyError}</p>
+                    {!showAddress ? (
+                      <>
+                        <textarea
+                          value={buyNote}
+                          onChange={(e) => setBuyNote(e.target.value)}
+                          placeholder="Optional note to the creator…"
+                          rows={2}
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500 resize-none"
+                        />
+                        {buyError && (
+                          <p className="text-sm text-red-400">{buyError}</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={requestBuy}
+                          disabled={buying || !currentUserId}
+                          className="w-full py-3.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 font-semibold transition disabled:opacity-50"
+                        >
+                          Continue to shipping
+                        </button>
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-zinc-200">
+                          Shipping address (private)
+                        </p>
+                        <input
+                          value={address.full_name}
+                          onChange={(e) =>
+                            setAddress({ ...address, full_name: e.target.value })
+                          }
+                          placeholder="Full name"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                        />
+                        <input
+                          value={address.line1}
+                          onChange={(e) =>
+                            setAddress({ ...address, line1: e.target.value })
+                          }
+                          placeholder="Address line 1"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                        />
+                        <input
+                          value={address.line2}
+                          onChange={(e) =>
+                            setAddress({ ...address, line2: e.target.value })
+                          }
+                          placeholder="Address line 2 (optional)"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            value={address.city}
+                            onChange={(e) =>
+                              setAddress({ ...address, city: e.target.value })
+                            }
+                            placeholder="City"
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                          />
+                          <input
+                            value={address.postcode}
+                            onChange={(e) =>
+                              setAddress({ ...address, postcode: e.target.value })
+                            }
+                            placeholder="Postcode"
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                          />
+                        </div>
+                        <input
+                          value={address.country}
+                          onChange={(e) =>
+                            setAddress({ ...address, country: e.target.value })
+                          }
+                          placeholder="Country"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                        />
+                        <input
+                          value={address.phone}
+                          onChange={(e) =>
+                            setAddress({ ...address, phone: e.target.value })
+                          }
+                          placeholder="Phone (optional)"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                        />
+                        {buyError && (
+                          <p className="text-sm text-red-400">{buyError}</p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowAddress(false)}
+                            className="flex-1 py-3 rounded-xl border border-zinc-700 text-sm"
+                          >
+                            Back
+                          </button>
+                          <button
+                            type="button"
+                            onClick={requestBuy}
+                            disabled={buying}
+                            className="flex-[2] py-3 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-sm disabled:opacity-50"
+                          >
+                            {buying ? 'Sending…' : 'Request to buy'}
+                          </button>
+                        </div>
+                      </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={requestBuy}
-                      disabled={buying || !currentUserId}
-                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 font-semibold transition disabled:opacity-50"
-                    >
-                      {buying ? 'Sending…' : 'Request to buy'}
-                    </button>
-                    <p className="text-center text-xs text-zinc-500">
-                      No payment yet — creator confirms, then you arrange pay/ship
-                    </p>
                   </>
                 )}
               </div>

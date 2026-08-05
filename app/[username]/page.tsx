@@ -74,7 +74,7 @@ export default function PublicProfilePage() {
           .from('shop_items')
           .select('*')
           .eq('creator_id', profileData.id)
-          .eq('status', 'available')
+          .in('status', ['available', 'reserved'])
           .order('created_at', { ascending: false });
         setShopItems(
           (shopData || []).map((row: any) => ({
@@ -523,6 +523,11 @@ export default function PublicProfilePage() {
                         <div className="w-full h-full flex items-center justify-center text-zinc-600">
                           <Package size={28} />
                         </div>
+                      )}
+                      {item.status === 'reserved' && (
+                        <span className="absolute top-2 left-2 text-[10px] font-semibold bg-amber-500 text-black px-2 py-0.5 rounded-full">
+                          Reserved
+                        </span>
                       )}
                     </div>
                     <div className="p-2.5">

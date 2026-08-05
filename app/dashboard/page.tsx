@@ -20,7 +20,9 @@ type Item = {
   category: string;
   condition: string;
   photos: string[];
-  status?: 'available' | 'sold' | 'hidden';
+  status?: 'available' | 'reserved' | 'sold' | 'hidden';
+  reserved_for_id?: string | null;
+  reserved_for_username?: string | null;
   created_at?: string;
 };
 
@@ -75,6 +77,9 @@ export default function DashboardPage() {
     { id: 2, title: 'Private JOI Custom', price: 45.0, sales: 0 },
   ]);
   const [myItems, setMyItems] = useState<Item[]>([]);
+  const [itemFilter, setItemFilter] = useState<'all' | 'available' | 'reserved' | 'sold' | 'hidden'>('all');
+  const [reserveUsername, setReserveUsername] = useState('');
+  const [reservingId, setReservingId] = useState<string | null>(null);
   const [shopOrders, setShopOrders] = useState<any[]>([]);
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
@@ -336,7 +341,7 @@ export default function DashboardPage() {
     }
   };
 
-  const markItemStatus = async (id: string, status: 'available' | 'sold' | 'hidden') => {
+  const markItemStatus = async (id: string, status: 'available' | 'reserved' | 'sold' | 'hidden') => {
     try {
       const { error } = await supabase
         .from('shop_items')
@@ -350,6 +355,82 @@ export default function DashboardPage() {
       alert(err.message || 'Failed to update status');
     }
   };
+
+  const reserveItem = async (itemId: string) => {
+    const uname = reserveUsername.trim().toLowerCase().replace(/^@/, '');
+    if (!uname) {
+      alert('Enter a username to reserve for');
+      return;
+    }
+    setReservingId(itemId);
+    try {
+      const { data: target, error: pErr } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .eq('username', uname)
+        .maybeSingle();
+      if (pErr) throw pErr;
+      if (!target) {
+        alert('No user found with that username');
+        return;
+      }
+      const { error } = await supabase
+        .from('shop_items')
+        .update({
+          status: 'reserved',
+          reserved_for_id: target.id,
+          reserved_for_username: target.username,
+        })
+        .eq('id', itemId);
+      if (error) throw error;
+      setMyItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                status: 'reserved',
+                reserved_for_id: target.id,
+                reserved_for_username: target.username,
+              }
+            : item
+        )
+      );
+      setReserveUsername('');
+    } catch (err: any) {
+      alert(err.message || 'Could not reserve item');
+    } finally {
+      setReservingId(null);
+    }
+  };
+
+  const clearReserve = async (itemId: string) => {
+    try {
+      const { error } = await supabase
+        .from('shop_items')
+        .update({
+          status: 'available',
+          reserved_for_id: null,
+          reserved_for_username: null,
+        })
+        .eq('id', itemId);
+      if (error) throw error;
+      setMyItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                status: 'available',
+                reserved_for_id: null,
+                reserved_for_username: null,
+              }
+            : item
+        )
+      );
+    } catch (err: any) {
+      alert(err.message || 'Failed');
+    }
+  };
+
 
   const openGallery = (item: Item) => {
     if (item.photos.length === 0) return;
@@ -831,6 +912,14 @@ export default function DashboardPage() {
                             £{Number(o.item_price).toFixed(2)} · {o.status}
                             {o.buyer_note ? ` · "${o.buyer_note}"` : ''}
                           </p>
+                          {(o.shipping_city || o.shipping_country) && (
+                            <p className="text-[11px] text-zinc-500 mt-0.5">
+                              Ship to: {[o.shipping_city, o.shipping_country]
+                                .filter(Boolean)
+                                .join(', ')}{' '}
+                              · full address private
+                            </p>
+                          )}
                         </div>
                         <div className="flex gap-2">
                           {o.status === 'requested' && (
@@ -847,6 +936,21 @@ export default function DashboardPage() {
                                       x.id === o.id ? { ...x, status: 'accepted' } : x
                                     )
                                   );
+                                  // Trigger marks item sold in DB; update UI
+                                  if (o.item_id) {
+                                    setMyItems((prev) =>
+                                      prev.map((it) =>
+                                        it.id === o.item_id
+                                          ? {
+                                              ...it,
+                                              status: 'sold',
+                                              reserved_for_id: null,
+                                              reserved_for_username: null,
+                                            }
+                                          : it
+                                      )
+                                    );
+                                  }
                                 }}
                                 className="text-xs px-3 py-1.5 rounded-lg bg-pink-600 text-white"
                               >
@@ -901,63 +1005,163 @@ export default function DashboardPage() {
                   <Plus size={16} /> Add Item
                 </button>
               </div>
-              {myItems.length === 0 ? (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {(['all', 'available', 'reserved', 'sold', 'hidden'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setItemFilter(f)}
+                    className={`text-xs px-3 py-1.5 rounded-full border capitalize ${
+                      itemFilter === f
+                        ? 'bg-pink-600 border-pink-500 text-white'
+                        : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                    }`}
+                  >
+                    {f}
+                    {f !== 'all' && (
+                      <span className="ml-1 opacity-70">
+                        ({myItems.filter((i) => i.status === f).length})
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <input
+                  value={reserveUsername}
+                  onChange={(e) => setReserveUsername(e.target.value)}
+                  placeholder="@username to reserve an item for…"
+                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500"
+                />
+                <p className="text-[11px] text-zinc-500 sm:max-w-[200px]">
+                  Open an available item → use Reserve. Only that sub can buy.
+                </p>
+              </div>
+
+              {myItems.filter((i) =>
+                itemFilter === 'all' ? true : i.status === itemFilter
+              ).length === 0 ? (
                 <div className="text-center py-10 text-zinc-500 text-sm">
                   <Package size={32} className="mx-auto mb-2 opacity-40" />
-                  No items listed yet. Sell underwear, heels, socks and more!
+                  {myItems.length === 0
+                    ? 'No items listed yet. Sell underwear, heels, socks and more!'
+                    : `No ${itemFilter} items`}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {myItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-zinc-800/60 border border-zinc-700 rounded-xl overflow-hidden"
-                    >
+                  {myItems
+                    .filter((i) =>
+                      itemFilter === 'all' ? true : i.status === itemFilter
+                    )
+                    .map((item) => (
                       <div
-                        className="aspect-[4/3] bg-zinc-700 relative cursor-pointer"
-                        onClick={() => openGallery(item)}
+                        key={item.id}
+                        className="bg-zinc-800/60 border border-zinc-700 rounded-xl overflow-hidden"
                       >
-                        {item.photos.length > 0 ? (
-                          <img
-                            src={item.photos[0]}
-                            alt={item.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon size={32} className="text-zinc-500" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div>
-                            <p className="font-medium leading-tight">{item.title}</p>
-                            <p className="text-xs text-zinc-400 mt-1">
-                              {item.category} · {item.condition} · {item.status === 'sold' ? 'Sold' : 'Available'}
-                            </p>
-                          </div>
-                          <span className="font-semibold text-pink-400 whitespace-nowrap">
-                            £{item.price}
-                          </span>
+                        <div
+                          className="aspect-[4/3] bg-zinc-700 relative cursor-pointer"
+                          onClick={() => openGallery(item)}
+                        >
+                          {item.photos.length > 0 ? (
+                            <img
+                              src={item.photos[0]}
+                              alt={item.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ImageIcon size={32} className="text-zinc-500" />
+                            </div>
+                          )}
+                          {item.status && item.status !== 'available' && (
+                            <span className="absolute top-2 left-2 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-black/70 text-white">
+                              {item.status}
+                            </span>
+                          )}
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => openEditItem(item)}
-                            className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition"
-                          >
-                            <Pencil size={13} /> Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteItem(item.id)}
-                            className="flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-400 transition"
-                          >
-                            <Trash2 size={13} /> Delete
-                          </button>
+                        <div className="p-4">
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div>
+                              <p className="font-medium leading-tight">{item.title}</p>
+                              <p className="text-xs text-zinc-400 mt-1">
+                                {item.category} · {item.condition}
+                                {item.status === 'reserved' &&
+                                  ` · @${item.reserved_for_username || '…'}`}
+                              </p>
+                            </div>
+                            <span className="font-semibold text-pink-400 whitespace-nowrap">
+                              £{item.price}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditItem(item)}
+                              className="flex items-center justify-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600"
+                            >
+                              <Pencil size={13} /> Edit
+                            </button>
+                            {item.status === 'available' && (
+                              <button
+                                type="button"
+                                disabled={reservingId === item.id}
+                                onClick={() => reserveItem(item.id)}
+                                className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-600 text-white disabled:opacity-50"
+                              >
+                                {reservingId === item.id ? '…' : 'Reserve'}
+                              </button>
+                            )}
+                            {item.status === 'reserved' && (
+                              <button
+                                type="button"
+                                onClick={() => clearReserve(item.id)}
+                                className="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-600 text-zinc-300"
+                              >
+                                Unreserve
+                              </button>
+                            )}
+                            {item.status === 'available' && (
+                              <button
+                                type="button"
+                                onClick={() => markItemStatus(item.id, 'sold')}
+                                className="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-600 text-zinc-300"
+                              >
+                                Mark sold
+                              </button>
+                            )}
+                            {item.status === 'sold' && (
+                              <button
+                                type="button"
+                                onClick={() => markItemStatus(item.id, 'available')}
+                                className="text-xs px-2.5 py-1.5 rounded-lg border border-pink-500/40 text-pink-400"
+                              >
+                                Relist
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                markItemStatus(
+                                  item.id,
+                                  item.status === 'hidden' ? 'available' : 'hidden'
+                                )
+                              }
+                              className="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-600 text-zinc-400"
+                            >
+                              {item.status === 'hidden' ? 'Unhide' : 'Hide'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="text-xs px-2.5 py-1.5 rounded-lg bg-red-900/40 text-red-400"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               )}
             </div>
