@@ -615,12 +615,16 @@ export default function DashboardPage() {
     } = await supabase.auth.getUser();
     if (!user) return;
     const tracking = (trackingDraft[order.id] || '').trim() || null;
+    const dropName = (trackingDraft[`${order.id}-drop`] || '').trim() || null;
     const { error } = await supabase
       .from('shop_orders')
       .update({
         status: 'shipped',
         tracking_number: tracking,
         shipped_at: new Date().toISOString(),
+        seller_dropoff_point_name: dropName,
+        seller_dropped_off_at: new Date().toISOString(),
+        seller_dropoff_carrier: order.shipping_carrier || null,
       })
       .eq('id', order.id);
     if (error) {
@@ -640,7 +644,7 @@ export default function DashboardPage() {
       user.id,
       'Order shipped',
       `"${order.item_title}" is on its way`,
-      `📦 Shipped: "${order.item_title}"${trackLine}\n\nYour full address was used privately for the label — the seller never sees it.`
+      `📦 Dropped off: "${order.item_title}"${trackLine}\n\nCollect from your chosen locker / pick-up point. Home delivery is not used.`
     );
   };
 
@@ -1319,15 +1323,15 @@ export default function DashboardPage() {
                               Note: “{o.buyer_note}”
                             </p>
                           )}
-                          {(o.shipping_county || o.shipping_country || o.shipping_city) && (
+                          {(o.shipping_carrier || o.shipping_point_name) && (
                             <p className="text-sm text-zinc-500 mt-1">
-                              Ship to:{' '}
-                              <span className="text-zinc-300">
-                                {[o.shipping_county || o.shipping_city, o.shipping_country]
-                                  .filter(Boolean)
-                                  .join(', ')}
+                              Collect:{' '}
+                              <span className="text-zinc-300 capitalize">
+                                {(o.shipping_carrier || '').replace('_', ' ')}
+                                {o.shipping_point_name ? ` · ${o.shipping_point_name}` : ''}
+                                {o.shipping_point_town ? ` · ${o.shipping_point_town}` : ''}
                               </span>
-                              <span className="text-zinc-600"> · address private</span>
+                              <span className="text-zinc-600"> · locker / pick-up only</span>
                             </p>
                           )}
                         </div>
@@ -1480,9 +1484,9 @@ export default function DashboardPage() {
                             </>
                           )}
                           {(o.status === 'accepted' || o.status === 'paid' || o.status === 'awaiting_payment') && (
-                            <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[220px]">
+                            <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[240px]">
                               <p className="text-xs text-zinc-500">
-                                Private address on file · you only see county/country
+                                Two-sided PUDO: drop off at your locker / shop, buyer collects at theirs
                               </p>
                               <input
                                 value={trackingDraft[o.id] || ''}
@@ -1492,7 +1496,18 @@ export default function DashboardPage() {
                                     [o.id]: e.target.value,
                                   }))
                                 }
-                                placeholder="Tracking number (optional)"
+                                placeholder="Tracking (optional)"
+                                className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500"
+                              />
+                              <input
+                                value={trackingDraft[`${o.id}-drop`] || ''}
+                                onChange={(e) =>
+                                  setTrackingDraft((prev) => ({
+                                    ...prev,
+                                    [`${o.id}-drop`]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Your drop-off point name"
                                 className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500"
                               />
                               <button
@@ -1500,7 +1515,7 @@ export default function DashboardPage() {
                                 onClick={() => markOrderShipped(o)}
                                 className="text-sm px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-medium transition"
                               >
-                                Mark shipped
+                                Mark dropped off
                               </button>
                             </div>
                           )}

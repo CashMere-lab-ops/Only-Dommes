@@ -51,15 +51,42 @@ type ShopItem = {
   } | null;
 };
 
-const emptyAddress = {
-  full_name: '',
-  line1: '',
-  line2: '',
-  city: '',
-  county: '',
-  postcode: '',
-  country: 'United Kingdom',
-  phone: '',
+const CARRIERS = [
+  {
+    id: 'inpost',
+    label: 'InPost',
+    holdHours: 72,
+    holdLabel: '72 hours',
+  },
+  {
+    id: 'evri',
+    label: 'Evri',
+    holdHours: 240,
+    holdLabel: '10 days',
+  },
+  {
+    id: 'royal_mail',
+    label: 'Royal Mail',
+    holdHours: 168,
+    holdLabel: '7 days',
+  },
+  {
+    id: 'yodel',
+    label: 'Yodel',
+    holdHours: 168,
+    holdLabel: '7 days',
+  },
+] as const;
+
+const emptyPudo = {
+  carrier: 'inpost' as string,
+  point_name: '',
+  point_id: '',
+  point_postcode: '',
+  point_town: '',
+  point_line: '',
+  collection_name: '',
+  collection_phone: '',
 };
 
 export default function ShopPage() {
@@ -75,8 +102,8 @@ export default function ShopPage() {
   const [buyNote, setBuyNote] = useState('');
   const [buySuccess, setBuySuccess] = useState(false);
   const [buyError, setBuyError] = useState('');
-  const [address, setAddress] = useState(emptyAddress);
-  const [showAddress, setShowAddress] = useState(false);
+  const [pudo, setPudo] = useState(emptyPudo);
+  const [showPudo, setShowPudo] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -153,8 +180,9 @@ export default function ShopPage() {
     setBuySuccess(false);
     setBuyError('');
     setBuyNote('');
-    setShowAddress(false);
-    setAddress(emptyAddress);
+    setShowPudo(false);
+      setPudo(emptyPudo);
+    setPudo(emptyPudo);
   };
 
   const nextPhoto = () => {
@@ -181,19 +209,19 @@ export default function ShopPage() {
       );
       return;
     }
-    if (!showAddress) {
-      setShowAddress(true);
+    if (!showPudo) {
+      setShowPudo(true);
       return;
     }
     if (
-      !address.full_name.trim() ||
-      !address.line1.trim() ||
-      !address.city.trim() ||
-      !address.county.trim() ||
-      !address.postcode.trim() ||
-      !address.country.trim()
+      !pudo.carrier ||
+      !pudo.point_name.trim() ||
+      !pudo.point_postcode.trim() ||
+      !pudo.point_town.trim() ||
+      !pudo.collection_name.trim() ||
+      !pudo.collection_phone.trim()
     ) {
-      setBuyError('Please complete your shipping details');
+      setBuyError('Please complete pick-up point details');
       return;
     }
 
@@ -218,6 +246,11 @@ export default function ShopPage() {
         throw new Error('This item is reserved for another buyer');
       }
 
+      const carrierMeta = CARRIERS.find((c) => c.id === pudo.carrier) || CARRIERS[0];
+      const deadline = new Date(
+        Date.now() + carrierMeta.holdHours * 60 * 60 * 1000
+      ).toISOString();
+
       const { data: order, error } = await supabase
         .from('shop_orders')
         .insert({
@@ -228,29 +261,22 @@ export default function ShopPage() {
           item_price: viewer.price,
           status: 'requested',
           buyer_note: buyNote.trim() || null,
-          // Only county/country visible to creator — never full address
-          shipping_city: address.city.trim(),
-          shipping_county: address.county.trim(),
-          shipping_country: address.country.trim(),
+          shipping_country: 'United Kingdom',
+          shipping_county: pudo.point_town.trim(),
+          shipping_city: pudo.point_town.trim(),
+          shipping_carrier: pudo.carrier,
+          shipping_point_name: pudo.point_name.trim(),
+          shipping_point_id: pudo.point_id.trim() || null,
+          shipping_point_postcode: pudo.point_postcode.trim(),
+          shipping_point_town: pudo.point_town.trim(),
+          shipping_point_line: pudo.point_line.trim() || null,
+          collection_name: pudo.collection_name.trim(),
+          collection_phone: pudo.collection_phone.trim(),
+          collection_deadline: deadline,
         })
         .select()
         .single();
       if (error) throw error;
-
-      // Full address — buyer only (creators have no RLS access)
-      const { error: addrErr } = await supabase.from('shop_order_addresses').insert({
-        order_id: order.id,
-        buyer_id: currentUserId,
-        full_name: address.full_name.trim(),
-        line1: address.line1.trim(),
-        line2: address.line2.trim() || null,
-        city: address.city.trim(),
-        region: address.county.trim() || null,
-        postcode: address.postcode.trim(),
-        country: address.country.trim(),
-        phone: address.phone.trim() || null,
-      });
-      if (addrErr) throw addrErr;
 
       const otherId = viewer.creator_id;
       const { data: existing } = await supabase
@@ -286,8 +312,8 @@ export default function ShopPage() {
           `category:${viewer.category || ''}`,
           `condition:${viewer.condition || ''}`,
           noteLine ? `note:${noteLine}` : '',
-          `ship:${address.county.trim()}, ${address.country.trim()}`,
-          'Address is private — ship via platform label',
+          `ship:${pudo.carrier} · ${pudo.point_name.trim()} · ${pudo.point_town.trim()}`,
+          'Locker / pick-up only — no home delivery',
           'Open Dashboard → Accept or Decline',
         ]
           .filter(Boolean)
@@ -317,7 +343,8 @@ export default function ShopPage() {
 
       setBuySuccess(true);
       setBuyNote('');
-      setShowAddress(false);
+      setShowPudo(false);
+      setPudo(emptyPudo);
     } catch (err: any) {
       console.error(err);
       setBuyError(err.message || 'Could not place order');
@@ -340,7 +367,7 @@ export default function ShopPage() {
               </h1>
               <p className="text-sm text-zinc-500 flex items-center gap-1.5">
                 <Shield size={14} className="text-pink-400" />
-                Private shipping · your address stays hidden from creators
+                Lockers & pick-up points only · no home delivery
               </p>
             </div>
 
@@ -568,8 +595,8 @@ export default function ShopPage() {
                 <div className="flex items-start gap-2 text-xs text-zinc-400 bg-zinc-800/50 rounded-xl px-3 py-2.5">
                   <Lock size={14} className="text-pink-400 mt-0.5 flex-shrink-0" />
                   <p>
-                    <span className="text-zinc-200 font-medium">Private shipping.</span>{' '}
-                    Your full address is never shown to the creator. They only see county and country.
+                    <span className="text-zinc-200 font-medium">Locker & pick-up only.</span>{' '}
+                    No home delivery. Seller drops off at a point; you collect from yours. Home addresses are not used.
                   </p>
                 </div>
 
@@ -583,7 +610,7 @@ export default function ShopPage() {
                       Order requested
                     </p>
                     <p className="text-xs text-zinc-400 mt-1">
-                      Creator notified · address stored privately
+                      Creator notified · pick-up point saved
                     </p>
                   </div>
                 ) : !canBuyItem(viewer) ? (
@@ -594,7 +621,7 @@ export default function ShopPage() {
                   </p>
                 ) : (
                   <>
-                    {!showAddress ? (
+                    {!showPudo ? (
                       <>
                         <textarea
                           value={buyNote}
@@ -612,78 +639,94 @@ export default function ShopPage() {
                           disabled={buying || !currentUserId}
                           className="w-full py-3.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 font-semibold transition disabled:opacity-50"
                         >
-                          Continue to shipping
+                          Continue to pick-up
                         </button>
                       </>
                     ) : (
                       <div className="space-y-3">
                         <p className="text-sm font-medium text-zinc-200">
-                          Shipping address (private)
+                          Choose carrier & pick-up point
                         </p>
+                        <p className="text-xs text-zinc-500">
+                          Home delivery is not available. Collect from a locker or
+                          parcel shop. Uncollected parcels auto-cancel after the
+                          carrier hold time.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {CARRIERS.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => setPudo({ ...pudo, carrier: c.id })}
+                              className={`text-left px-3 py-2.5 rounded-xl border text-sm transition ${
+                                pudo.carrier === c.id
+                                  ? 'border-pink-500 bg-pink-500/10 text-white'
+                                  : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600'
+                              }`}
+                            >
+                              <span className="font-medium block">{c.label}</span>
+                              <span className="text-[11px] text-zinc-500">
+                                Hold {c.holdLabel}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
                         <input
-                          value={address.full_name}
+                          value={pudo.point_name}
                           onChange={(e) =>
-                            setAddress({ ...address, full_name: e.target.value })
+                            setPudo({ ...pudo, point_name: e.target.value })
                           }
-                          placeholder="Full name"
+                          placeholder="Locker / shop name"
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                         />
                         <input
-                          value={address.line1}
+                          value={pudo.point_id}
                           onChange={(e) =>
-                            setAddress({ ...address, line1: e.target.value })
+                            setPudo({ ...pudo, point_id: e.target.value })
                           }
-                          placeholder="Address line 1"
+                          placeholder="Point ID (optional)"
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                         />
                         <input
-                          value={address.line2}
+                          value={pudo.point_line}
                           onChange={(e) =>
-                            setAddress({ ...address, line2: e.target.value })
+                            setPudo({ ...pudo, point_line: e.target.value })
                           }
-                          placeholder="Address line 2 (optional)"
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
-                        />
-                        <input
-                          value={address.city}
-                          onChange={(e) =>
-                            setAddress({ ...address, city: e.target.value })
-                          }
-                          placeholder="Town / city"
+                          placeholder="Point address line (optional)"
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                         />
                         <div className="grid grid-cols-2 gap-2">
                           <input
-                            value={address.county}
+                            value={pudo.point_town}
                             onChange={(e) =>
-                              setAddress({ ...address, county: e.target.value })
+                              setPudo({ ...pudo, point_town: e.target.value })
                             }
-                            placeholder="County"
+                            placeholder="Town"
                             className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                           />
                           <input
-                            value={address.postcode}
+                            value={pudo.point_postcode}
                             onChange={(e) =>
-                              setAddress({ ...address, postcode: e.target.value })
+                              setPudo({ ...pudo, point_postcode: e.target.value })
                             }
                             placeholder="Postcode"
                             className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                           />
                         </div>
                         <input
-                          value={address.country}
+                          value={pudo.collection_name}
                           onChange={(e) =>
-                            setAddress({ ...address, country: e.target.value })
+                            setPudo({ ...pudo, collection_name: e.target.value })
                           }
-                          placeholder="Country"
+                          placeholder="Name for collection"
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                         />
                         <input
-                          value={address.phone}
+                          value={pudo.collection_phone}
                           onChange={(e) =>
-                            setAddress({ ...address, phone: e.target.value })
+                            setPudo({ ...pudo, collection_phone: e.target.value })
                           }
-                          placeholder="Phone (optional)"
+                          placeholder="Mobile for collection SMS"
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
                         />
                         {buyError && (
@@ -692,7 +735,7 @@ export default function ShopPage() {
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={() => setShowAddress(false)}
+                            onClick={() => setShowPudo(false)}
                             className="flex-1 py-3 rounded-xl border border-zinc-700 text-sm"
                           >
                             Back
