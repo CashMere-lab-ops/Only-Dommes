@@ -569,8 +569,7 @@ export default function ShopPage() {
                   <Lock size={14} className="text-pink-400 mt-0.5 flex-shrink-0" />
                   <p>
                     <span className="text-zinc-200 font-medium">Private shipping.</span>{' '}
-                    Your full address is never shown to the creator. They only see
-                    city & country. Labels are handled like Vinted — platform-protected.
+                    Your full address is never shown to the creator. They only see county and country.
                   </p>
                 </div>
 

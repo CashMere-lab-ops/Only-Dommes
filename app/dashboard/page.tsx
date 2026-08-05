@@ -116,6 +116,7 @@ export default function DashboardPage() {
     };
   }, [reserveUsername]);
   const [shopOrders, setShopOrders] = useState<any[]>([]);
+  const [buyerOrders, setBuyerOrders] = useState<any[]>([]);
   const [trackingDraft, setTrackingDraft] = useState<Record<string, string>>({});
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
@@ -204,6 +205,15 @@ export default function DashboardPage() {
           .limit(20);
         setShopOrders(orders || []);
       }
+
+      // Orders this user placed as buyer
+      const { data: myBuys } = await supabase
+        .from('shop_orders')
+        .select('*')
+        .eq('buyer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      setBuyerOrders(myBuys || []);
 
       setLoading(false);
     };
@@ -563,7 +573,7 @@ export default function DashboardPage() {
     );
   };
 
-  const markOrderComplete = async (order: any) => {
+  const markOrderCompleteAsBuyer = async (order: any) => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -574,21 +584,44 @@ export default function DashboardPage() {
         status: 'completed',
         completed_at: new Date().toISOString(),
       })
-      .eq('id', order.id);
+      .eq('id', order.id)
+      .eq('buyer_id', user.id);
     if (error) {
       alert(error.message);
       return;
     }
-    setShopOrders((prev) =>
+    setBuyerOrders((prev) =>
       prev.map((x) => (x.id === order.id ? { ...x, status: 'completed' } : x))
     );
-    await notifyBuyerOrder(
-      order,
-      user.id,
-      'Order complete',
-      `"${order.item_title}" marked complete`,
-      `✨ Order complete: "${order.item_title}"\n\nThanks for buying on World of Dommes.`
-    );
+    // Notify creator
+    if (order.creator_id) {
+      await createNotification({
+        userId: order.creator_id,
+        actorId: user.id,
+        type: 'unlock',
+        title: 'Order completed by buyer',
+        body: `"${order.item_title}" marked complete`,
+        link: '/dashboard',
+      });
+      const { data: existing } = await supabase
+        .from('conversations')
+        .select('id')
+        .or(
+          `and(participant_1.eq.${user.id},participant_2.eq.${order.creator_id}),and(participant_1.eq.${order.creator_id},participant_2.eq.${user.id})`
+        )
+        .maybeSingle();
+      if (existing?.id) {
+        await supabase.from('messages').insert({
+          conversation_id: existing.id,
+          sender_id: user.id,
+          content: `✨ Order complete: "${order.item_title}"\n\nBuyer confirmed they received this order.`,
+        });
+        await supabase
+          .from('conversations')
+          .update({ last_message_at: new Date().toISOString() })
+          .eq('id', existing.id);
+      }
+    }
   };
 
   const openGallery = (item: Item) => {
@@ -705,6 +738,55 @@ export default function DashboardPage() {
                   </button>
                 </div>
               </div>
+
+              {buyerOrders.length > 0 && (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+                  <h2 className="text-lg font-semibold mb-4">My shop orders</h2>
+                  <div className="space-y-3">
+                    {buyerOrders.map((o) => (
+                      <div
+                        key={o.id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3 border-b border-zinc-800 last:border-0"
+                      >
+                        <div>
+                          <p className="font-medium text-sm">{o.item_title}</p>
+                          <p className="text-xs text-zinc-500">
+                            £{Number(o.item_price).toFixed(2)} · {o.status}
+                          </p>
+                          {o.tracking_number && (
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              Tracking: {o.tracking_number}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          {o.status === 'shipped' && (
+                            <button
+                              type="button"
+                              onClick={() => markOrderCompleteAsBuyer(o)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-600 to-rose-500 text-white font-medium"
+                            >
+                              Confirm received
+                            </button>
+                          )}
+                          {o.status === 'completed' && (
+                            <span className="text-xs text-green-400 font-medium">Complete</span>
+                          )}
+                          {o.status === 'requested' && (
+                            <span className="text-xs text-zinc-500">Awaiting seller</span>
+                          )}
+                          {o.status === 'accepted' && (
+                            <span className="text-xs text-pink-400">Accepted · shipping soon</span>
+                          )}
+                          {o.status === 'cancelled' && (
+                            <span className="text-xs text-zinc-500">Cancelled</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col">
@@ -1258,13 +1340,9 @@ export default function DashboardPage() {
                                   Tracking: {o.tracking_number}
                                 </p>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => markOrderComplete(o)}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-600 to-rose-500 text-white"
-                              >
-                                Mark complete
-                              </button>
+                              <span className="text-xs text-zinc-400">
+                                Waiting for buyer to confirm receipt
+                              </span>
                             </div>
                           )}
                           {o.status === 'completed' && (
