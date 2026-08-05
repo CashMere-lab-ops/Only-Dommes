@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/scheduled-messages",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/shop-auto-cancel",
+      "schedule": "0 * * * *"
     }
   ]
 }
