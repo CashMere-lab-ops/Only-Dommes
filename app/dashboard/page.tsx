@@ -10,6 +10,7 @@ import {
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
+import { createNotification } from '../../lib/notifications';
 
 type Item = {
   id: string;
@@ -971,16 +972,22 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={async () => {
+                                  const {
+                                    data: { user },
+                                  } = await supabase.auth.getUser();
+                                  if (!user) return;
+
                                   await supabase
                                     .from('shop_orders')
                                     .update({ status: 'accepted' })
                                     .eq('id', o.id);
+
                                   setShopOrders((prev) =>
                                     prev.map((x) =>
                                       x.id === o.id ? { ...x, status: 'accepted' } : x
                                     )
                                   );
-                                  // Trigger marks item sold in DB; update UI
+
                                   if (o.item_id) {
                                     setMyItems((prev) =>
                                       prev.map((it) =>
@@ -995,6 +1002,54 @@ export default function DashboardPage() {
                                       )
                                     );
                                   }
+
+                                  // Notify buyer + chat message
+                                  if (o.buyer_id) {
+                                    await createNotification({
+                                      userId: o.buyer_id,
+                                      actorId: user.id,
+                                      type: 'unlock',
+                                      title: 'Order accepted',
+                                      body: `"${o.item_title}" · £${Number(o.item_price).toFixed(2)} — pay to confirm (coming soon)`,
+                                      link: '/messages',
+                                    });
+
+                                    const { data: existing } = await supabase
+                                      .from('conversations')
+                                      .select('id')
+                                      .or(
+                                        `and(participant_1.eq.${user.id},participant_2.eq.${o.buyer_id}),and(participant_1.eq.${o.buyer_id},participant_2.eq.${user.id})`
+                                      )
+                                      .maybeSingle();
+
+                                    let convoId = existing?.id;
+                                    if (!convoId) {
+                                      const { data: created } = await supabase
+                                        .from('conversations')
+                                        .insert({
+                                          participant_1: user.id,
+                                          participant_2: o.buyer_id,
+                                          last_message_at: new Date().toISOString(),
+                                        })
+                                        .select('id')
+                                        .single();
+                                      convoId = created?.id;
+                                    }
+
+                                    if (convoId) {
+                                      await supabase.from('messages').insert({
+                                        conversation_id: convoId,
+                                        sender_id: user.id,
+                                        content: `✅ Order accepted: "${o.item_title}" · £${Number(o.item_price).toFixed(2)}\n\nSeller confirmed your request. Payment to confirm will be available soon — your address stays private.`,
+                                      });
+                                      await supabase
+                                        .from('conversations')
+                                        .update({
+                                          last_message_at: new Date().toISOString(),
+                                        })
+                                        .eq('id', convoId);
+                                    }
+                                  }
                                 }}
                                 className="text-xs px-3 py-1.5 rounded-lg bg-pink-600 text-white"
                               >
@@ -1003,6 +1058,11 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={async () => {
+                                  const {
+                                    data: { user },
+                                  } = await supabase.auth.getUser();
+                                  if (!user) return;
+
                                   await supabase
                                     .from('shop_orders')
                                     .update({ status: 'cancelled' })
@@ -1012,6 +1072,39 @@ export default function DashboardPage() {
                                       x.id === o.id ? { ...x, status: 'cancelled' } : x
                                     )
                                   );
+
+                                  if (o.buyer_id) {
+                                    await createNotification({
+                                      userId: o.buyer_id,
+                                      actorId: user.id,
+                                      type: 'unlock',
+                                      title: 'Order declined',
+                                      body: `"${o.item_title}" was not accepted`,
+                                      link: '/messages',
+                                    });
+
+                                    const { data: existing } = await supabase
+                                      .from('conversations')
+                                      .select('id')
+                                      .or(
+                                        `and(participant_1.eq.${user.id},participant_2.eq.${o.buyer_id}),and(participant_1.eq.${o.buyer_id},participant_2.eq.${user.id})`
+                                      )
+                                      .maybeSingle();
+
+                                    if (existing?.id) {
+                                      await supabase.from('messages').insert({
+                                        conversation_id: existing.id,
+                                        sender_id: user.id,
+                                        content: `❌ Order declined: "${o.item_title}"\n\nThis request was not accepted.`,
+                                      });
+                                      await supabase
+                                        .from('conversations')
+                                        .update({
+                                          last_message_at: new Date().toISOString(),
+                                        })
+                                        .eq('id', existing.id);
+                                    }
+                                  }
                                 }}
                                 className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400"
                               >
