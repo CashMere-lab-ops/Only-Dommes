@@ -117,8 +117,27 @@ export default function DashboardPage() {
   }, [reserveUsername]);
   const [shopOrders, setShopOrders] = useState<any[]>([]);
   const [buyerOrders, setBuyerOrders] = useState<any[]>([]);
+  const [recentCalls, setRecentCalls] = useState<any[]>([]);
   const [showAllBuyerOrders, setShowAllBuyerOrders] = useState(false);
   const [showAllShopOrders, setShowAllShopOrders] = useState(false);
+
+  const formatCallDuration = (secs?: number) => {
+    if (!secs || secs < 1) return '—';
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  const formatCallDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+      });
+    } catch {
+      return '';
+    }
+  };
 
   const orderStatusClass = (status: string) => {
     switch (status) {
@@ -233,6 +252,38 @@ export default function DashboardPage() {
         .order('created_at', { ascending: false })
         .limit(30);
       setBuyerOrders(myBuys || []);
+
+      // Recent voice calls (sub or creator)
+      const { data: callRows } = await supabase
+        .from('voice_calls')
+        .select('*')
+        .or(`creator_id.eq.${user.id},subscriber_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (callRows && callRows.length > 0) {
+        const otherIds = [
+          ...new Set(
+            callRows.map((c: any) =>
+              c.creator_id === user.id ? c.subscriber_id : c.creator_id
+            )
+          ),
+        ];
+        const { data: callProfiles } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', otherIds);
+        const cmap = new Map((callProfiles || []).map((p: any) => [p.id, p]));
+        setRecentCalls(
+          callRows.map((c: any) => {
+            const otherId =
+              c.creator_id === user.id ? c.subscriber_id : c.creator_id;
+            return { ...c, other: cmap.get(otherId) || null };
+          })
+        );
+      } else {
+        setRecentCalls([]);
+      }
 
       setLoading(false);
     };
@@ -901,7 +952,7 @@ export default function DashboardPage() {
                   </Link>
                 </div>
 
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col">
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-lg font-semibold flex items-center gap-2">
                       <Phone size={20} className="text-pink-400" /> Call history
@@ -910,21 +961,75 @@ export default function DashboardPage() {
                       View all
                     </Link>
                   </div>
-                  <div className="text-center py-10 text-zinc-500">
-                    <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-                      <Phone size={28} className="opacity-40" />
+                  {recentCalls.length === 0 ? (
+                    <div className="text-center py-10 text-zinc-500 flex-1">
+                      <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+                        <Phone size={28} className="opacity-40" />
+                      </div>
+                      <p className="text-sm mb-1">No calls yet</p>
+                      <p className="text-xs text-zinc-600 mb-5">
+                        Voice calls with creators will show here
+                      </p>
                     </div>
-                    <p className="text-sm mb-1">Voice calls with creators</p>
-                    <p className="text-xs text-zinc-600 mb-5">
-                      Past calls and spend appear here
-                    </p>
-                    <Link
-                      href="/calls"
-                      className="inline-flex items-center gap-2 text-sm text-pink-400 hover:text-pink-300 font-medium"
-                    >
-                      Open call history →
-                    </Link>
-                  </div>
+                  ) : (
+                    <div className="space-y-2 flex-1 mb-5">
+                      {recentCalls.slice(0, 5).map((call) => {
+                        const name =
+                          call.other?.display_name ||
+                          call.other?.username ||
+                          'User';
+                        const username = call.other?.username;
+                        const initial = name.charAt(0).toUpperCase();
+                        const dur = formatCallDuration(call.duration_seconds);
+                        const charged = Number(call.amount_charged || 0);
+                        return (
+                          <Link
+                            key={call.id}
+                            href={username ? `/${username}` : '/calls'}
+                            className="flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-800/70 transition"
+                          >
+                            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
+                              {call.other?.avatar_url ? (
+                                <img
+                                  src={call.other.avatar_url}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                initial
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{name}</p>
+                              <p className="text-xs text-zinc-500 truncate">
+                                {formatCallDate(call.created_at)}
+                                <span className="mx-1">·</span>
+                                {dur}
+                                <span className="mx-1">·</span>
+                                <span className="capitalize">{call.status}</span>
+                              </p>
+                            </div>
+                            {charged > 0 && (
+                              <span className="text-sm font-medium text-pink-400 flex-shrink-0">
+                                £{charged.toFixed(2)}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                      {recentCalls.length > 5 && (
+                        <p className="text-xs text-zinc-500 text-center pt-1">
+                          +{recentCalls.length - 5} more
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <Link
+                    href="/calls"
+                    className="w-full text-center px-5 py-2.5 bg-pink-600 hover:bg-pink-700 rounded-xl text-sm font-medium transition text-white"
+                  >
+                    Open call history
+                  </Link>
                 </div>
               </div>
             </div>
