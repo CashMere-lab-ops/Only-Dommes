@@ -104,6 +104,11 @@ export default function ShopPage() {
   const [buyError, setBuyError] = useState('');
   const [pudo, setPudo] = useState(emptyPudo);
   const [showPudo, setShowPudo] = useState(false);
+  const [searchPostcode, setSearchPostcode] = useState('');
+  const [pointResults, setPointResults] = useState<any[]>([]);
+  const [searchingPoints, setSearchingPoints] = useState(false);
+  const [searchHint, setSearchHint] = useState('');
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -193,6 +198,49 @@ export default function ShopPage() {
   const prevPhoto = () => {
     if (!viewer || viewer.photos.length < 2) return;
     setPhotoIndex((i) => (i - 1 + viewer.photos.length) % viewer.photos.length);
+  };
+
+  const searchPoints = async () => {
+    const pc = searchPostcode.trim();
+    if (!pc || pc.replace(/\s/g, '').length < 5) {
+      setSearchHint('Enter a full UK postcode');
+      return;
+    }
+    setSearchingPoints(true);
+    setSearchHint('');
+    setPointResults([]);
+    setSelectedPointId(null);
+    try {
+      const res = await fetch(
+        `/api/shipping/points?carrier=${encodeURIComponent(pudo.carrier)}&postcode=${encodeURIComponent(pc)}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setSearchHint(data.error || 'Search failed');
+        return;
+      }
+      if (data.message) setSearchHint(data.message);
+      setPointResults(data.points || []);
+      if (data.live && (!data.points || data.points.length === 0)) {
+        setSearchHint('No points found near that postcode');
+      }
+    } catch {
+      setSearchHint('Could not search points');
+    } finally {
+      setSearchingPoints(false);
+    }
+  };
+
+  const selectPoint = (pt: any) => {
+    setSelectedPointId(pt.id);
+    setPudo((prev) => ({
+      ...prev,
+      point_id: pt.id || '',
+      point_name: pt.name || '',
+      point_line: pt.line || '',
+      point_town: pt.town || '',
+      point_postcode: pt.postcode || searchPostcode.trim(),
+    }));
   };
 
   const requestBuy = async () => {
@@ -657,7 +705,12 @@ export default function ShopPage() {
                             <button
                               key={c.id}
                               type="button"
-                              onClick={() => setPudo({ ...pudo, carrier: c.id })}
+                              onClick={() => {
+                                setPudo({ ...pudo, carrier: c.id });
+                                setPointResults([]);
+                                setSelectedPointId(null);
+                                setSearchHint('');
+                              }}
                               className={`text-left px-3 py-2.5 rounded-xl border text-sm transition ${
                                 pudo.carrier === c.id
                                   ? 'border-pink-500 bg-pink-500/10 text-white'
@@ -667,10 +720,82 @@ export default function ShopPage() {
                               <span className="font-medium block">{c.label}</span>
                               <span className="text-[11px] text-zinc-500">
                                 Hold {c.holdLabel}
+                                {c.id === 'inpost' ? ' · live map' : ''}
                               </span>
                             </button>
                           ))}
                         </div>
+
+                        <div className="flex gap-2">
+                          <input
+                            value={searchPostcode}
+                            onChange={(e) => setSearchPostcode(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                searchPoints();
+                              }
+                            }}
+                            placeholder="Your postcode e.g. M1 1AE"
+                            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={searchPoints}
+                            disabled={searchingPoints}
+                            className="px-4 py-2.5 rounded-xl bg-zinc-800 border border-zinc-600 text-sm font-medium hover:border-pink-500 transition disabled:opacity-50"
+                          >
+                            {searchingPoints ? '…' : 'Find'}
+                          </button>
+                        </div>
+
+                        {searchHint && (
+                          <p className="text-xs text-zinc-400">{searchHint}</p>
+                        )}
+
+                        {pointResults.length > 0 && (
+                          <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-xl border border-zinc-800 p-1.5">
+                            {pointResults.map((pt) => (
+                              <button
+                                key={pt.id}
+                                type="button"
+                                onClick={() => selectPoint(pt)}
+                                className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition ${
+                                  selectedPointId === pt.id
+                                    ? 'bg-pink-600/20 border border-pink-500'
+                                    : 'bg-zinc-800/80 border border-transparent hover:border-zinc-600'
+                                }`}
+                              >
+                                <span className="font-medium text-zinc-100 block">
+                                  {pt.name}
+                                </span>
+                                <span className="text-xs text-zinc-400 block">
+                                  {[pt.line, pt.town, pt.postcode]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                                {pt.meta && (
+                                  <span className="text-[10px] text-zinc-500">
+                                    Availability {pt.meta}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {selectedPointId && (
+                          <p className="text-xs text-pink-400">
+                            Selected: {pudo.point_name}
+                          </p>
+                        )}
+
+                        {/* Manual fallback / edit */}
+                        <p className="text-[11px] text-zinc-500 pt-1">
+                          {pudo.carrier === 'inpost'
+                            ? 'Or type a point manually if search misses it'
+                            : 'Enter your collect point details below'}
+                        </p>
                         <input
                           value={pudo.point_name}
                           onChange={(e) =>

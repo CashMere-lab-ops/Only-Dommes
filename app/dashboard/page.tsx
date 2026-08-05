@@ -616,6 +616,14 @@ export default function DashboardPage() {
     if (!user) return;
     const tracking = (trackingDraft[order.id] || '').trim() || null;
     const dropName = (trackingDraft[`${order.id}-drop`] || '').trim() || null;
+    const holdHours: Record<string, number> = {
+      inpost: 72,
+      evri: 240,
+      royal_mail: 168,
+      yodel: 168,
+    };
+    const hours = holdHours[order.shipping_carrier] || 168;
+    const deadline = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
     const { error } = await supabase
       .from('shop_orders')
       .update({
@@ -625,6 +633,7 @@ export default function DashboardPage() {
         seller_dropoff_point_name: dropName,
         seller_dropped_off_at: new Date().toISOString(),
         seller_dropoff_carrier: order.shipping_carrier || null,
+        collection_deadline: deadline,
       })
       .eq('id', order.id);
     if (error) {
