@@ -118,6 +118,24 @@ export default function DashboardPage() {
   const [shopOrders, setShopOrders] = useState<any[]>([]);
   const [buyerOrders, setBuyerOrders] = useState<any[]>([]);
   const [showAllBuyerOrders, setShowAllBuyerOrders] = useState(false);
+  const [showAllShopOrders, setShowAllShopOrders] = useState(false);
+
+  const orderStatusClass = (status: string) => {
+    switch (status) {
+      case 'requested':
+        return 'bg-zinc-800 text-zinc-300';
+      case 'accepted':
+        return 'bg-pink-500/15 text-pink-400';
+      case 'shipped':
+        return 'bg-amber-500/15 text-amber-400';
+      case 'completed':
+        return 'bg-green-500/15 text-green-400';
+      case 'cancelled':
+        return 'bg-red-500/10 text-red-400';
+      default:
+        return 'bg-zinc-800 text-zinc-400';
+    }
+  };
   const [trackingDraft, setTrackingDraft] = useState<Record<string, string>>({});
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
@@ -764,11 +782,16 @@ export default function DashboardPage() {
                       >
                         <div className="min-w-0">
                           <p className="font-semibold text-base leading-snug">{o.item_title}</p>
-                          <p className="text-sm text-zinc-400 mt-1">
-                            £{Number(o.item_price).toFixed(2)}
-                            <span className="text-zinc-600 mx-1.5">·</span>
-                            <span className="capitalize text-zinc-300">{o.status}</span>
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <span className="text-sm text-zinc-300">
+                              £{Number(o.item_price).toFixed(2)}
+                            </span>
+                            <span
+                              className={`text-xs font-medium capitalize px-2 py-0.5 rounded-full ${orderStatusClass(o.status)}`}
+                            >
+                              {o.status}
+                            </span>
+                          </div>
                           {o.tracking_number && (
                             <p className="text-sm text-zinc-400 mt-1">
                               Tracking: <span className="text-zinc-200">{o.tracking_number}</span>
@@ -1156,29 +1179,54 @@ export default function DashboardPage() {
 
                           {shopOrders.length > 0 && (
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
-                  <h2 className="text-lg font-semibold mb-4">Shop orders</h2>
-                  <div className="space-y-3">
-                    {shopOrders.map((o) => (
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold">Shop orders</h2>
+                    {shopOrders.length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllShopOrders((v) => !v)}
+                        className="text-sm text-pink-400 hover:text-pink-300"
+                      >
+                        {showAllShopOrders ? 'Show less' : 'View all'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {(showAllShopOrders ? shopOrders : shopOrders.slice(0, 3)).map((o) => (
                       <div
                         key={o.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3 border-b border-zinc-800 last:border-0"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 border-b border-zinc-800 last:border-0"
                       >
-                        <div>
-                          <p className="font-medium text-sm">{o.item_title}</p>
-                          <p className="text-xs text-zinc-500">
-                            £{Number(o.item_price).toFixed(2)} · {o.status}
-                            {o.buyer_note ? ` · "${o.buyer_note}"` : ''}
-                          </p>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-base leading-snug">{o.item_title}</p>
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <span className="text-sm text-zinc-300">
+                              £{Number(o.item_price).toFixed(2)}
+                            </span>
+                            <span
+                              className={`text-xs font-medium capitalize px-2 py-0.5 rounded-full ${orderStatusClass(o.status)}`}
+                            >
+                              {o.status}
+                            </span>
+                          </div>
+                          {o.buyer_note && (
+                            <p className="text-sm text-zinc-400 mt-1.5 line-clamp-2">
+                              Note: “{o.buyer_note}”
+                            </p>
+                          )}
                           {(o.shipping_county || o.shipping_country || o.shipping_city) && (
-                            <p className="text-[11px] text-zinc-500 mt-0.5">
-                              Ship to: {[o.shipping_county || o.shipping_city, o.shipping_country]
-                                .filter(Boolean)
-                                .join(', ')}{' '}
-                              · full address private
+                            <p className="text-sm text-zinc-500 mt-1">
+                              Ship to:{' '}
+                              <span className="text-zinc-300">
+                                {[o.shipping_county || o.shipping_city, o.shipping_country]
+                                  .filter(Boolean)
+                                  .join(', ')}
+                              </span>
+                              <span className="text-zinc-600"> · address private</span>
                             </p>
                           )}
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
                           {o.status === 'requested' && (
                             <>
                               <button
@@ -1264,7 +1312,7 @@ export default function DashboardPage() {
                                     }
                                   }
                                 }}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-pink-600 text-white"
+                                className="text-sm px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-medium transition"
                               >
                                 Accept
                               </button>
@@ -1320,16 +1368,16 @@ export default function DashboardPage() {
                                     }
                                   }
                                 }}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400"
+                                className="text-sm px-4 py-2 rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition"
                               >
                                 Decline
                               </button>
                             </>
                           )}
                           {(o.status === 'accepted' || o.status === 'paid' || o.status === 'awaiting_payment') && (
-                            <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[200px]">
-                              <p className="text-[11px] text-zinc-500">
-                                Label: private address on file · you only see county/country
+                            <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[220px]">
+                              <p className="text-xs text-zinc-500">
+                                Private address on file · you only see county/country
                               </p>
                               <input
                                 value={trackingDraft[o.id] || ''}
@@ -1339,35 +1387,35 @@ export default function DashboardPage() {
                                     [o.id]: e.target.value,
                                   }))
                                 }
-                                placeholder="Tracking (optional)"
-                                className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-pink-500"
+                                placeholder="Tracking number (optional)"
+                                className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => markOrderShipped(o)}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-pink-600 text-white"
+                                className="text-sm px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-medium transition"
                               >
                                 Mark shipped
                               </button>
                             </div>
                           )}
                           {o.status === 'shipped' && (
-                            <div className="flex flex-col gap-1 items-end">
+                            <div className="flex flex-col gap-1 sm:items-end">
                               {o.tracking_number && (
-                                <p className="text-[11px] text-zinc-400">
+                                <p className="text-sm text-zinc-300">
                                   Tracking: {o.tracking_number}
                                 </p>
                               )}
-                              <span className="text-xs text-zinc-400">
-                                Waiting for buyer to confirm receipt
+                              <span className="text-sm text-zinc-400">
+                                Waiting for buyer to confirm
                               </span>
                             </div>
                           )}
                           {o.status === 'completed' && (
-                            <span className="text-xs text-green-400 font-medium">Complete</span>
+                            <span className="text-sm text-green-400 font-medium">Complete</span>
                           )}
                           {o.status === 'cancelled' && (
-                            <span className="text-xs text-zinc-500">Cancelled</span>
+                            <span className="text-sm text-zinc-500">Cancelled</span>
                           )}
                         </div>
                       </div>
