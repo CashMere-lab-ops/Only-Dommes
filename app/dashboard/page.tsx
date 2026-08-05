@@ -116,6 +116,7 @@ export default function DashboardPage() {
     };
   }, [reserveUsername]);
   const [shopOrders, setShopOrders] = useState<any[]>([]);
+  const [trackingDraft, setTrackingDraft] = useState<Record<string, string>>({});
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
   const [mySubscriptions, setMySubscriptions] = useState<any[]>([]);
@@ -476,6 +477,119 @@ export default function DashboardPage() {
     }
   };
 
+
+
+  const notifyBuyerOrder = async (
+    order: any,
+    userId: string,
+    title: string,
+    body: string,
+    chatText: string
+  ) => {
+    if (!order?.buyer_id) return;
+    await createNotification({
+      userId: order.buyer_id,
+      actorId: userId,
+      type: 'unlock',
+      title,
+      body,
+      link: '/messages',
+    });
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(
+        `and(participant_1.eq.${userId},participant_2.eq.${order.buyer_id}),and(participant_1.eq.${order.buyer_id},participant_2.eq.${userId})`
+      )
+      .maybeSingle();
+    let convoId = existing?.id;
+    if (!convoId) {
+      const { data: created } = await supabase
+        .from('conversations')
+        .insert({
+          participant_1: userId,
+          participant_2: order.buyer_id,
+          last_message_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+      convoId = created?.id;
+    }
+    if (convoId) {
+      await supabase.from('messages').insert({
+        conversation_id: convoId,
+        sender_id: userId,
+        content: chatText,
+      });
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', convoId);
+    }
+  };
+
+  const markOrderShipped = async (order: any) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const tracking = (trackingDraft[order.id] || '').trim() || null;
+    const { error } = await supabase
+      .from('shop_orders')
+      .update({
+        status: 'shipped',
+        tracking_number: tracking,
+        shipped_at: new Date().toISOString(),
+      })
+      .eq('id', order.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setShopOrders((prev) =>
+      prev.map((x) =>
+        x.id === order.id
+          ? { ...x, status: 'shipped', tracking_number: tracking }
+          : x
+      )
+    );
+    const trackLine = tracking ? `\nTracking: ${tracking}` : '';
+    await notifyBuyerOrder(
+      order,
+      user.id,
+      'Order shipped',
+      `"${order.item_title}" is on its way`,
+      `📦 Shipped: "${order.item_title}"${trackLine}\n\nYour full address was used privately for the label — the seller never sees it.`
+    );
+  };
+
+  const markOrderComplete = async (order: any) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase
+      .from('shop_orders')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', order.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setShopOrders((prev) =>
+      prev.map((x) => (x.id === order.id ? { ...x, status: 'completed' } : x))
+    );
+    await notifyBuyerOrder(
+      order,
+      user.id,
+      'Order complete',
+      `"${order.item_title}" marked complete`,
+      `✨ Order complete: "${order.item_title}"\n\nThanks for buying on World of Dommes.`
+    );
+  };
 
   const openGallery = (item: Item) => {
     if (item.photos.length === 0) return;
@@ -944,7 +1058,7 @@ export default function DashboardPage() {
 
                           {shopOrders.length > 0 && (
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
-                  <h2 className="text-lg font-semibold mb-4">Shop order requests</h2>
+                  <h2 className="text-lg font-semibold mb-4">Shop orders</h2>
                   <div className="space-y-3">
                     {shopOrders.map((o) => (
                       <div
@@ -1111,6 +1225,53 @@ export default function DashboardPage() {
                                 Decline
                               </button>
                             </>
+                          )}
+                          {(o.status === 'accepted' || o.status === 'paid' || o.status === 'awaiting_payment') && (
+                            <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[200px]">
+                              <p className="text-[11px] text-zinc-500">
+                                Label: private address on file · you only see county/country
+                              </p>
+                              <input
+                                value={trackingDraft[o.id] || ''}
+                                onChange={(e) =>
+                                  setTrackingDraft((prev) => ({
+                                    ...prev,
+                                    [o.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Tracking (optional)"
+                                className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-pink-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => markOrderShipped(o)}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-pink-600 text-white"
+                              >
+                                Mark shipped
+                              </button>
+                            </div>
+                          )}
+                          {o.status === 'shipped' && (
+                            <div className="flex flex-col gap-1 items-end">
+                              {o.tracking_number && (
+                                <p className="text-[11px] text-zinc-400">
+                                  Tracking: {o.tracking_number}
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => markOrderComplete(o)}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-600 to-rose-500 text-white"
+                              >
+                                Mark complete
+                              </button>
+                            </div>
+                          )}
+                          {o.status === 'completed' && (
+                            <span className="text-xs text-green-400 font-medium">Complete</span>
+                          )}
+                          {o.status === 'cancelled' && (
+                            <span className="text-xs text-zinc-500">Cancelled</span>
                           )}
                         </div>
                       </div>
