@@ -1,5 +1,7 @@
 /**
- * Sendcloud API helpers (Basic auth: publicKey:secretKey)
+ * Sendcloud API helpers
+ * Uses OAuth2 client_credentials (required when integration enforces OAuth2)
+ * Falls back to Basic auth if token endpoint is not needed.
  */
 
 function getKeys() {
@@ -13,23 +15,24 @@ function getKeys() {
   return { key, secret };
 }
 
-function getAuthHeader() {
+function basicHeader() {
   const { key, secret } = getKeys();
-  const token = Buffer.from(`${key}:${secret}`, 'utf8').toString('base64');
-  return `Basic ${token}`;
+  return `Basic ${Buffer.from(`${key}:${secret}`, 'utf8').toString('base64')}`;
 }
 
-async function scFetch(url: string, init: RequestInit = {}) {
-  const res = await fetch(url, {
-    ...init,
+/** OAuth2 access token (client_credentials) */
+async function getAccessToken(): Promise<string> {
+  const res = await fetch('https://account.sendcloud.com/oauth2/token', {
+    method: 'POST',
     headers: {
-      Authorization: getAuthHeader(),
+      Authorization: basicHeader(),
+      'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...(init.headers || {}),
     },
+    body: 'grant_type=client_credentials&scope=api',
     cache: 'no-store',
   });
+
   const text = await res.text();
   let body: any = null;
   try {
@@ -37,6 +40,41 @@ async function scFetch(url: string, init: RequestInit = {}) {
   } catch {
     body = { raw: text };
   }
+
+  if (!res.ok || !body?.access_token) {
+    const msg =
+      body?.error_description ||
+      body?.error ||
+      body?.message ||
+      text?.slice(0, 300) ||
+      `OAuth2 token failed HTTP ${res.status}`;
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  }
+
+  return body.access_token as string;
+}
+
+async function scFetch(url: string, init: RequestInit = {}) {
+  const token = await getAccessToken();
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+    cache: 'no-store',
+  });
+
+  const text = await res.text();
+  let body: any = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = { raw: text };
+  }
+
   if (!res.ok) {
     const msg =
       body?.error?.message ||
@@ -56,12 +94,10 @@ export async function searchServicePoints(opts: {
   carrier?: string;
   radius?: number;
 }) {
-  const { key } = getKeys();
   const params = new URLSearchParams({
     country: 'GB',
     address: opts.postcode,
     radius: String(opts.radius ?? 20000),
-    access_token: key,
   });
   if (opts.carrier) {
     params.set('carrier', opts.carrier);
@@ -146,9 +182,4 @@ export function matchServicePoint(
   scored.sort((a, b) => b.score - a.score);
   if (scored[0].score > 0) return scored[0].p;
   return points[0];
-}
-
-/** Quick auth check against panel API */
-export async function testAuth() {
-  return scFetch('https://panel.sendcloud.sc/api/v2/user');
 }
