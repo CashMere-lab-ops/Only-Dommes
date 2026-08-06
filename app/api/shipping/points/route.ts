@@ -49,11 +49,11 @@ function mapInpostItem(item: any): ShippingPoint | null {
     const dist = item?.distance;
     const metaParts = [
       dist != null && Number.isFinite(Number(dist))
-        ? `${Math.round(Number(dist))}m`
+        ? `${Math.round(Number(dist))}m away`
         : null,
-      avail.A != null ? `S:${avail.A}` : null,
-      avail.B != null ? `M:${avail.B}` : null,
-      avail.C != null ? `L:${avail.C}` : null,
+      avail.A != null ? `Small: ${avail.A}` : null,
+      avail.B != null ? `Med: ${avail.B}` : null,
+      avail.C != null ? `Large: ${avail.C}` : null,
     ].filter(Boolean);
 
     return {
@@ -70,16 +70,29 @@ function mapInpostItem(item: any): ShippingPoint | null {
   }
 }
 
-async function fetchInpostPoints(postcode: string) {
+/** Resolve UK postcode → lat/lng via postcodes.io (more accurate than InPost postcode param) */
+async function geocodeUkPostcode(postcode: string) {
+  const res = await fetch(
+    `https://api.postcodes.io/postcodes/${encodeURIComponent(postcode)}`,
+    { cache: 'no-store' }
+  );
+  if (!res.ok) return null;
+  const body = await res.json();
+  const r = body?.result;
+  if (!r || r.latitude == null || r.longitude == null) return null;
+  return { latitude: Number(r.latitude), longitude: Number(r.longitude) };
+}
+
+async function fetchInpostByPoint(lat: number, lng: number) {
   const params = new URLSearchParams({
-    relative_post_code: postcode,
+    relative_point: `${lat},${lng}`,
     limit: '20',
     max_distance: '30000',
-    status: 'Operating,NonOperating,Disabled',
+    status: 'Operating',
     virtual: '0',
   });
 
-  const res = await fetch(
+  return fetch(
     `https://api-uk-global-points.easypack24.net/v1/points?${params.toString()}`,
     {
       method: 'GET',
@@ -90,8 +103,6 @@ async function fetchInpostPoints(postcode: string) {
       cache: 'no-store',
     }
   );
-
-  return res;
 }
 
 export async function GET(request: Request) {
@@ -116,14 +127,18 @@ export async function GET(request: Request) {
     }
 
     if (carrier === 'inpost') {
-      let res = await fetchInpostPoints(postcode);
-
-      // Retry without space if needed
-      if (!res.ok) {
-        const bare = postcode.replace(/\s/g, '');
-        res = await fetchInpostPoints(bare);
+      const coords = await geocodeUkPostcode(postcode);
+      if (!coords) {
+        return NextResponse.json(
+          {
+            error: 'Could not recognise that postcode. Check it and try again.',
+            points: [],
+          },
+          { status: 200 }
+        );
       }
 
+      const res = await fetchInpostByPoint(coords.latitude, coords.longitude);
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         console.error('InPost HTTP', res.status, text.slice(0, 300));
