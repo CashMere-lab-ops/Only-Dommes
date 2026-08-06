@@ -5,6 +5,7 @@ import {
   getShippingMethodsForServicePoint,
   createParcel,
   matchServicePoint,
+  extractLabelInfo,
 } from '../../../../lib/sendcloud';
 
 export const dynamic = 'force-dynamic';
@@ -181,14 +182,7 @@ export async function POST(request: Request) {
       request_label: true,
     });
 
-    const parcel = created?.parcel || created;
-    const tracking = parcel?.tracking_number || null;
-    const labelUrl =
-      parcel?.label?.normal_printer?.[0] ||
-      parcel?.label?.label_printer ||
-      parcel?.documents?.[0]?.link ||
-      null;
-    const parcelId = parcel?.id != null ? String(parcel.id) : null;
+    const { tracking, labelUrl, parcelId } = extractLabelInfo(created);
 
     await admin
       .from('shop_orders')

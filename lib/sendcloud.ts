@@ -1,7 +1,5 @@
 /**
- * Sendcloud API helpers
- * Uses OAuth2 client_credentials (required when integration enforces OAuth2)
- * Falls back to Basic auth if token endpoint is not needed.
+ * Sendcloud API helpers — Basic auth + API v3 shipments
  */
 
 function getKeys() {
@@ -15,51 +13,16 @@ function getKeys() {
   return { key, secret };
 }
 
-function basicHeader() {
+function getAuthHeader() {
   const { key, secret } = getKeys();
   return `Basic ${Buffer.from(`${key}:${secret}`, 'utf8').toString('base64')}`;
 }
 
-/** OAuth2 access token (client_credentials) */
-async function getAccessToken(): Promise<string> {
-  const res = await fetch('https://account.sendcloud.com/oauth2/token', {
-    method: 'POST',
-    headers: {
-      Authorization: basicHeader(),
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: 'grant_type=client_credentials&scope=api',
-    cache: 'no-store',
-  });
-
-  const text = await res.text();
-  let body: any = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = { raw: text };
-  }
-
-  if (!res.ok || !body?.access_token) {
-    const msg =
-      body?.error_description ||
-      body?.error ||
-      body?.message ||
-      text?.slice(0, 300) ||
-      `OAuth2 token failed HTTP ${res.status}`;
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
-  }
-
-  return body.access_token as string;
-}
-
 async function scFetch(url: string, init: RequestInit = {}) {
-  const token = await getAccessToken();
   const res = await fetch(url, {
     ...init,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: getAuthHeader(),
       Accept: 'application/json',
       'Content-Type': 'application/json',
       ...(init.headers || {}),
@@ -78,10 +41,13 @@ async function scFetch(url: string, init: RequestInit = {}) {
   if (!res.ok) {
     const msg =
       body?.error?.message ||
+      body?.detail ||
       body?.message ||
       body?.error ||
+      body?.errors?.[0]?.detail ||
+      body?.errors?.[0]?.title ||
       body?.errors?.[0] ||
-      text?.slice(0, 300) ||
+      text?.slice(0, 500) ||
       `Sendcloud HTTP ${res.status}`;
     throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
   }
@@ -102,12 +68,23 @@ export async function searchServicePoints(opts: {
   if (opts.carrier) {
     params.set('carrier', opts.carrier);
   }
-  return scFetch(
-    `https://servicepoints.sendcloud.sc/api/v2/service-points?${params.toString()}`
-  );
+
+  try {
+    return await scFetch(
+      `https://servicepoints.sendcloud.sc/api/v2/service-points?${params.toString()}`
+    );
+  } catch (e1: any) {
+    try {
+      return await scFetch(
+        `https://panel.sendcloud.sc/api/v2/service-points?${params.toString()}`
+      );
+    } catch {
+      throw e1;
+    }
+  }
 }
 
-/** Shipping methods that support a given service point */
+/** Shipping methods that support a given service point (v2 list still works for many accounts) */
 export async function getShippingMethodsForServicePoint(servicePointId: number | string) {
   return scFetch(
     `https://panel.sendcloud.sc/api/v2/shipping_methods?service_point_id=${servicePointId}`
@@ -130,31 +107,112 @@ export type CreateParcelInput = {
   request_label?: boolean;
 };
 
-/** Create parcel + optional label */
+/**
+ * Create + announce shipment via API v3 (required for new accounts)
+ * POST /api/v3/shipments/announce
+ */
 export async function createParcel(input: CreateParcelInput) {
-  const parcel: any = {
+  const toAddress = {
     name: input.name,
-    email: input.email || '',
-    telephone: input.telephone || '',
-    address: input.address,
+    address_line_1: input.address,
     house_number: input.house_number || '1',
     city: input.city,
     postal_code: input.postal_code,
-    country: input.country || 'GB',
-    to_service_point: input.to_service_point,
-    shipment: { id: input.shipment_method_id },
-    weight: input.weight_kg || '1.000',
-    order_number: input.order_number || '',
-    request_label: input.request_label !== false,
+    country_code: input.country || 'GB',
+    phone_number: input.telephone || '',
+    email: input.email || '',
   };
 
-  return scFetch('https://panel.sendcloud.sc/api/v2/parcels', {
-    method: 'POST',
-    body: JSON.stringify({ parcel }),
-  });
+  const parcels = [
+    {
+      weight: {
+        value: input.weight_kg || '1.000',
+        unit: 'kg',
+      },
+    },
+  ];
+
+  // Attempt 1: shipping_method_id (maps from v2 methods list)
+  const bodyMethodId = {
+    to_address: toAddress,
+    to_service_point: input.to_service_point,
+    ship_with: {
+      type: 'shipping_method_id',
+      properties: {
+        shipping_method_id: input.shipment_method_id,
+      },
+    },
+    parcels,
+    order_number: input.order_number || undefined,
+  };
+
+  try {
+    return await scFetch('https://panel.sendcloud.sc/api/v3/shipments/announce', {
+      method: 'POST',
+      body: JSON.stringify(bodyMethodId),
+    });
+  } catch (e1: any) {
+    // Attempt 2: apply shipping rules / defaults (no explicit method)
+    const bodyRules = {
+      to_address: toAddress,
+      to_service_point: input.to_service_point,
+      parcels,
+      order_number: input.order_number || undefined,
+      apply_shipping_rules: true,
+      apply_shipping_defaults: true,
+    };
+    try {
+      return await scFetch(
+        'https://panel.sendcloud.sc/api/v3/shipments/announce-with-shipping-rules',
+        {
+          method: 'POST',
+          body: JSON.stringify(bodyRules),
+        }
+      );
+    } catch (e2: any) {
+      throw new Error(
+        `v3 announce failed. Method: ${e1?.message || e1}. Rules: ${e2?.message || e2}`
+      );
+    }
+  }
 }
 
-/** Pick best matching Sendcloud service point for our stored locker choice */
+/** Extract tracking + label URL from v3 or v2-shaped responses */
+export function extractLabelInfo(created: any) {
+  const shipment = created?.data || created?.shipment || created;
+  const parcels = shipment?.parcels || created?.parcels || [];
+  const parcel = Array.isArray(parcels) ? parcels[0] : parcels;
+
+  const tracking =
+    parcel?.tracking_number ||
+    parcel?.carrier_tracking_number ||
+    shipment?.tracking_number ||
+    null;
+
+  let labelUrl: string | null =
+    parcel?.label?.normal_printer?.[0] ||
+    parcel?.label?.label_printer ||
+    parcel?.documents?.find((d: any) => d.type === 'label')?.link ||
+    parcel?.documents?.[0]?.link ||
+    null;
+
+  // v3 may return base64 label_file
+  const labelFile = parcel?.label_file || shipment?.label_file;
+  if (!labelUrl && labelFile?.contents && labelFile?.mime_type === 'application/pdf') {
+    // Data URL so the seller can open/download immediately
+    labelUrl = `data:application/pdf;base64,${labelFile.contents}`;
+  }
+
+  const parcelId =
+    parcel?.id != null
+      ? String(parcel.id)
+      : shipment?.id != null
+        ? String(shipment.id)
+        : null;
+
+  return { tracking, labelUrl, parcelId, raw: created };
+}
+
 export function matchServicePoint(
   points: any[],
   opts: { name?: string; postcode?: string; inpostId?: string }
