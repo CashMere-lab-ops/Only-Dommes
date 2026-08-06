@@ -91,6 +91,22 @@ export async function getShippingMethodsForServicePoint(servicePointId: number |
   );
 }
 
+
+/** Seller / platform sender address for v3 (required) */
+function getFromAddress() {
+  return {
+    name: (process.env.SENDCLOUD_FROM_NAME || 'World of Dommes').trim(),
+    company_name: (process.env.SENDCLOUD_FROM_COMPANY || 'World of Dommes').trim(),
+    address_line_1: (process.env.SENDCLOUD_FROM_ADDRESS || '1 High Street').trim(),
+    house_number: (process.env.SENDCLOUD_FROM_HOUSE || '1').trim(),
+    city: (process.env.SENDCLOUD_FROM_CITY || 'London').trim(),
+    postal_code: (process.env.SENDCLOUD_FROM_POSTCODE || 'SW1A 1AA').trim(),
+    country_code: (process.env.SENDCLOUD_FROM_COUNTRY || 'GB').trim(),
+    phone_number: (process.env.SENDCLOUD_FROM_PHONE || '+447700000000').trim(),
+    email: (process.env.SENDCLOUD_FROM_EMAIL || 'shipping@worldofdommes.com').trim(),
+  };
+}
+
 export type CreateParcelInput = {
   name: string;
   email?: string;
@@ -141,7 +157,10 @@ export async function createParcel(input: CreateParcelInput) {
       : { id: Number(input.to_service_point) };
 
   // Attempt 1: shipping_method_id (maps from v2 methods list)
+  const fromAddress = getFromAddress();
+
   const bodyMethodId = {
+    from_address: fromAddress,
     to_address: toAddress,
     to_service_point: servicePoint,
     ship_with: {
@@ -162,6 +181,7 @@ export async function createParcel(input: CreateParcelInput) {
   } catch (e1: any) {
     // Attempt 2: apply shipping rules / defaults (no explicit method)
     const bodyRules = {
+      from_address: fromAddress,
       to_address: toAddress,
       to_service_point: servicePoint,
       parcels,
@@ -181,6 +201,7 @@ export async function createParcel(input: CreateParcelInput) {
       // Attempt 3: carrier_service_point_id only (InPost machine code style)
       if (input.carrier_service_point_id) {
         const bodyCarrier = {
+          from_address: fromAddress,
           to_address: toAddress,
           to_service_point: {
             carrier_service_point_id: String(input.carrier_service_point_id),
