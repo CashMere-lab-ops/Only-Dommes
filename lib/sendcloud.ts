@@ -1,15 +1,21 @@
 /**
  * Sendcloud API helpers (Basic auth: publicKey:secretKey)
- * Docs: https://panel.sendcloud.sc/api/v2/...
  */
 
-function getAuthHeader() {
-  const key = process.env.SENDCLOUD_PUBLIC_KEY;
-  const secret = process.env.SENDCLOUD_SECRET_KEY;
+function getKeys() {
+  const key = (process.env.SENDCLOUD_PUBLIC_KEY || '').trim();
+  const secret = (process.env.SENDCLOUD_SECRET_KEY || '').trim();
   if (!key || !secret) {
-    throw new Error('Missing SENDCLOUD_PUBLIC_KEY or SENDCLOUD_SECRET_KEY');
+    throw new Error(
+      'Missing SENDCLOUD_PUBLIC_KEY or SENDCLOUD_SECRET_KEY on the server. Check Vercel env vars and redeploy.'
+    );
   }
-  const token = Buffer.from(`${key}:${secret}`).toString('base64');
+  return { key, secret };
+}
+
+function getAuthHeader() {
+  const { key, secret } = getKeys();
+  const token = Buffer.from(`${key}:${secret}`, 'utf8').toString('base64');
   return `Basic ${token}`;
 }
 
@@ -35,29 +41,31 @@ async function scFetch(url: string, init: RequestInit = {}) {
     const msg =
       body?.error?.message ||
       body?.message ||
+      body?.error ||
       body?.errors?.[0] ||
-      text?.slice(0, 200) ||
+      text?.slice(0, 300) ||
       `Sendcloud HTTP ${res.status}`;
     throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
   }
   return body;
 }
 
-/** Search service points near a UK postcode (Sendcloud IDs, not InPost machine codes) */
+/** Search service points near a UK postcode */
 export async function searchServicePoints(opts: {
   postcode: string;
-  carrier?: string; // e.g. inpost
+  carrier?: string;
   radius?: number;
 }) {
+  const { key } = getKeys();
   const params = new URLSearchParams({
     country: 'GB',
     address: opts.postcode,
     radius: String(opts.radius ?? 20000),
+    access_token: key,
   });
   if (opts.carrier) {
     params.set('carrier', opts.carrier);
   }
-  // Service points live on a different host
   return scFetch(
     `https://servicepoints.sendcloud.sc/api/v2/service-points?${params.toString()}`
   );
@@ -137,6 +145,10 @@ export function matchServicePoint(
 
   scored.sort((a, b) => b.score - a.score);
   if (scored[0].score > 0) return scored[0].p;
-  // fallback: first / closest if API returns ordered
   return points[0];
+}
+
+/** Quick auth check against panel API */
+export async function testAuth() {
+  return scFetch('https://panel.sendcloud.sc/api/v2/user');
 }
