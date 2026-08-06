@@ -212,20 +212,32 @@ export default function ShopPage() {
     setSelectedPointId(null);
     try {
       const res = await fetch(
-        `/api/shipping/points?carrier=${encodeURIComponent(pudo.carrier)}&postcode=${encodeURIComponent(pc)}`
+        `/api/shipping/points?carrier=${encodeURIComponent(pudo.carrier)}&postcode=${encodeURIComponent(pc)}`,
+        { cache: 'no-store' }
       );
-      const data = await res.json();
-      if (!res.ok) {
-        setSearchHint(data.error || 'Search failed');
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        setSearchHint('Search returned an invalid response. Try again after deploy.');
         return;
       }
-      if (data.message) setSearchHint(data.message);
-      setPointResults(data.points || []);
-      if (data.live && (!data.points || data.points.length === 0)) {
+      if (data.error) {
+        setSearchHint(data.error);
+      } else if (data.message) {
+        setSearchHint(data.message);
+      }
+      setPointResults(Array.isArray(data.points) ? data.points : []);
+      if (
+        data.live &&
+        (!data.points || data.points.length === 0) &&
+        !data.error &&
+        !data.message
+      ) {
         setSearchHint('No points found near that postcode');
       }
-    } catch {
-      setSearchHint('Could not search points');
+    } catch (e: any) {
+      setSearchHint(e?.message || 'Could not search points');
     } finally {
       setSearchingPoints(false);
     }
