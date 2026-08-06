@@ -609,6 +609,54 @@ export default function DashboardPage() {
     }
   };
 
+  const generateShippingLabel = async (order: any) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      alert('Please log in again');
+      return;
+    }
+    try {
+      const res = await fetch('/api/shipping/create-label', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ orderId: order.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Could not create label');
+        return;
+      }
+      setShopOrders((prev) =>
+        prev.map((x) =>
+          x.id === order.id
+            ? {
+                ...x,
+                tracking_number: data.tracking_number || x.tracking_number,
+                label_url: data.label_url || x.label_url,
+                sendcloud_parcel_id: data.sendcloud_parcel_id,
+                status: data.already ? x.status : x.status === 'accepted' || x.status === 'paid' ? 'shipped' : x.status,
+              }
+            : x
+        )
+      );
+      if (data.label_url) {
+        window.open(data.label_url, '_blank');
+      }
+      alert(
+        data.already
+          ? 'Label already exists — opened if available.'
+          : `Label created${data.tracking_number ? ` · Tracking ${data.tracking_number}` : ''}`
+      );
+    } catch (e: any) {
+      alert(e?.message || 'Label request failed');
+    }
+  };
+
   const markOrderShipped = async (order: any) => {
     const {
       data: { user },
@@ -1495,8 +1543,27 @@ export default function DashboardPage() {
                           {(o.status === 'accepted' || o.status === 'paid' || o.status === 'awaiting_payment') && (
                             <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[240px]">
                               <p className="text-xs text-zinc-500">
-                                Two-sided PUDO: drop off at your locker / shop, buyer collects at theirs
+                                InPost: generate label, then drop off at any locker. Buyer collects at theirs.
                               </p>
+                              {o.shipping_carrier === 'inpost' && (
+                                <button
+                                  type="button"
+                                  onClick={() => generateShippingLabel(o)}
+                                  className="text-sm px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-white font-medium transition"
+                                >
+                                  {o.label_url ? 'Open / refresh label' : 'Generate shipping label'}
+                                </button>
+                              )}
+                              {o.label_url && (
+                                <a
+                                  href={o.label_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs text-pink-400 hover:underline"
+                                >
+                                  Download label PDF
+                                </a>
+                              )}
                               <input
                                 value={trackingDraft[o.id] || ''}
                                 onChange={(e) =>
@@ -1505,7 +1572,7 @@ export default function DashboardPage() {
                                     [o.id]: e.target.value,
                                   }))
                                 }
-                                placeholder="Tracking (optional)"
+                                placeholder="Tracking (optional if auto)"
                                 className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500"
                               />
                               <input
@@ -1522,7 +1589,7 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() => markOrderShipped(o)}
-                                className="text-sm px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-medium transition"
+                                className="text-sm px-4 py-2 rounded-xl bg-zinc-800 border border-zinc-600 hover:border-pink-500 text-white font-medium transition"
                               >
                                 Mark dropped off
                               </button>
@@ -1534,6 +1601,16 @@ export default function DashboardPage() {
                                 <p className="text-sm text-zinc-300">
                                   Tracking: {o.tracking_number}
                                 </p>
+                              )}
+                              {o.label_url && (
+                                <a
+                                  href={o.label_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sm text-pink-400 hover:underline"
+                                >
+                                  View label
+                                </a>
                               )}
                               <span className="text-sm text-zinc-400">
                                 Waiting for buyer to confirm
