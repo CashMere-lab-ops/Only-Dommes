@@ -101,6 +101,8 @@ export type CreateParcelInput = {
   postal_code: string;
   country?: string;
   to_service_point: number;
+  /** InPost / carrier locker code e.g. UK00109434 */
+  carrier_service_point_id?: string;
   shipment_method_id: number;
   weight_kg?: string;
   order_number?: string;
@@ -132,10 +134,16 @@ export async function createParcel(input: CreateParcelInput) {
     },
   ];
 
+  // v3 expects service point as object: { id } or { carrier_service_point_id }
+  const servicePoint =
+    input.carrier_service_point_id
+      ? { carrier_service_point_id: String(input.carrier_service_point_id) }
+      : { id: Number(input.to_service_point) };
+
   // Attempt 1: shipping_method_id (maps from v2 methods list)
   const bodyMethodId = {
     to_address: toAddress,
-    to_service_point: input.to_service_point,
+    to_service_point: servicePoint,
     ship_with: {
       type: 'shipping_method_id',
       properties: {
@@ -155,7 +163,7 @@ export async function createParcel(input: CreateParcelInput) {
     // Attempt 2: apply shipping rules / defaults (no explicit method)
     const bodyRules = {
       to_address: toAddress,
-      to_service_point: input.to_service_point,
+      to_service_point: servicePoint,
       parcels,
       order_number: input.order_number || undefined,
       apply_shipping_rules: true,
@@ -170,6 +178,33 @@ export async function createParcel(input: CreateParcelInput) {
         }
       );
     } catch (e2: any) {
+      // Attempt 3: carrier_service_point_id only (InPost machine code style)
+      if (input.carrier_service_point_id) {
+        const bodyCarrier = {
+          to_address: toAddress,
+          to_service_point: {
+            carrier_service_point_id: String(input.carrier_service_point_id),
+          },
+          ship_with: {
+            type: 'shipping_method_id',
+            properties: {
+              shipping_method_id: input.shipment_method_id,
+            },
+          },
+          parcels,
+          order_number: input.order_number || undefined,
+        };
+        try {
+          return await scFetch('https://panel.sendcloud.sc/api/v3/shipments/announce', {
+            method: 'POST',
+            body: JSON.stringify(bodyCarrier),
+          });
+        } catch (e3: any) {
+          throw new Error(
+            `v3 announce failed. Method: ${e1?.message || e1}. Rules: ${e2?.message || e2}. CarrierSP: ${e3?.message || e3}`
+          );
+        }
+      }
       throw new Error(
         `v3 announce failed. Method: ${e1?.message || e1}. Rules: ${e2?.message || e2}`
       );
