@@ -176,6 +176,11 @@ export async function POST(request: Request) {
       postal_code: postcode,
       country: 'GB',
       to_service_point: servicePointId,
+      carrier_service_point_id:
+        order.shipping_point_id ||
+        matched.code ||
+        matched.carrier_service_point_id ||
+        undefined,
       shipment_method_id: Number(preferred.id),
       weight_kg: '1.000',
       order_number: order.id.slice(0, 36),
