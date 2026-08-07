@@ -55,9 +55,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    if (order.seller_id !== user.id) {
-      return NextResponse.json({ error: 'Not your order' }, { status: 403 });
-    }
+    const ownerId = order.creator_id || order.seller_id;
+if (ownerId !== user.id) {
+  return NextResponse.json({ error: 'Not your order' }, { status: 403 });
+}
 
     const postcode = String(
       order.shipping_postcode || order.collection_postcode || ''
