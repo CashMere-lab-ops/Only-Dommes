@@ -166,12 +166,69 @@ export default function DashboardPage() {
   const [earnWeek, setEarnWeek] = useState(0);
   const [earnMonth, setEarnMonth] = useState(0);
   const [earnAllTime, setEarnAllTime] = useState(0);
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [payoutAmount, setPayoutAmount] = useState('');
+  const [payoutLoading, setPayoutLoading] = useState(false);
+  const [payoutMsg, setPayoutMsg] = useState('');
+  const [payoutErr, setPayoutErr] = useState('');
+  const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
 
   const money = (n: number) =>
     `£${Number(n || 0).toLocaleString('en-GB', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+
+  const openPayoutModal = () => {
+    const bal = Number(profile?.balance_gbp || 0);
+    setPayoutAmount(bal >= 150 ? bal.toFixed(2) : '');
+    setPayoutMsg('');
+    setPayoutErr('');
+    setShowPayoutModal(true);
+  };
+
+  const requestPayout = async () => {
+    setPayoutLoading(true);
+    setPayoutErr('');
+    setPayoutMsg('');
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setPayoutErr('Please log in again');
+        setPayoutLoading(false);
+        return;
+      }
+      const amountNum = Number(payoutAmount);
+      const res = await fetch('/api/wallet/payout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          amount: Number.isFinite(amountNum) ? amountNum : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPayoutErr(data.error || 'Payout request failed');
+        setPayoutLoading(false);
+        return;
+      }
+      setPayoutMsg(data.message || 'Payout requested');
+      if (typeof data.balance === 'number') {
+        setProfile((p: any) => (p ? { ...p, balance_gbp: data.balance } : p));
+      }
+      if (data.payout) {
+        setPayoutHistory((prev) => [data.payout, ...prev]);
+      }
+    } catch {
+      setPayoutErr('Network error — try again');
+    }
+    setPayoutLoading(false);
+  };
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -230,6 +287,26 @@ export default function DashboardPage() {
         setEarnWeek(Math.round(w * 100) / 100);
         setEarnMonth(Math.round(m * 100) / 100);
         setEarnAllTime(Math.round(all * 100) / 100);
+
+        // Payout history
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const pr = await fetch('/api/wallet/payout', {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+            });
+            if (pr.ok) {
+              const pj = await pr.json();
+              setPayoutHistory(pj.requests || []);
+            }
+          }
+        } catch {
+          /* ignore */
+        }
       }
 
       if (data?.account_type === 'creator') {
@@ -1324,14 +1401,60 @@ export default function DashboardPage() {
                 </Link>
                 <button
                   type="button"
-                  disabled
-                  title="Payouts coming soon"
-                  className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-500 text-sm font-medium cursor-not-allowed"
+                  onClick={openPayoutModal}
+                  disabled={Number(profile?.balance_gbp || 0) < 150}
+                  title={
+                    Number(profile?.balance_gbp || 0) < 150
+                      ? 'Need at least £150 available'
+                      : 'Request weekly payout'
+                  }
+                  className="px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-sm font-medium transition disabled:cursor-not-allowed"
                 >
                   Withdraw
                 </button>
               </div>
             </div>
+
+            {payoutHistory.length > 0 && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
+                <h2 className="text-lg font-semibold mb-3">Recent payout requests</h2>
+                <div className="space-y-2">
+                  {payoutHistory.slice(0, 5).map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 text-sm bg-zinc-950/50 rounded-xl px-4 py-3 border border-zinc-800"
+                    >
+                      <div>
+                        <p className="font-medium">
+                          {money(Number(p.net_gbp))} net
+                          <span className="text-zinc-500 font-normal">
+                            {' '}
+                            (from {money(Number(p.amount_gbp))})
+                          </span>
+                        </p>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Fee {money(Number(p.fee_gbp))} ·{' '}
+                          {p.scheduled_for
+                            ? `Scheduled ${p.scheduled_for}`
+                            : 'Pending'}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-xs font-medium capitalize px-2.5 py-1 rounded-full ${
+                          p.status === 'paid'
+                            ? 'bg-emerald-500/15 text-emerald-400'
+                            : p.status === 'failed' || p.status === 'cancelled'
+                              ? 'bg-red-500/15 text-red-400'
+                              : 'bg-amber-500/15 text-amber-400'
+                        }`}
+                      >
+                        {p.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
               <div className="flex items-center gap-2 mb-5">
@@ -2248,6 +2371,97 @@ export default function DashboardPage() {
                   {creating ? 'Saving...' : editingItem ? 'Save Changes' : 'List Item'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Payout request modal */}
+        {showPayoutModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70">
+            <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Request payout</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowPayoutModal(false)}
+                  className="text-zinc-400 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-sm text-zinc-400 mb-4">
+                Minimum £150. Platform fee <span className="text-white">20%</span> is
+                taken on payout only (0% on tips, unlocks and calls). Payouts are
+                processed on Mondays.
+              </p>
+              <p className="text-sm mb-3">
+                Available:{' '}
+                <span className="font-semibold text-pink-400">
+                  {money(Number(profile?.balance_gbp || 0))}
+                </span>
+              </p>
+              <label className="text-sm text-zinc-400 mb-1.5 block">
+                Amount to withdraw (£)
+              </label>
+              <input
+                type="number"
+                min={150}
+                step="0.01"
+                value={payoutAmount}
+                onChange={(e) => setPayoutAmount(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500 mb-3"
+              />
+              {Number(payoutAmount) >= 150 && (
+                <div className="text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 mb-4 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Gross</span>
+                    <span>{money(Number(payoutAmount))}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Fee (20%)</span>
+                    <span className="text-red-400">
+                      −{money((Number(payoutAmount) * 0.2))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-semibold border-t border-zinc-800 pt-2 mt-1">
+                    <span>You receive</span>
+                    <span className="text-pink-400">
+                      {money(Number(payoutAmount) * 0.8)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {payoutErr && (
+                <p className="text-sm text-red-400 mb-3">{payoutErr}</p>
+              )}
+              {payoutMsg && (
+                <p className="text-sm text-emerald-400 mb-3">{payoutMsg}</p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowPayoutModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={requestPayout}
+                  disabled={
+                    payoutLoading ||
+                    Number(payoutAmount) < 150 ||
+                    !!payoutMsg
+                  }
+                  className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
+                >
+                  {payoutLoading ? 'Requesting...' : 'Confirm payout'}
+                </button>
+              </div>
+              <p className="text-[11px] text-zinc-500 mt-4 text-center">
+                Bank transfer via Stripe Connect is next. For now requests are
+                recorded and funds are reserved from your wallet.
+              </p>
             </div>
           </div>
         )}
