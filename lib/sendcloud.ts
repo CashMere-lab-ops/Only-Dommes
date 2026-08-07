@@ -108,12 +108,22 @@ function getFromAddress() {
 }
 
 
-/** Map v2 shipping method id → v3 shipping_option_code */
+/** Map v2 shipping method id → v3 shipping_option_code
+ * Response shape is { data: { "27221": "carrier:product", ... } } or flat map
+ */
 export async function compatShippingOption(methodId: number | string) {
-  return scFetch('https://panel.sendcloud.sc/api/v3/compat/shipping-options', {
+  const raw = await scFetch('https://panel.sendcloud.sc/api/v3/compat/shipping-options', {
     method: 'POST',
     body: JSON.stringify({ shipping_method_ids: [Number(methodId)] }),
   });
+  const map = raw?.data && typeof raw.data === 'object' ? raw.data : raw;
+  const id = String(methodId);
+  const code = map?.[id] ?? map?.[Number(methodId)] ?? null;
+  return {
+    raw,
+    shipping_option_code: typeof code === 'string' ? code : null,
+    code: typeof code === 'string' ? code : null,
+  };
 }
 
 /** v3 shipping options for GB → service point */
@@ -143,7 +153,7 @@ export async function getShippingOptions(opts: {
     body.to_service_point_id = Number(opts.to_service_point_id);
   }
   // Prefer InPost if filter supported
-  body.carrier_code = 'inpost';
+  // do not force carrier_code — 'inpost' is invalid; InPost GB uses account contracts
 
   return scFetch('https://panel.sendcloud.sc/api/v3/shipping-options', {
     method: 'POST',
@@ -221,21 +231,13 @@ export async function createParcel(input: CreateParcelInput) {
     for (const mid of methodIdsToTry) {
       try {
         const compat = await compatShippingOption(mid as number);
-        const row =
-          compat?.data?.[0] ||
-          compat?.shipping_options?.[0] ||
-          (Array.isArray(compat) ? compat[0] : null);
-        const code =
-          row?.shipping_option_code ||
-          row?.code ||
-          row?.shipping_option?.code;
+        const code = compat?.shipping_option_code || compat?.code;
         if (code && !/^\d+$/.test(String(code))) {
           shippingOptionCode = String(code);
-          contractId = row?.contract_id || row?.contract?.id || contractId;
           debugBits.push(`compat=${shippingOptionCode} (method ${mid})`);
           break;
         }
-        debugBits.push(`compat empty for ${mid}`);
+        debugBits.push(`compat empty for ${mid}: ${JSON.stringify(compat?.raw || compat).slice(0, 120)}`);
       } catch (e: any) {
         debugBits.push(`compatErr ${mid}=${e?.message || e}`);
       }

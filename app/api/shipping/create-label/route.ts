@@ -56,28 +56,28 @@ export async function POST(request: Request) {
     }
 
     const ownerId = order.creator_id || order.seller_id;
-if (ownerId !== user.id) {
-  return NextResponse.json({ error: 'Not your order' }, { status: 403 });
-}
+    if (ownerId !== user.id) {
+      return NextResponse.json({ error: 'Not your order' }, { status: 403 });
+    }
 
     const postcode = String(
-  order.shipping_point_postcode ||
-    order.shipping_postcode ||
-    order.collection_postcode ||
-    ''
-)
-  .replace(/\s/g, '')
-  .toUpperCase();
+      order.shipping_point_postcode ||
+        order.shipping_postcode ||
+        order.collection_postcode ||
+        ''
+    )
+      .replace(/\s/g, '')
+      .toUpperCase();
 
-if (!postcode) {
-  return NextResponse.json(
-    {
-      error:
-        'Order missing locker postcode (shipping_point_postcode). Buyer must select a PUDO point when requesting the item.',
-    },
-    { status: 400 }
-  );
-}
+    if (!postcode) {
+      return NextResponse.json(
+        {
+          error:
+            'Order missing locker postcode (shipping_point_postcode). Buyer must select a PUDO point when requesting the item.',
+        },
+        { status: 400 }
+      );
+    }
 
     // Match Sendcloud service point near buyer locker
     let points: any[] = [];
@@ -128,15 +128,9 @@ if (!postcode) {
     for (const method of INPOST_METHOD_IDS) {
       try {
         const compat = await compatShippingOption(method.id);
-        const row =
-          compat?.data?.[0] ||
-          compat?.shipping_options?.[0] ||
-          (Array.isArray(compat) ? compat[0] : null);
-        const code =
-          row?.shipping_option_code || row?.code || row?.shipping_option?.code;
+        const code = compat?.shipping_option_code || compat?.code;
         if (code && !/^\d+$/.test(String(code))) {
           shippingOptionCode = String(code);
-          if (row?.contract_id != null) contractId = Number(row.contract_id);
           preferred = method;
           break;
         }
@@ -146,6 +140,7 @@ if (!postcode) {
     }
 
     if (!shippingOptionCode) {
+      // Last resort: still pass method id path via createParcel internal resolve
       preferred = INPOST_METHOD_IDS[0];
     }
 
