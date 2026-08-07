@@ -215,6 +215,26 @@ export default function ActiveVoiceCall() {
         .maybeSingle();
 
       if (data) {
+        // Either party can trigger charge; server is idempotent by call id
+        if (status === 'ended' && amountCharged > 0) {
+          try {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (session?.access_token) {
+              await fetch('/api/wallet/charge-call', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ call_id: c.id }),
+              });
+            }
+          } catch (chargeErr) {
+            console.error('Call charge failed', chargeErr);
+          }
+        }
         await insertReceipt(
           c,
           status === 'failed' ? 'failed' : 'ended',

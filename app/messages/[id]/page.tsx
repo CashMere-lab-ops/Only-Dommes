@@ -13,6 +13,10 @@ import { createClient } from '../../../lib/supabase';
 import { createImageThumbnail } from '../../../lib/createThumbnail';
 import { createNotification } from '../../../lib/notifications';
 import { isWithinVoiceDnd } from '../../../lib/voiceDnd';
+import {
+  spendFromWallet,
+  insufficientFundsMessage,
+} from '../../../lib/wallet';
 
 const TIP_AMOUNTS = [5, 10, 20, 50];
 const REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👍'];
@@ -594,6 +598,25 @@ export default function ChatPage() {
     if (!userId || !otherUserId || unlockingChat) return;
     setUnlockingChat(true);
     try {
+      const price = Number(messagePrice) || 0;
+      if (price > 0) {
+        const paid = await spendFromWallet({
+          amount: price,
+          toUserId: otherUserId,
+          type: 'message_unlock',
+          referenceType: 'message_access',
+          referenceId: `${otherUserId}:${userId}`,
+          description: `Unlocked messaging with creator`,
+        });
+        if (!paid.ok) {
+          if (paid.code === 'INSUFFICIENT_BALANCE') {
+            alert(insufficientFundsMessage(paid.needed, paid.balance));
+            window.location.href = '/wallet';
+            return;
+          }
+          throw new Error(paid.error);
+        }
+      }
       const { error } = await supabase.from('message_access').insert({
         creator_id: otherUserId,
         fan_id: userId,
@@ -942,6 +965,21 @@ export default function ChatPage() {
         return;
       }
 
+      // Must have enough wallet balance for minimum hold
+      const { data: balRow } = await supabase
+        .from('profiles')
+        .select('balance_gbp')
+        .eq('id', userId)
+        .single();
+      const bal = Number(balRow?.balance_gbp || 0);
+      if (bal < voiceHold) {
+        setCallSheetError(
+          insufficientFundsMessage(voiceHold, bal) + ' Open Wallet to top up.'
+        );
+        setRequestingCall(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('voice_calls')
         .insert({
@@ -1234,7 +1272,25 @@ export default function ChatPage() {
     if (!userId || unlockingId) return;
     setUnlockingId(msg.id);
     try {
-      const amount = msg.unlock_price || 0;
+      const amount = Number(msg.unlock_price || 0);
+      if (amount > 0 && msg.sender_id) {
+        const paid = await spendFromWallet({
+          amount,
+          toUserId: msg.sender_id,
+          type: 'unlock',
+          referenceType: 'message_unlock',
+          referenceId: msg.id,
+          description: `Unlocked ${msg.media_type === 'video' ? 'video' : 'photo'}`,
+        });
+        if (!paid.ok) {
+          if (paid.code === 'INSUFFICIENT_BALANCE') {
+            alert(insufficientFundsMessage(paid.needed, paid.balance));
+            window.location.href = '/wallet';
+            return;
+          }
+          throw new Error(paid.error);
+        }
+      }
       const { error } = await supabase.from('message_unlocks').insert({
         message_id: msg.id,
         user_id: userId,
@@ -1276,6 +1332,23 @@ export default function ChatPage() {
     }
     setTipping(true);
     try {
+      const paid = await spendFromWallet({
+        amount,
+        toUserId: otherUserId,
+        type: 'tip',
+        referenceType: 'chat_tip',
+        referenceId: `${conversationId}:${Date.now()}`,
+        description: `Tip in chat`,
+      });
+      if (!paid.ok) {
+        if (paid.code === 'INSUFFICIENT_BALANCE') {
+          alert(insufficientFundsMessage(paid.needed, paid.balance));
+          window.location.href = '/wallet';
+          return;
+        }
+        throw new Error(paid.error);
+      }
+
       await supabase.from('tips').insert({
         from_user_id: userId,
         to_user_id: otherUserId,

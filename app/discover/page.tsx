@@ -11,6 +11,10 @@ import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
+import {
+  spendFromWallet,
+  insufficientFundsMessage,
+} from '../../lib/wallet';
 
 const POSTS_PER_PAGE = 20;
 const TIP_AMOUNTS = [5, 10, 20, 50];
@@ -433,6 +437,23 @@ export default function DiscoverPage() {
 
     setSendingTip(true);
     try {
+      const paid = await spendFromWallet({
+        amount,
+        toUserId: tipPost.creator_id,
+        type: 'tip',
+        referenceType: 'post_tip',
+        referenceId: `${tipPost.id}:${user.id}:${Date.now()}`,
+        description: tipMessage.trim() || 'Tip on post',
+      });
+      if (!paid.ok) {
+        if (paid.code === 'INSUFFICIENT_BALANCE') {
+          alert(insufficientFundsMessage(paid.needed, paid.balance));
+          window.location.href = '/wallet';
+          return;
+        }
+        throw new Error(paid.error);
+      }
+
       const { error } = await supabase.from('tips').insert({
         post_id: tipPost.id,
         from_user_id: user.id,
