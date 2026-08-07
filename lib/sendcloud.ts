@@ -1,4 +1,5 @@
 /**
+/**
  * Sendcloud API helpers — Basic auth + API v3 shipments
  */
 
@@ -335,21 +336,38 @@ export function extractLabelInfo(created: any) {
   const tracking =
     parcel?.tracking_number ||
     parcel?.carrier_tracking_number ||
+    parcel?.tracking_numbers?.[0] ||
     shipment?.tracking_number ||
+    shipment?.carrier_tracking_number ||
     null;
+
+  // Document links can be relative API paths
+  const docs = parcel?.documents || shipment?.documents || [];
+  const labelDoc =
+    (Array.isArray(docs) && docs.find((d: any) => d.type === 'label' || d.document_type === 'label')) ||
+    (Array.isArray(docs) ? docs[0] : null);
 
   let labelUrl: string | null =
     parcel?.label?.normal_printer?.[0] ||
     parcel?.label?.label_printer ||
-    parcel?.documents?.find((d: any) => d.type === 'label')?.link ||
-    parcel?.documents?.[0]?.link ||
+    parcel?.label?.url ||
+    labelDoc?.link ||
+    labelDoc?.url ||
+    labelDoc?.href ||
     null;
 
+  if (labelUrl && labelUrl.startsWith('/')) {
+    labelUrl = `https://panel.sendcloud.sc${labelUrl}`;
+  }
+
   // v3 may return base64 label_file
-  const labelFile = parcel?.label_file || shipment?.label_file;
-  if (!labelUrl && labelFile?.contents && labelFile?.mime_type === 'application/pdf') {
-    // Data URL so the seller can open/download immediately
-    labelUrl = `data:application/pdf;base64,${labelFile.contents}`;
+  const labelFile = parcel?.label_file || shipment?.label_file || created?.label_file;
+  if (!labelUrl && labelFile) {
+    const contents = labelFile.contents || labelFile.content || labelFile.data;
+    const mime = labelFile.mime_type || labelFile.mimeType || 'application/pdf';
+    if (contents) {
+      labelUrl = `data:${mime};base64,${contents}`;
+    }
   }
 
   const parcelId =
@@ -357,9 +375,65 @@ export function extractLabelInfo(created: any) {
       ? String(parcel.id)
       : shipment?.id != null
         ? String(shipment.id)
-        : null;
+        : created?.id != null
+          ? String(created.id)
+          : null;
 
   return { tracking, labelUrl, parcelId, raw: created };
+}
+
+/** Fetch label PDF URL for a parcel id (v3 documents) */
+export async function fetchParcelLabelUrl(parcelId: string | number): Promise<string | null> {
+  const id = String(parcelId);
+  // Prefer document endpoint — may return binary or JSON with link
+  try {
+    const res = await fetch(
+      `https://panel.sendcloud.sc/api/v3/parcels/${id}/documents/label`,
+      {
+        headers: {
+          Authorization: getAuthHeader(),
+          Accept: 'application/json, application/pdf',
+        },
+        cache: 'no-store',
+      }
+    );
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/pdf')) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      return `data:application/pdf;base64,${buf.toString('base64')}`;
+    }
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text);
+      const link =
+        body?.link ||
+        body?.url ||
+        body?.data?.link ||
+        body?.documents?.[0]?.link;
+      if (link) return link.startsWith('/') ? `https://panel.sendcloud.sc${link}` : link;
+      if (body?.contents) return `data:application/pdf;base64,${body.contents}`;
+    } catch {
+      /* not json */
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // v2 fallback
+  try {
+    const body = await scFetch(
+      `https://panel.sendcloud.sc/api/v2/parcels/${id}/documents?document_type=label`
+    );
+    const link =
+      body?.label?.normal_printer?.[0] ||
+      body?.label?.label_printer ||
+      body?.documents?.[0]?.link ||
+      body?.url;
+    if (link) return String(link).startsWith('/') ? `https://panel.sendcloud.sc${link}` : String(link);
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 export function matchServicePoint(

@@ -6,6 +6,7 @@ import {
   matchServicePoint,
   extractLabelInfo,
   compatShippingOption,
+  fetchParcelLabelUrl,
 } from '../../../../lib/sendcloud';
 
 export const dynamic = 'force-dynamic';
@@ -174,7 +175,24 @@ export async function POST(request: Request) {
       request_label: true,
     });
 
-    const { tracking, labelUrl, parcelId } = extractLabelInfo(created);
+    let { tracking, labelUrl, parcelId } = extractLabelInfo(created);
+
+    // If announce didn't include a label file, fetch it by parcel id
+    if (!labelUrl && parcelId) {
+      try {
+        labelUrl = await fetchParcelLabelUrl(parcelId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Label generated = ready for seller drop-off (not "shipped" to buyer yet)
+    const nextStatus =
+      order.status === 'accepted' ||
+      order.status === 'paid' ||
+      order.status === 'awaiting_payment'
+        ? 'label_ready'
+        : order.status;
 
     await admin
       .from('shop_orders')
@@ -183,11 +201,8 @@ export async function POST(request: Request) {
         label_url: labelUrl,
         sendcloud_parcel_id: parcelId,
         sendcloud_service_point_id: String(servicePointId),
-        status:
-          order.status === 'accepted' || order.status === 'paid'
-            ? 'shipped'
-            : order.status,
-        shipped_at: new Date().toISOString(),
+        status: nextStatus,
+        label_created_at: new Date().toISOString(),
       })
       .eq('id', order.id);
 
@@ -199,6 +214,10 @@ export async function POST(request: Request) {
       service_point_id: servicePointId,
       shipping_method: preferred.name,
       shipping_option_code: shippingOptionCode,
+      status: nextStatus,
+      note: labelUrl
+        ? 'Label ready — open PDF and drop at any InPost locker'
+        : 'Shipment created in Sendcloud. Open the label from Sendcloud panel if PDF missing here.',
     });
   } catch (e: any) {
     console.error('create-label', e);

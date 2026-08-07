@@ -141,6 +141,8 @@ export default function DashboardPage() {
 
   const orderStatusClass = (status: string) => {
     switch (status) {
+      case 'label_ready':
+        return 'bg-pink-500/20 text-pink-300';
       case 'requested':
         return 'bg-zinc-800 text-zinc-300';
       case 'accepted':
@@ -639,7 +641,7 @@ export default function DashboardPage() {
                 tracking_number: data.tracking_number || x.tracking_number,
                 label_url: data.label_url || x.label_url,
                 sendcloud_parcel_id: data.sendcloud_parcel_id,
-                status: data.already ? x.status : x.status === 'accepted' || x.status === 'paid' ? 'shipped' : x.status,
+                status: data.status || (data.already ? x.status : x.status === 'accepted' || x.status === 'paid' || x.status === 'awaiting_payment' || x.status === 'label_ready' ? 'label_ready' : x.status),
               }
             : x
         )
@@ -648,9 +650,10 @@ export default function DashboardPage() {
         window.open(data.label_url, '_blank');
       }
       alert(
-        data.already
-          ? 'Label already exists — opened if available.'
-          : `Label created${data.tracking_number ? ` · Tracking ${data.tracking_number}` : ''}`
+        data.label_url
+          ? `Label ready${data.tracking_number ? ` · ${data.tracking_number}` : ''}\nOpen the PDF and drop the parcel at any InPost locker.`
+          : data.note ||
+              'Shipment created in Sendcloud. Check Sendcloud → Parcels for the label, or click Open label again after refresh.'
       );
     } catch (e: any) {
       alert(e?.message || 'Label request failed');
@@ -1540,7 +1543,7 @@ export default function DashboardPage() {
                               </button>
                             </>
                           )}
-                          {(o.status === 'accepted' || o.status === 'paid' || o.status === 'awaiting_payment') && (
+                          {(o.status === 'accepted' || o.status === 'paid' || o.status === 'awaiting_payment' || o.status === 'label_ready') && (
                             <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[240px]">
                               <p className="text-xs text-zinc-500">
                                 InPost: generate label, then drop off at any locker. Buyer collects at theirs.
@@ -1593,6 +1596,28 @@ export default function DashboardPage() {
                               >
                                 Mark dropped off
                               </button>
+                            </div>
+                          )}
+                          {o.status === 'label_ready' && (
+                            <div className="flex flex-col gap-1 sm:items-end">
+                              <span className="text-sm text-pink-400 font-medium">
+                                Label ready — drop at InPost locker
+                              </span>
+                              {o.tracking_number && (
+                                <p className="text-sm text-zinc-300">
+                                  Tracking: {o.tracking_number}
+                                </p>
+                              )}
+                              {o.label_url && (
+                                <a
+                                  href={o.label_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sm text-pink-400 hover:underline font-medium"
+                                >
+                                  Open / download label PDF
+                                </a>
+                              )}
                             </div>
                           )}
                           {o.status === 'shipped' && (
