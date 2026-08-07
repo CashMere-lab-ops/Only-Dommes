@@ -39,8 +39,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const orderId = body?.order_id as string;
+    const body = await request.json().catch(() => ({}));
+    const orderId = (body?.order_id || body?.orderId) as string;
     if (!orderId) {
       return NextResponse.json({ error: 'order_id required' }, { status: 400 });
     }
@@ -139,7 +139,6 @@ export async function POST(request: Request) {
     }
 
     if (!shippingOptionCode) {
-      // Last resort: still pass method id path via createParcel internal resolve
       preferred = INPOST_METHOD_IDS[0];
     }
 
