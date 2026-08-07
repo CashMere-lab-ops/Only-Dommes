@@ -162,6 +162,16 @@ export default function DashboardPage() {
   const [subCount, setSubCount] = useState(0);
   const [mySubscriptions, setMySubscriptions] = useState<any[]>([]);
   const [mySubCount, setMySubCount] = useState(0);
+  const [earnToday, setEarnToday] = useState(0);
+  const [earnWeek, setEarnWeek] = useState(0);
+  const [earnMonth, setEarnMonth] = useState(0);
+  const [earnAllTime, setEarnAllTime] = useState(0);
+
+  const money = (n: number) =>
+    `£${Number(n || 0).toLocaleString('en-GB', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -175,6 +185,53 @@ export default function DashboardPage() {
         .eq('id', user.id)
         .single();
       setProfile(data);
+
+      // Creator earnings from wallet ledger (tips, unlocks, calls, shop)
+      if (data?.account_type === 'creator') {
+        const { data: txs } = await supabase
+          .from('wallet_transactions')
+          .select('amount_gbp, type, created_at')
+          .eq('user_id', user.id)
+          .in('type', [
+            'tip_received',
+            'unlock_received',
+            'call_received',
+            'shop_received',
+          ])
+          .order('created_at', { ascending: false })
+          .limit(500);
+
+        const now = new Date();
+        const startOfToday = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate()
+        );
+        const day = now.getDay(); // 0 Sun
+        const mondayOffset = day === 0 ? 6 : day - 1;
+        const startOfWeek = new Date(startOfToday);
+        startOfWeek.setDate(startOfWeek.getDate() - mondayOffset);
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        let t = 0;
+        let w = 0;
+        let m = 0;
+        let all = 0;
+        (txs || []).forEach((tx: any) => {
+          const amt = Number(tx.amount_gbp || 0);
+          if (amt <= 0) return;
+          all += amt;
+          const when = new Date(tx.created_at);
+          if (when >= startOfToday) t += amt;
+          if (when >= startOfWeek) w += amt;
+          if (when >= startOfMonth) m += amt;
+        });
+        setEarnToday(Math.round(t * 100) / 100);
+        setEarnWeek(Math.round(w * 100) / 100);
+        setEarnMonth(Math.round(m * 100) / 100);
+        setEarnAllTime(Math.round(all * 100) / 100);
+      }
+
       if (data?.account_type === 'creator') {
         const { data: subs } = await supabase
           .from('subscriptions')
@@ -1149,19 +1206,19 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <DollarSign size={16} /> Today
                 </div>
-                <p className="text-2xl font-bold">£0.00</p>
+                <p className="text-2xl font-bold">{money(earnToday)}</p>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <TrendingUp size={16} /> This Week
                 </div>
-                <p className="text-2xl font-bold">£0.00</p>
+                <p className="text-2xl font-bold">{money(earnWeek)}</p>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <Wallet size={16} /> This Month
                 </div>
-                <p className="text-2xl font-bold">£0.00</p>
+                <p className="text-2xl font-bold">{money(earnMonth)}</p>
               </div>
               <div className="bg-gradient-to-br from-pink-600/20 to-rose-600/20 border border-pink-500/30 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-300 text-sm mb-1">
@@ -1250,13 +1307,30 @@ export default function DashboardPage() {
                   <Wallet className="text-pink-400" size={22} />
                 </div>
                 <div>
-                  <p className="font-semibold">Weekly Payout</p>
-                  <p className="text-sm text-zinc-400">Next payout: Friday · £0.00 pending</p>
+                  <p className="font-semibold">Wallet & payouts</p>
+                  <p className="text-sm text-zinc-400">
+                    Available {money(Number(profile?.balance_gbp || 0))}
+                    {earnAllTime > 0 ? ` · All-time earned ${money(earnAllTime)}` : ''}
+                    {' · '}Min payout £150 (Mondays)
+                  </p>
                 </div>
               </div>
-              <button className="px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition">
-                Withdraw
-              </button>
+              <div className="flex gap-2">
+                <Link
+                  href="/wallet"
+                  className="px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition text-center"
+                >
+                  View wallet
+                </Link>
+                <button
+                  type="button"
+                  disabled
+                  title="Payouts coming soon"
+                  className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-500 text-sm font-medium cursor-not-allowed"
+                >
+                  Withdraw
+                </button>
+              </div>
             </div>
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
