@@ -864,15 +864,23 @@ export default function DashboardPage() {
                   </div>
                   <p className="text-2xl font-bold">0</p>
                 </div>
-                <div className="bg-gradient-to-br from-pink-600/20 to-rose-600/20 border border-pink-500/30 rounded-2xl p-5">
+                <Link
+                  href="/wallet"
+                  className="bg-gradient-to-br from-pink-600/20 to-rose-600/20 border border-pink-500/30 rounded-2xl p-5 block hover:border-pink-500/50 transition"
+                >
                   <div className="flex items-center gap-2 text-zinc-300 text-sm mb-1">
                     <Wallet size={16} /> Wallet Balance
                   </div>
-                  <p className="text-2xl font-bold text-pink-400">£0.00</p>
-                  <button className="mt-3 text-xs text-pink-400 hover:text-pink-300 font-medium">
+                  <p className="text-2xl font-bold text-pink-400">
+                    £{Number(profile?.balance_gbp ?? 0).toLocaleString('en-GB', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                  <span className="mt-3 inline-block text-xs text-pink-400 font-medium">
                     + Top Up
-                  </button>
-                </div>
+                  </span>
+                </Link>
               </div>
 
               {buyerOrders.length > 0 && (

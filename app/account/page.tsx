@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Edit3, TrendingUp, Users, DollarSign, Heart,
-  Settings, Bell, Shield, LogOut, Phone
+  Settings, Bell, Shield, LogOut, Phone, Wallet
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -282,6 +282,15 @@ export default function MyAccountPage() {
                   >
                     <div className="flex items-center gap-3">
                       <Phone size={20} /> Call history
+                    </div>
+                    <span className="text-zinc-400">→</span>
+                  </Link>
+                  <Link
+                    href="/wallet"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Wallet size={20} /> Wallet & top up
                     </div>
                     <span className="text-zinc-400">→</span>
                   </Link>
