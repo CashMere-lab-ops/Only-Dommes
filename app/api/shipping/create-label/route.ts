@@ -2,159 +2,146 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
   searchServicePoints,
-  getShippingMethodsForServicePoint,
   createParcel,
   matchServicePoint,
   extractLabelInfo,
   compatShippingOption,
-  getShippingOptions,
 } from '../../../../lib/sendcloud';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
 
-/**
- * POST { orderId: string }
- * Creates Sendcloud/InPost service-point shipment + label for a shop order.
- * Seller can then open label_url / tracking from dashboard.
- */
+/** Known InPost method IDs on this Sendcloud account */
+const INPOST_METHOD_IDS = [
+  { id: 27221, name: 'InPost Locker to Locker 0-15kg - Small' },
+  { id: 27222, name: 'InPost Locker to Locker 0-15kg - Medium' },
+  { id: 27223, name: 'InPost Locker to Locker 0-15kg - Large' },
+  { id: 3747, name: 'InPost Address to Locker Two Day 0-15kg' },
+];
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const orderId = body?.orderId as string;
-    if (!orderId) {
-      return NextResponse.json({ error: 'orderId required' }, { status: 400 });
-    }
-
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    if (!url || !serviceKey) {
-      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
-    }
-
-    // Auth: require logged-in user (bearer from client optional — use anon + user header pattern)
-    // For creators we verify via service role after checking order.creator_id against auth
-    const authHeader = request.headers.get('authorization');
-    const anon = createClient(
-      url,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || serviceKey,
-      {
-        global: authHeader
-          ? { headers: { Authorization: authHeader } }
-          : undefined,
-      }
+    const admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
+
+    const auth = request.headers.get('authorization') || '';
+    const token = auth.replace(/^Bearer\s+/i, '');
+    if (!token) {
+      return NextResponse.json({ error: 'Login required' }, { status: 401 });
+    }
 
     const {
       data: { user },
-    } = await anon.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Not logged in' }, { status: 401 });
+      error: userErr,
+    } = await admin.auth.getUser(token);
+    if (userErr || !user) {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const admin = createClient(url, serviceKey);
+    const body = await request.json();
+    const orderId = body?.order_id as string;
+    if (!orderId) {
+      return NextResponse.json({ error: 'order_id required' }, { status: 400 });
+    }
 
-    const { data: order, error: oErr } = await admin
+    const { data: order, error: orderErr } = await admin
       .from('shop_orders')
       .select('*')
       .eq('id', orderId)
       .single();
 
-    if (oErr || !order) {
+    if (orderErr || !order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    if (order.creator_id !== user.id) {
+    if (order.seller_id !== user.id) {
       return NextResponse.json({ error: 'Not your order' }, { status: 403 });
     }
 
-    if (order.shipping_carrier !== 'inpost') {
-      return NextResponse.json(
-        {
-          error:
-            'Label API is wired for InPost first. Evri / Royal Mail / Yodel next.',
-        },
-        { status: 400 }
-      );
-    }
+    const postcode = String(
+      order.shipping_postcode || order.collection_postcode || ''
+    )
+      .replace(/\s/g, '')
+      .toUpperCase();
 
-    if (order.label_url || order.sendcloud_parcel_id) {
-      return NextResponse.json({
-        ok: true,
-        already: true,
-        tracking_number: order.tracking_number,
-        label_url: order.label_url,
-        sendcloud_parcel_id: order.sendcloud_parcel_id,
-      });
-    }
-
-    const postcode = order.shipping_point_postcode || order.shipping_postcode;
     if (!postcode) {
       return NextResponse.json(
-        { error: 'Order has no collect postcode' },
+        { error: 'Order missing collection postcode' },
         { status: 400 }
       );
     }
 
-    // 1) Find Sendcloud service points near buyer locker postcode
-    let spList: any[] = [];
+    // Match Sendcloud service point near buyer locker
+    let points: any[] = [];
     try {
-      const spRes = await searchServicePoints({
+      const sp = await searchServicePoints({
         postcode,
         carrier: 'inpost',
         radius: 25000,
       });
-      spList = Array.isArray(spRes) ? spRes : spRes?.data || spRes?.service_points || [];
-    } catch (e: any) {
-      // retry without carrier filter
-      const spRes = await searchServicePoints({ postcode, radius: 25000 });
-      spList = Array.isArray(spRes) ? spRes : spRes?.data || spRes?.service_points || [];
+      points = Array.isArray(sp) ? sp : sp?.service_points || sp?.data || [];
+    } catch {
+      try {
+        const sp2 = await searchServicePoints({ postcode, radius: 25000 });
+        points = Array.isArray(sp2) ? sp2 : sp2?.service_points || sp2?.data || [];
+      } catch (e: any) {
+        return NextResponse.json(
+          { error: `Service point search failed: ${e?.message || e}` },
+          { status: 400 }
+        );
+      }
     }
 
-    if (!spList.length) {
-      return NextResponse.json(
-        {
-          error:
-            'No Sendcloud/InPost service points found near that postcode. Check InPost is enabled under Couriers + Service Points.',
-        },
-        { status: 400 }
-      );
-    }
-
-    const matched = matchServicePoint(spList, {
-      name: order.shipping_point_name,
+    const matched = matchServicePoint(points, {
+      name: order.shipping_point_name || order.shipping_point_line,
       postcode,
       inpostId: order.shipping_point_id,
     });
 
-    if (!matched?.id) {
+    if (!matched) {
       return NextResponse.json(
-        { error: 'Could not match a Sendcloud service point to this locker' },
+        { error: 'Could not match InPost service point for this order' },
         { status: 400 }
       );
     }
 
     const servicePointId = Number(matched.id);
+    const carrierSpId =
+      order.shipping_point_id ||
+      matched.code ||
+      matched.carrier_service_point_id ||
+      undefined;
 
-    // 2) Shipping method for that service point
-    const methodsRes = await getShippingMethodsForServicePoint(servicePointId);
-    const methods = methodsRes?.shipping_methods || methodsRes || [];
-    const methodList = Array.isArray(methods) ? methods : [];
-    if (!methodList.length) {
-      return NextResponse.json(
-        {
-          error:
-            'No shipping methods for this service point. Enable InPost contract in Sendcloud → Shipping → Couriers.',
-        },
-        { status: 400 }
-      );
+    // Resolve shipping_option_code via compat for known InPost methods
+    let shippingOptionCode: string | undefined;
+    let contractId: number | undefined;
+    let preferred = INPOST_METHOD_IDS[0];
+
+    for (const method of INPOST_METHOD_IDS) {
+      try {
+        const compat = await compatShippingOption(method.id);
+        const row =
+          compat?.data?.[0] ||
+          compat?.shipping_options?.[0] ||
+          (Array.isArray(compat) ? compat[0] : null);
+        const code =
+          row?.shipping_option_code || row?.code || row?.shipping_option?.code;
+        if (code && !/^\d+$/.test(String(code))) {
+          shippingOptionCode = String(code);
+          if (row?.contract_id != null) contractId = Number(row.contract_id);
+          preferred = method;
+          break;
+        }
+      } catch {
+        /* try next */
+      }
     }
 
-    // Prefer method name containing inpost / locker / service
-    const preferred =
-      methodList.find((m: any) =>
-        /inpost|locker|service.?point/i.test(String(m.name || ''))
-      ) || methodList[0];
+    if (!shippingOptionCode) {
+      // Last resort: still pass method id path via createParcel internal resolve
+      preferred = INPOST_METHOD_IDS[0];
+    }
 
     const recipientName =
       order.collection_name || order.shipping_name || 'Customer';
@@ -167,60 +154,6 @@ export async function POST(request: Request) {
       matched.address ||
       'Service Point';
 
-    // Map v2 method → v3 shipping_option_code (required)
-    let shippingOptionCode: string | undefined;
-    let contractId: number | undefined;
-    try {
-      const compat = await compatShippingOption(Number(preferred.id));
-      const row =
-        compat?.data?.[0] ||
-        compat?.shipping_options?.[0] ||
-        (Array.isArray(compat) ? compat[0] : null);
-      shippingOptionCode =
-        row?.shipping_option_code || row?.code || row?.shipping_option?.code;
-      if (row?.contract_id != null) contractId = Number(row.contract_id);
-    } catch {
-      /* next */
-    }
-
-    if (!shippingOptionCode) {
-      try {
-        const optsRes = await getShippingOptions({
-          to_postal_code: postcode,
-          to_city: String(city),
-          weight_kg: '1.000',
-          to_service_point_id: servicePointId,
-        });
-        const list =
-          optsRes?.data ||
-          optsRes?.shipping_options ||
-          (Array.isArray(optsRes) ? optsRes : []);
-        const hit =
-          list.find((o: any) =>
-            /inpost|locker|service.?point/i.test(
-              String(o.code || o.shipping_option_code || o.name || '')
-            )
-          ) || list[0];
-        shippingOptionCode = hit?.code || hit?.shipping_option_code;
-        if (hit?.contract_id != null) contractId = Number(hit.contract_id);
-      } catch {
-        /* next */
-      }
-    }
-
-    if (!shippingOptionCode) {
-      return NextResponse.json(
-        {
-          error:
-            'Could not resolve InPost shipping_option_code. In Sendcloud enable InPost locker/service-point product under Shipping → Couriers, then retry.',
-          method: preferred?.name,
-          method_id: preferred?.id,
-        },
-        { status: 400 }
-      );
-    }
-
-    // 3) Create parcel + label
     const created = await createParcel({
       name: recipientName,
       email: order.buyer_email || '',
@@ -231,13 +164,9 @@ export async function POST(request: Request) {
       postal_code: postcode,
       country: 'GB',
       to_service_point: servicePointId,
-      carrier_service_point_id:
-        order.shipping_point_id ||
-        matched.code ||
-        matched.carrier_service_point_id ||
-        undefined,
-      shipment_method_id: Number(preferred.id),
-      shipping_option_code: String(shippingOptionCode),
+      carrier_service_point_id: carrierSpId ? String(carrierSpId) : undefined,
+      shipment_method_id: preferred.id,
+      shipping_option_code: shippingOptionCode,
       contract_id: contractId,
       weight_kg: '1.000',
       order_number: order.id.slice(0, 36),
@@ -253,7 +182,10 @@ export async function POST(request: Request) {
         label_url: labelUrl,
         sendcloud_parcel_id: parcelId,
         sendcloud_service_point_id: String(servicePointId),
-        status: order.status === 'accepted' || order.status === 'paid' ? 'shipped' : order.status,
+        status:
+          order.status === 'accepted' || order.status === 'paid'
+            ? 'shipped'
+            : order.status,
         shipped_at: new Date().toISOString(),
       })
       .eq('id', order.id);
@@ -265,6 +197,7 @@ export async function POST(request: Request) {
       sendcloud_parcel_id: parcelId,
       service_point_id: servicePointId,
       shipping_method: preferred.name,
+      shipping_option_code: shippingOptionCode,
     });
   } catch (e: any) {
     console.error('create-label', e);

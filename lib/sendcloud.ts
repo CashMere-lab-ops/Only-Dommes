@@ -208,22 +208,37 @@ export async function createParcel(input: CreateParcelInput) {
   let contractId = input.contract_id;
   const debugBits: string[] = [];
 
-  // 1) Compat: v2 method id → v3 option code
-  if (!shippingOptionCode && input.shipment_method_id) {
-    try {
-      const compat = await compatShippingOption(input.shipment_method_id);
-      const row =
-        compat?.data?.[0] ||
-        compat?.shipping_options?.[0] ||
-        (Array.isArray(compat) ? compat[0] : null);
-      shippingOptionCode =
-        row?.shipping_option_code ||
-        row?.code ||
-        row?.shipping_option?.code;
-      contractId = row?.contract_id || row?.contract?.id || contractId;
-      debugBits.push(`compat=${shippingOptionCode || 'none'}`);
-    } catch (e: any) {
-      debugBits.push(`compatErr=${e?.message || e}`);
+  // 1) Compat: v2 method id → v3 option code (include known InPost locker ids)
+  const methodIdsToTry = [
+    input.shipment_method_id,
+    27221,
+    27222,
+    27223,
+    3747,
+  ].filter((x, i, a) => x != null && a.indexOf(x) === i);
+
+  if (!shippingOptionCode) {
+    for (const mid of methodIdsToTry) {
+      try {
+        const compat = await compatShippingOption(mid as number);
+        const row =
+          compat?.data?.[0] ||
+          compat?.shipping_options?.[0] ||
+          (Array.isArray(compat) ? compat[0] : null);
+        const code =
+          row?.shipping_option_code ||
+          row?.code ||
+          row?.shipping_option?.code;
+        if (code && !/^\d+$/.test(String(code))) {
+          shippingOptionCode = String(code);
+          contractId = row?.contract_id || row?.contract?.id || contractId;
+          debugBits.push(`compat=${shippingOptionCode} (method ${mid})`);
+          break;
+        }
+        debugBits.push(`compat empty for ${mid}`);
+      } catch (e: any) {
+        debugBits.push(`compatErr ${mid}=${e?.message || e}`);
+      }
     }
   }
 
