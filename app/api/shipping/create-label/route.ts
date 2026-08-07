@@ -6,6 +6,8 @@ import {
   createParcel,
   matchServicePoint,
   extractLabelInfo,
+  compatShippingOption,
+  getShippingOptions,
 } from '../../../../lib/sendcloud';
 
 export const dynamic = 'force-dynamic';
@@ -165,6 +167,59 @@ export async function POST(request: Request) {
       matched.address ||
       'Service Point';
 
+    // Map v2 method → v3 shipping_option_code (required)
+    let shippingOptionCode: string | undefined;
+    let contractId: number | undefined;
+    try {
+      const compat = await compatShippingOption(Number(preferred.id));
+      const row =
+        compat?.data?.[0] ||
+        compat?.shipping_options?.[0] ||
+        (Array.isArray(compat) ? compat[0] : null);
+      shippingOptionCode =
+        row?.shipping_option_code || row?.code || row?.shipping_option?.code;
+      if (row?.contract_id != null) contractId = Number(row.contract_id);
+    } catch {
+      /* next */
+    }
+
+    if (!shippingOptionCode) {
+      try {
+        const optsRes = await getShippingOptions({
+          to_postal_code: postcode,
+          to_city: String(city),
+          weight_kg: '1.000',
+          to_service_point_id: servicePointId,
+        });
+        const list =
+          optsRes?.data ||
+          optsRes?.shipping_options ||
+          (Array.isArray(optsRes) ? optsRes : []);
+        const hit =
+          list.find((o: any) =>
+            /inpost|locker|service.?point/i.test(
+              String(o.code || o.shipping_option_code || o.name || '')
+            )
+          ) || list[0];
+        shippingOptionCode = hit?.code || hit?.shipping_option_code;
+        if (hit?.contract_id != null) contractId = Number(hit.contract_id);
+      } catch {
+        /* next */
+      }
+    }
+
+    if (!shippingOptionCode) {
+      return NextResponse.json(
+        {
+          error:
+            'Could not resolve InPost shipping_option_code. In Sendcloud enable InPost locker/service-point product under Shipping → Couriers, then retry.',
+          method: preferred?.name,
+          method_id: preferred?.id,
+        },
+        { status: 400 }
+      );
+    }
+
     // 3) Create parcel + label
     const created = await createParcel({
       name: recipientName,
@@ -182,6 +237,8 @@ export async function POST(request: Request) {
         matched.carrier_service_point_id ||
         undefined,
       shipment_method_id: Number(preferred.id),
+      shipping_option_code: String(shippingOptionCode),
+      contract_id: contractId,
       weight_kg: '1.000',
       order_number: order.id.slice(0, 36),
       request_label: true,

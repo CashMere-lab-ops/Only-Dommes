@@ -107,6 +107,50 @@ function getFromAddress() {
   };
 }
 
+
+/** Map v2 shipping method id → v3 shipping_option_code */
+export async function compatShippingOption(methodId: number | string) {
+  return scFetch('https://panel.sendcloud.sc/api/v3/compat/shipping-options', {
+    method: 'POST',
+    body: JSON.stringify({ shipping_method_ids: [Number(methodId)] }),
+  });
+}
+
+/** v3 shipping options for GB → service point */
+export async function getShippingOptions(opts: {
+  to_postal_code: string;
+  to_city?: string;
+  to_country?: string;
+  weight_kg?: string;
+  to_service_point_id?: number | string;
+}) {
+  const from = getFromAddress();
+  const body: any = {
+    from_address: {
+      country_code: from.country_code || 'GB',
+      postal_code: from.postal_code,
+      city: from.city,
+    },
+    to_address: {
+      country_code: opts.to_country || 'GB',
+      postal_code: opts.to_postal_code,
+      city: opts.to_city || 'London',
+    },
+    weight: { value: opts.weight_kg || '1.000', unit: 'kg' },
+    calculate_quotes: true,
+  };
+  if (opts.to_service_point_id != null) {
+    body.to_service_point_id = Number(opts.to_service_point_id);
+  }
+  // Prefer InPost if filter supported
+  body.carrier_code = 'inpost';
+
+  return scFetch('https://panel.sendcloud.sc/api/v3/shipping-options', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export type CreateParcelInput = {
   name: string;
   email?: string;
@@ -119,7 +163,9 @@ export type CreateParcelInput = {
   to_service_point: number;
   /** InPost / carrier locker code e.g. UK00109434 */
   carrier_service_point_id?: string;
-  shipment_method_id: number;
+  shipment_method_id?: number;
+  shipping_option_code?: string;
+  contract_id?: number;
   weight_kg?: string;
   order_number?: string;
   request_label?: boolean;
@@ -156,80 +202,110 @@ export async function createParcel(input: CreateParcelInput) {
       ? { carrier_service_point_id: String(input.carrier_service_point_id) }
       : { id: Number(input.to_service_point) };
 
-  // Attempt 1: shipping_method_id (maps from v2 methods list)
   const fromAddress = getFromAddress();
 
-  const bodyMethodId = {
+  let shippingOptionCode = input.shipping_option_code;
+  let contractId = input.contract_id;
+  const debugBits: string[] = [];
+
+  // 1) Compat: v2 method id → v3 option code
+  if (!shippingOptionCode && input.shipment_method_id) {
+    try {
+      const compat = await compatShippingOption(input.shipment_method_id);
+      const row =
+        compat?.data?.[0] ||
+        compat?.shipping_options?.[0] ||
+        (Array.isArray(compat) ? compat[0] : null);
+      shippingOptionCode =
+        row?.shipping_option_code ||
+        row?.code ||
+        row?.shipping_option?.code;
+      contractId = row?.contract_id || row?.contract?.id || contractId;
+      debugBits.push(`compat=${shippingOptionCode || 'none'}`);
+    } catch (e: any) {
+      debugBits.push(`compatErr=${e?.message || e}`);
+    }
+  }
+
+  // 2) List shipping options for this destination + service point
+  if (!shippingOptionCode) {
+    try {
+      const optsRes = await getShippingOptions({
+        to_postal_code: input.postal_code,
+        to_city: input.city,
+        weight_kg: input.weight_kg,
+        to_service_point_id: input.to_service_point,
+      });
+      const list =
+        optsRes?.data ||
+        optsRes?.shipping_options ||
+        (Array.isArray(optsRes) ? optsRes : []);
+      debugBits.push(`options=${list.length}`);
+      const preferred =
+        list.find((o: any) =>
+          /inpost|locker|service.?point|parcel.?locker/i.test(
+            String(o.code || o.shipping_option_code || o.name || o.carrier || '')
+          )
+        ) || list[0];
+      shippingOptionCode =
+        preferred?.code ||
+        preferred?.shipping_option_code ||
+        preferred?.id;
+      contractId =
+        preferred?.contract_id ||
+        preferred?.contract?.id ||
+        contractId;
+    } catch (e: any) {
+      debugBits.push(`optionsErr=${e?.message || e}`);
+    }
+  }
+
+  if (!shippingOptionCode) {
+    throw new Error(
+      `No shipping_option_code found for InPost. ${debugBits.join(' | ')}. ` +
+        `In Sendcloud: enable InPost locker/service-point product under Shipping → Couriers.`
+    );
+  }
+
+  // Must be a real option code string (e.g. "inpost:locker"), never a numeric method id
+  const code = String(shippingOptionCode).trim();
+  if (!code || /^\d+$/.test(code)) {
+    throw new Error(
+      `Invalid shipping_option_code "${code}". Expected a carrier code like inpost:..., not a number. ` +
+        debugBits.join(' | ')
+    );
+  }
+
+  const shipWith: any = {
+    type: 'shipping_option_code',
+    properties: {
+      shipping_option_code: code,
+    },
+  };
+  if (contractId != null && !Number.isNaN(Number(contractId))) {
+    shipWith.properties.contract_id = Number(contractId);
+  }
+
+  const body = {
     from_address: fromAddress,
     to_address: toAddress,
     to_service_point: servicePoint,
-    ship_with: {
-      type: 'shipping_method_id',
-      properties: {
-        shipping_method_id: input.shipment_method_id,
-      },
-    },
+    ship_with: shipWith,
     parcels,
     order_number: input.order_number || undefined,
   };
 
+  // Only use announce with explicit service-point option (do not fall back to home-delivery rules)
   try {
     return await scFetch('https://panel.sendcloud.sc/api/v3/shipments/announce', {
       method: 'POST',
-      body: JSON.stringify(bodyMethodId),
+      body: JSON.stringify(body),
     });
   } catch (e1: any) {
-    // Attempt 2: apply shipping rules / defaults (no explicit method)
-    const bodyRules = {
-      from_address: fromAddress,
-      to_address: toAddress,
-      to_service_point: servicePoint,
-      parcels,
-      order_number: input.order_number || undefined,
-      apply_shipping_rules: true,
-      apply_shipping_defaults: true,
-    };
-    try {
-      return await scFetch(
-        'https://panel.sendcloud.sc/api/v3/shipments/announce-with-shipping-rules',
-        {
-          method: 'POST',
-          body: JSON.stringify(bodyRules),
-        }
-      );
-    } catch (e2: any) {
-      // Attempt 3: carrier_service_point_id only (InPost machine code style)
-      if (input.carrier_service_point_id) {
-        const bodyCarrier = {
-          from_address: fromAddress,
-          to_address: toAddress,
-          to_service_point: {
-            carrier_service_point_id: String(input.carrier_service_point_id),
-          },
-          ship_with: {
-            type: 'shipping_method_id',
-            properties: {
-              shipping_method_id: input.shipment_method_id,
-            },
-          },
-          parcels,
-          order_number: input.order_number || undefined,
-        };
-        try {
-          return await scFetch('https://panel.sendcloud.sc/api/v3/shipments/announce', {
-            method: 'POST',
-            body: JSON.stringify(bodyCarrier),
-          });
-        } catch (e3: any) {
-          throw new Error(
-            `v3 announce failed. Method: ${e1?.message || e1}. Rules: ${e2?.message || e2}. CarrierSP: ${e3?.message || e3}`
-          );
-        }
-      }
-      throw new Error(
-        `v3 announce failed. Method: ${e1?.message || e1}. Rules: ${e2?.message || e2}`
-      );
-    }
+    throw new Error(
+      `v3 announce failed (option=${code}). ${e1?.message || e1}. ` +
+        `If this mentions service points, enable an InPost *locker / service point* product in Sendcloud Shipping.`
+    );
   }
 }
 
