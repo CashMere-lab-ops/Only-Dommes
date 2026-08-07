@@ -61,17 +61,23 @@ if (ownerId !== user.id) {
 }
 
     const postcode = String(
-      order.shipping_postcode || order.collection_postcode || ''
-    )
-      .replace(/\s/g, '')
-      .toUpperCase();
+  order.shipping_point_postcode ||
+    order.shipping_postcode ||
+    order.collection_postcode ||
+    ''
+)
+  .replace(/\s/g, '')
+  .toUpperCase();
 
-    if (!postcode) {
-      return NextResponse.json(
-        { error: 'Order missing collection postcode' },
-        { status: 400 }
-      );
-    }
+if (!postcode) {
+  return NextResponse.json(
+    {
+      error:
+        'Order missing locker postcode (shipping_point_postcode). Buyer must select a PUDO point when requesting the item.',
+    },
+    { status: 400 }
+  );
+}
 
     // Match Sendcloud service point near buyer locker
     let points: any[] = [];
