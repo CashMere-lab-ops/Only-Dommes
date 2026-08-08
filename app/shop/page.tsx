@@ -293,6 +293,27 @@ export default function ShopPage() {
     setBuyError('');
     setBuySuccess(false);
     try {
+      // Must have enough wallet balance BEFORE any order is created
+      const price = Number(viewer.price || 0);
+      const { data: myBal } = await supabase
+        .from('profiles')
+        .select('balance_gbp')
+        .eq('id', currentUserId)
+        .single();
+      const balance = Number(myBal?.balance_gbp || 0);
+      if (balance < price) {
+        setBuying(false);
+        handleInsufficientBalance({
+          needed: price,
+          balance,
+          from: 'account',
+        });
+        setBuyError(
+          `Not enough balance. You need £${price.toFixed(2)} but have £${balance.toFixed(2)}.`
+        );
+        return;
+      }
+
       // Re-check item still available / reserved for me
       const { data: fresh } = await supabase
         .from('shop_items')
@@ -315,6 +336,12 @@ export default function ShopPage() {
         Date.now() + carrierMeta.holdHours * 60 * 60 * 1000
       ).toISOString();
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please log in again');
+
+      // Create order only after balance check
       const { data: order, error } = await supabase
         .from('shop_orders')
         .insert({
@@ -324,6 +351,7 @@ export default function ShopPage() {
           item_title: viewer.title,
           item_price: viewer.price,
           status: 'requested',
+          funds_status: 'none',
           buyer_note: buyNote.trim() || null,
           shipping_country: 'United Kingdom',
           shipping_county: pudo.point_town.trim(),
@@ -342,12 +370,7 @@ export default function ShopPage() {
         .single();
       if (error) throw error;
 
-      // Hold funds from buyer wallet until seller accepts
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('Please log in again');
-
+      // Hold funds — API deletes the order if balance is insufficient
       const holdRes = await fetch('/api/wallet/shop-escrow', {
         method: 'POST',
         headers: {
@@ -358,8 +381,16 @@ export default function ShopPage() {
       });
       const holdData = await holdRes.json().catch(() => ({}));
       if (!holdRes.ok) {
-        await supabase.from('shop_orders').delete().eq('id', order.id);
+        // Extra cleanup if API could not delete
+        await supabase
+          .from('shop_orders')
+          .delete()
+          .eq('id', order.id)
+          .eq('buyer_id', currentUserId);
         if (holdData.code === 'INSUFFICIENT_BALANCE') {
+          setBuyError(
+            `Not enough balance. You need £${Number(holdData.needed || price).toFixed(2)}.`
+          );
           handleInsufficientBalance({
             needed: holdData.needed,
             balance: holdData.balance,

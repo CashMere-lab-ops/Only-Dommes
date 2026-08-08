@@ -462,8 +462,21 @@ export default function DashboardPage() {
           .select('*')
           .eq('creator_id', user.id)
           .order('created_at', { ascending: false })
-          .limit(20);
-        setShopOrders(orders || []);
+          .limit(40);
+        // Hide draft orders that never held funds (failed payments)
+        setShopOrders(
+          (orders || []).filter(
+            (o: any) =>
+              o.funds_status === 'held' ||
+              o.funds_status === 'pending_creator' ||
+              o.funds_status === 'released' ||
+              o.funds_status === 'refunded' ||
+              o.status === 'paid' ||
+              o.status === 'label_ready' ||
+              o.status === 'shipped' ||
+              o.status === 'completed'
+          )
+        );
       }
 
       // Orders this user placed as buyer
@@ -1626,10 +1639,12 @@ export default function DashboardPage() {
                   <p className="font-semibold">Wallet & payouts</p>
                   <p className="text-sm text-zinc-400">
                     Available {money(Number(profile?.balance_gbp || 0))}
-                    {Number(profile?.pending_gbp || 0) > 0
-                      ? ` · Pending ${money(Number(profile.pending_gbp))} (shop escrow)`
+                    {' · '}
+                    Pending {money(Number(profile?.pending_gbp || 0))}
+                    <span className="text-zinc-500"> (shop escrow)</span>
+                    {earnAllTime > 0
+                      ? ` · All-time earned ${money(earnAllTime)}`
                       : ''}
-                    {earnAllTime > 0 ? ` · All-time earned ${money(earnAllTime)}` : ''}
                     {' · '}Min payout £150 (Mondays)
                   </p>
                 </div>
@@ -1897,7 +1912,7 @@ export default function DashboardPage() {
                                   if (!user) return;
                                   try {
                                     // Move held funds → creator pending
-                                    await shopEscrow(o.id, 'accept');
+                                    const esc = await shopEscrow(o.id, 'accept');
 
                                     setShopOrders((prev) =>
                                       prev.map((x) =>
@@ -1910,6 +1925,24 @@ export default function DashboardPage() {
                                           : x
                                       )
                                     );
+                                    if (typeof esc.pending === 'number') {
+                                      setProfile((p: any) =>
+                                        p
+                                          ? { ...p, pending_gbp: esc.pending }
+                                          : p
+                                      );
+                                    } else {
+                                      setProfile((p: any) =>
+                                        p
+                                          ? {
+                                              ...p,
+                                              pending_gbp:
+                                                Number(p.pending_gbp || 0) +
+                                                Number(o.item_price || 0),
+                                            }
+                                          : p
+                                      );
+                                    }
                                     if (o.item_id) {
                                       setMyItems((prev) =>
                                         prev.map((it) =>

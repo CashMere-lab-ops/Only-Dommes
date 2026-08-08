@@ -78,6 +78,8 @@ export async function POST(request: Request) {
 
       const bal = Number(buyer?.balance_gbp || 0);
       if (bal < amount) {
+        // Remove the draft order so creator never sees unpaid requests
+        await admin.from('shop_orders').delete().eq('id', orderId);
         return NextResponse.json(
           {
             error: 'Insufficient balance',
