@@ -17,6 +17,8 @@ import {
   Lock,
   Loader2,
   ChevronDown,
+  Download,
+  Package,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -82,6 +84,10 @@ function startOfMonth(d = new Date()) {
   return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
 }
 
+function dayKey(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
 function labelForType(type: string) {
   switch (type) {
     case 'tip_received':
@@ -89,7 +95,7 @@ function labelForType(type: string) {
     case 'shop_pending':
       return 'Shop sale (pending)';
     case 'shop_received':
-      return 'Shop sale';
+      return 'Shop sale released';
     case 'call_received':
       return 'Voice call';
     case 'unlock_received':
@@ -140,6 +146,13 @@ function inRange(iso: string, range: RangeKey) {
   return true;
 }
 
+function csvEscape(v: string) {
+  if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+    return `"${v.replace(/"/g, '""')}"`;
+  }
+  return v;
+}
+
 export default function EarningsPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -150,6 +163,7 @@ export default function EarningsPage() {
   const [pending, setPending] = useState(0);
   const [txs, setTxs] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<Record<string, any>>({});
+  const [pendingOrders, setPendingOrders] = useState<any[]>([]);
   const [filter, setFilter] = useState<FilterKey>('all');
   const [range, setRange] = useState<RangeKey>('30d');
   const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
@@ -189,7 +203,7 @@ export default function EarningsPage() {
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(300);
 
     setTxs(rows || []);
 
@@ -200,11 +214,29 @@ export default function EarningsPage() {
           .filter(Boolean) as string[]
       )
     );
-    if (ids.length) {
+
+    const { data: orders } = await supabase
+      .from('shop_orders')
+      .select(
+        'id, item_title, item_price, funds_status, status, buyer_id, created_at, paid_at'
+      )
+      .eq('creator_id', user.id)
+      .eq('funds_status', 'pending_creator')
+      .order('paid_at', { ascending: false })
+      .limit(20);
+
+    setPendingOrders(orders || []);
+
+    const buyerIds = (orders || [])
+      .map((o: any) => o.buyer_id)
+      .filter(Boolean) as string[];
+    const allIds = Array.from(new Set([...ids, ...buyerIds]));
+
+    if (allIds.length) {
       const { data: people } = await supabase
         .from('profiles')
         .select('id, username, display_name, avatar_url')
-        .in('id', ids);
+        .in('id', allIds);
       const map: Record<string, any> = {};
       (people || []).forEach((p: any) => {
         map[p.id] = p;
@@ -243,8 +275,6 @@ export default function EarningsPage() {
     let all = 0;
     for (const t of txs) {
       if (!EARNING_TYPES.includes(t.type)) continue;
-      // Don't double-count shop: pending then received is same sale
-      // Count shop_pending as earned for month/week/all; shop_received is release (no extra)
       if (t.type === 'shop_received') continue;
       const amt = Number(t.amount_gbp || 0);
       if (amt <= 0) continue;
@@ -256,10 +286,90 @@ export default function EarningsPage() {
     return { week, month, all };
   }, [txs, weekStart, monthStart]);
 
+  const breakdown = useMemo(() => {
+    const buckets: Record<
+      string,
+      { key: string; label: string; amount: number; count: number }
+    > = {
+      tips: { key: 'tips', label: 'Tips', amount: 0, count: 0 },
+      shop: { key: 'shop', label: 'Shop sales', amount: 0, count: 0 },
+      calls: { key: 'calls', label: 'Voice calls', amount: 0, count: 0 },
+      unlocks: { key: 'unlocks', label: 'Unlocks', amount: 0, count: 0 },
+      subs: { key: 'subs', label: 'Subscriptions', amount: 0, count: 0 },
+    };
+
+    for (const t of txs) {
+      if (t.type === 'shop_received') continue;
+      const amt = Number(t.amount_gbp || 0);
+      if (amt <= 0) continue;
+      if (t.type === 'tip_received') {
+        buckets.tips.amount += amt;
+        buckets.tips.count += 1;
+      } else if (t.type === 'shop_pending') {
+        buckets.shop.amount += amt;
+        buckets.shop.count += 1;
+      } else if (t.type === 'call_received') {
+        buckets.calls.amount += amt;
+        buckets.calls.count += 1;
+      } else if (t.type === 'unlock_received') {
+        buckets.unlocks.amount += amt;
+        buckets.unlocks.count += 1;
+      } else if (
+        t.type === 'sub_received' ||
+        t.type === 'subscription_received'
+      ) {
+        buckets.subs.amount += amt;
+        buckets.subs.count += 1;
+      }
+    }
+
+    const list = Object.values(buckets).filter((b) => b.count > 0 || b.amount > 0);
+    const total = list.reduce((s, b) => s + b.amount, 0) || 1;
+    return list
+      .map((b) => ({
+        ...b,
+        pct: Math.round((b.amount / total) * 100),
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [txs]);
+
+  const chartDays = useMemo(() => {
+    const days: { key: string; label: string; amount: number }[] = [];
+    const map: Record<string, number> = {};
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = dayKey(d);
+      map[key] = 0;
+      days.push({
+        key,
+        label: d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+        amount: 0,
+      });
+    }
+
+    for (const t of txs) {
+      if (!EARNING_TYPES.includes(t.type) || t.type === 'shop_received') continue;
+      const amt = Number(t.amount_gbp || 0);
+      if (amt <= 0) continue;
+      const key = dayKey(new Date(t.created_at));
+      if (key in map) map[key] += amt;
+    }
+
+    return days.map((d) => ({ ...d, amount: map[d.key] || 0 }));
+  }, [txs]);
+
+  const chartMax = useMemo(
+    () => Math.max(1, ...chartDays.map((d) => d.amount)),
+    [chartDays]
+  );
+
   const filtered = useMemo(() => {
     return txs.filter((t) => {
       if (!matchesFilter(t.type, filter)) return false;
-      // Activity: show earnings + payouts, skip pure hold/spend types for creator
       const showTypes = [
         ...EARNING_TYPES,
         ...PAYOUT_TYPES,
@@ -270,6 +380,39 @@ export default function EarningsPage() {
       return true;
     });
   }, [txs, filter, range]);
+
+  const exportCsv = () => {
+    const rows = [
+      ['Date', 'Type', 'Description', 'From', 'Amount GBP'].join(','),
+    ];
+    for (const t of txs) {
+      if (!EARNING_TYPES.includes(t.type) && !PAYOUT_TYPES.includes(t.type))
+        continue;
+      if (t.type === 'shop_received') continue;
+      const person = t.counterparty_id ? profiles[t.counterparty_id] : null;
+      const from =
+        person?.display_name ||
+        (person?.username ? `@${person.username}` : '');
+      rows.push(
+        [
+          csvEscape(new Date(t.created_at).toISOString()),
+          csvEscape(labelForType(t.type)),
+          csvEscape(String(t.description || '')),
+          csvEscape(from),
+          Number(t.amount_gbp || 0).toFixed(2),
+        ].join(',')
+      );
+    }
+    const blob = new Blob([rows.join('\n')], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `world-of-dommes-earnings-${dayKey(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const requestPayout = async () => {
     setPayoutLoading(true);
@@ -352,7 +495,6 @@ export default function EarningsPage() {
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-24 lg:pb-10">
           <div className="p-4 lg:p-8 max-w-5xl mx-auto">
-            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
               <div>
                 <Link
@@ -369,19 +511,30 @@ export default function EarningsPage() {
                   Tips, sales, calls and payouts — all in one place
                 </p>
               </div>
-              <button
-                type="button"
-                disabled={available < 150}
-                onClick={() => {
-                  setPayoutErr('');
-                  setPayoutMsg('');
-                  setPayoutAmount(available >= 150 ? available.toFixed(2) : '');
-                  setShowPayout(true);
-                }}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 transition"
-              >
-                Request payout
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={exportCsv}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition inline-flex items-center gap-2"
+                >
+                  <Download size={16} /> Export CSV
+                </button>
+                <button
+                  type="button"
+                  disabled={available < 150}
+                  onClick={() => {
+                    setPayoutErr('');
+                    setPayoutMsg('');
+                    setPayoutAmount(
+                      available >= 150 ? available.toFixed(2) : ''
+                    );
+                    setShowPayout(true);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 transition"
+                >
+                  Request payout
+                </button>
+              </div>
             </div>
 
             {payoutMsg && (
@@ -390,7 +543,6 @@ export default function EarningsPage() {
               </div>
             )}
 
-            {/* Summary cards */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 lg:p-5">
                 <p className="text-xs text-zinc-500 flex items-center gap-1.5 mb-2">
@@ -414,7 +566,9 @@ export default function EarningsPage() {
                 <p className="text-xs text-zinc-500 flex items-center gap-1.5 mb-2">
                   <Calendar size={14} /> This week
                 </p>
-                <p className="text-xl lg:text-2xl font-bold">{money(totals.week)}</p>
+                <p className="text-xl lg:text-2xl font-bold">
+                  {money(totals.week)}
+                </p>
                 <p className="text-[11px] text-zinc-600 mt-1">Mon – today</p>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 lg:p-5">
@@ -437,12 +591,128 @@ export default function EarningsPage() {
               </div>
             </div>
 
-            <p className="text-xs text-zinc-500 mb-6">
+            <p className="text-xs text-zinc-500 mb-8">
               You keep 100% until payout. Platform fee is 20% on withdrawal only.
               Min payout £150 · processed Mondays.
             </p>
 
-            {/* Filters */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold">Last 30 days</h2>
+                <span className="text-xs text-zinc-500">
+                  Peak{' '}
+                  {money(
+                    chartMax === 1 && chartDays.every((d) => d.amount === 0)
+                      ? 0
+                      : chartMax
+                  )}
+                </span>
+              </div>
+              <div className="flex items-end gap-[3px] sm:gap-1 h-32">
+                {chartDays.map((d) => {
+                  const h =
+                    d.amount <= 0
+                      ? 4
+                      : Math.max(8, Math.round((d.amount / chartMax) * 100));
+                  return (
+                    <div
+                      key={d.key}
+                      className="flex-1 flex flex-col items-center justify-end h-full group relative"
+                    >
+                      <div
+                        className="w-full rounded-t-sm bg-gradient-to-t from-pink-700 to-pink-400 opacity-90 group-hover:opacity-100 transition-all"
+                        style={{ height: `${h}%` }}
+                        title={`${d.label}: ${money(d.amount)}`}
+                      />
+                      <div className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 hidden group-hover:block bg-zinc-800 text-[10px] text-white px-2 py-1 rounded-md whitespace-nowrap z-10 border border-zinc-700">
+                        {d.label}: {money(d.amount)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-between mt-2 text-[10px] text-zinc-600">
+                <span>{chartDays[0]?.label}</span>
+                <span>{chartDays[chartDays.length - 1]?.label}</span>
+              </div>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+              <h2 className="font-semibold mb-4">Breakdown by type</h2>
+              {breakdown.length === 0 ? (
+                <p className="text-sm text-zinc-500 py-4 text-center">
+                  No earnings to break down yet
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {breakdown.map((b) => (
+                    <div key={b.key}>
+                      <div className="flex items-center justify-between text-sm mb-1.5">
+                        <span className="text-zinc-200 font-medium">
+                          {b.label}
+                          <span className="text-zinc-500 font-normal ml-2">
+                            {b.count}×
+                          </span>
+                        </span>
+                        <span className="text-zinc-100 font-semibold">
+                          {money(b.amount)}
+                          <span className="text-zinc-500 font-normal ml-2 text-xs">
+                            {b.pct}%
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-pink-600 to-rose-500"
+                          style={{
+                            width: `${Math.max(b.pct, b.amount > 0 ? 4 : 0)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {pendingOrders.length > 0 && (
+              <div className="bg-zinc-900 border border-amber-500/20 rounded-2xl overflow-hidden mb-6">
+                <div className="px-5 py-4 border-b border-zinc-800 flex items-center gap-2">
+                  <Package size={18} className="text-amber-400" />
+                  <h2 className="font-semibold">Shop escrow pending</h2>
+                  <span className="text-xs text-amber-400/80 ml-auto">
+                    Released when buyer confirms receipt
+                  </span>
+                </div>
+                <ul className="divide-y divide-zinc-800/80">
+                  {pendingOrders.map((o) => {
+                    const buyer = o.buyer_id ? profiles[o.buyer_id] : null;
+                    const name =
+                      buyer?.display_name ||
+                      (buyer?.username ? `@${buyer.username}` : 'Buyer');
+                    return (
+                      <li
+                        key={o.id}
+                        className="px-5 py-3.5 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {o.item_title}
+                          </p>
+                          <p className="text-xs text-zinc-500 mt-0.5">
+                            {name} · waiting for confirmation
+                          </p>
+                        </div>
+                        <p className="text-sm font-semibold text-amber-300 flex-shrink-0">
+                          {money(Number(o.item_price || 0))}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2 overflow-x-auto pb-1">
                 <Filter size={16} className="text-zinc-500 flex-shrink-0" />
@@ -480,7 +750,6 @@ export default function EarningsPage() {
               </div>
             </div>
 
-            {/* Activity */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden mb-8">
               <div className="px-5 py-4 border-b border-zinc-800">
                 <h2 className="font-semibold">Activity</h2>
@@ -581,7 +850,6 @@ export default function EarningsPage() {
               )}
             </div>
 
-            {/* Payout history */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="font-semibold">Payout history</h2>
@@ -633,7 +901,6 @@ export default function EarningsPage() {
           </div>
         </main>
 
-        {/* Payout modal */}
         {showPayout && (
           <div className="fixed inset-0 z-[100] bg-black/70 flex items-end sm:items-center justify-center p-4">
             <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
