@@ -173,6 +173,17 @@ export default function DashboardPage() {
   const [payoutMsg, setPayoutMsg] = useState('');
   const [payoutErr, setPayoutErr] = useState('');
   const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
+  const [recentTips, setRecentTips] = useState<
+    {
+      id: string;
+      amount_gbp: number;
+      created_at: string;
+      description?: string | null;
+      from_name: string;
+      from_username?: string | null;
+      from_avatar?: string | null;
+    }[]
+  >([]);
 
   const money = (n: number) =>
     `£${Number(n || 0).toLocaleString('en-GB', {
@@ -289,6 +300,54 @@ export default function DashboardPage() {
         setEarnWeek(Math.round(w * 100) / 100);
         setEarnMonth(Math.round(m * 100) / 100);
         setEarnAllTime(Math.round(all * 100) / 100);
+
+        // Recent tips (with tipper profile)
+        const { data: tipRows } = await supabase
+          .from('wallet_transactions')
+          .select(
+            'id, amount_gbp, created_at, description, counterparty_id'
+          )
+          .eq('user_id', user.id)
+          .eq('type', 'tip_received')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (tipRows && tipRows.length > 0) {
+          const tipperIds = [
+            ...new Set(
+              tipRows
+                .map((r: any) => r.counterparty_id)
+                .filter(Boolean)
+            ),
+          ];
+          let tipperMap = new Map<string, any>();
+          if (tipperIds.length > 0) {
+            const { data: tippers } = await supabase
+              .from('profiles')
+              .select('id, username, display_name, avatar_url')
+              .in('id', tipperIds);
+            tipperMap = new Map(
+              (tippers || []).map((p: any) => [p.id, p])
+            );
+          }
+          setRecentTips(
+            tipRows.map((r: any) => {
+              const p = tipperMap.get(r.counterparty_id);
+              return {
+                id: r.id,
+                amount_gbp: Number(r.amount_gbp || 0),
+                created_at: r.created_at,
+                description: r.description,
+                from_name:
+                  p?.display_name || p?.username || 'Subscriber',
+                from_username: p?.username || null,
+                from_avatar: p?.avatar_url || null,
+              };
+            })
+          );
+        } else {
+          setRecentTips([]);
+        }
 
         // Payout history
         try {
@@ -426,10 +485,98 @@ export default function DashboardPage() {
       setLoading(false);
     };
     loadProfile();
+
+    // Live tips: when a tip_received row is inserted for this creator
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      channel = supabase
+        .channel(`dashboard-tips-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'wallet_transactions',
+            filter: `user_id=eq.${user.id}`,
+          },
+          async (payload) => {
+            const row = payload.new as any;
+            if (!row || row.type !== 'tip_received') return;
+
+            let from_name = 'Subscriber';
+            let from_username: string | null = null;
+            let from_avatar: string | null = null;
+            if (row.counterparty_id) {
+              const { data: p } = await supabase
+                .from('profiles')
+                .select('username, display_name, avatar_url')
+                .eq('id', row.counterparty_id)
+                .maybeSingle();
+              if (p) {
+                from_name = p.display_name || p.username || from_name;
+                from_username = p.username;
+                from_avatar = p.avatar_url;
+              }
+            }
+
+            const tip = {
+              id: row.id,
+              amount_gbp: Number(row.amount_gbp || 0),
+              created_at: row.created_at || new Date().toISOString(),
+              description: row.description,
+              from_name,
+              from_username,
+              from_avatar,
+            };
+
+            setRecentTips((prev) => {
+              if (prev.some((t) => t.id === tip.id)) return prev;
+              return [tip, ...prev].slice(0, 20);
+            });
+
+            // Bump earnings cards
+            const amt = Number(row.amount_gbp || 0);
+            if (amt > 0) {
+              setEarnToday((v) => Math.round((v + amt) * 100) / 100);
+              setEarnWeek((v) => Math.round((v + amt) * 100) / 100);
+              setEarnMonth((v) => Math.round((v + amt) * 100) / 100);
+              setEarnAllTime((v) => Math.round((v + amt) * 100) / 100);
+            }
+            if (typeof row.balance_after === 'number') {
+              setProfile((p: any) =>
+                p ? { ...p, balance_gbp: row.balance_after } : p
+              );
+              notifyBalanceUpdated(Number(row.balance_after));
+            }
+          }
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
 
   const displayName = profile?.display_name || profile?.username || 'User';
   const isCreator = profile?.account_type === 'creator';
+
+  const tipTimeAgo = (iso: string) => {
+    const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'Just now';
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    if (s < 604800) return `${Math.floor(s / 86400)}d ago`;
+    return new Date(iso).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+    });
+  };
 
   const handleCreateClip = () => {
     if (!clipForm.title) return;
@@ -1517,7 +1664,50 @@ export default function DashboardPage() {
                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <DollarSign size={20} className="text-pink-400" /> Recent Tips
                 </h2>
-                <p className="text-zinc-500 text-sm py-8 text-center">No tips yet</p>
+                {recentTips.length === 0 ? (
+                  <p className="text-zinc-500 text-sm py-8 text-center">
+                    No tips yet — when someone tips you, it shows up here live
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                    {recentTips.map((tip) => (
+                      <div
+                        key={tip.id}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/60 hover:bg-zinc-800 transition"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
+                          {tip.from_avatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={tip.from_avatar}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            tip.from_name.charAt(0).toUpperCase()
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">
+                            {tip.from_name}
+                            {tip.from_username ? (
+                              <span className="text-zinc-500 font-normal">
+                                {' '}
+                                @{tip.from_username}
+                              </span>
+                            ) : null}
+                          </p>
+                          <p className="text-xs text-zinc-500 truncate">
+                            {tip.description || 'Tip'} · {tipTimeAgo(tip.created_at)}
+                          </p>
+                        </div>
+                        <span className="text-sm font-semibold text-emerald-400 flex-shrink-0 tabular-nums">
+                          +{money(tip.amount_gbp)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4">
