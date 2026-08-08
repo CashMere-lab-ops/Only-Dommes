@@ -486,16 +486,110 @@ export default function DashboardPage() {
     };
     loadProfile();
 
-    // Live tips: when a tip_received row is inserted for this creator
+    // Live tips: realtime + short poll backup
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    const mergeTipRow = async (row: any, userId: string) => {
+      if (!row || row.type !== 'tip_received') return;
+      if (row.user_id && row.user_id !== userId) return;
+
+      let from_name = 'Subscriber';
+      let from_username: string | null = null;
+      let from_avatar: string | null = null;
+      if (row.counterparty_id) {
+        const { data: p } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url')
+          .eq('id', row.counterparty_id)
+          .maybeSingle();
+        if (p) {
+          from_name = p.display_name || p.username || from_name;
+          from_username = p.username;
+          from_avatar = p.avatar_url;
+        }
+      }
+
+      const tip = {
+        id: String(row.id),
+        amount_gbp: Number(row.amount_gbp || 0),
+        created_at: row.created_at || new Date().toISOString(),
+        description: row.description,
+        from_name,
+        from_username,
+        from_avatar,
+      };
+
+      setRecentTips((prev) => {
+        if (prev.some((t) => t.id === tip.id)) return prev;
+        return [tip, ...prev].slice(0, 20);
+      });
+
+      const amt = Number(row.amount_gbp || 0);
+      if (amt > 0) {
+        setEarnToday((v) => Math.round((v + amt) * 100) / 100);
+        setEarnWeek((v) => Math.round((v + amt) * 100) / 100);
+        setEarnMonth((v) => Math.round((v + amt) * 100) / 100);
+        setEarnAllTime((v) => Math.round((v + amt) * 100) / 100);
+      }
+      if (typeof row.balance_after === 'number') {
+        setProfile((p: any) =>
+          p ? { ...p, balance_gbp: row.balance_after } : p
+        );
+        notifyBalanceUpdated(Number(row.balance_after));
+      }
+    };
+
+    const refreshTipsQuiet = async (userId: string) => {
+      const { data: tipRows } = await supabase
+        .from('wallet_transactions')
+        .select('id, amount_gbp, created_at, description, counterparty_id')
+        .eq('user_id', userId)
+        .eq('type', 'tip_received')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!tipRows) return;
+
+      const tipperIds = [
+        ...new Set(
+          tipRows.map((r: any) => r.counterparty_id).filter(Boolean)
+        ),
+      ];
+      let tipperMap = new Map<string, any>();
+      if (tipperIds.length > 0) {
+        const { data: tippers } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', tipperIds);
+        tipperMap = new Map((tippers || []).map((p: any) => [p.id, p]));
+      }
+
+      setRecentTips(
+        tipRows.map((r: any) => {
+          const p = tipperMap.get(r.counterparty_id);
+          return {
+            id: r.id,
+            amount_gbp: Number(r.amount_gbp || 0),
+            created_at: r.created_at,
+            description: r.description,
+            from_name: p?.display_name || p?.username || 'Subscriber',
+            from_username: p?.username || null,
+            from_avatar: p?.avatar_url || null,
+          };
+        })
+      );
+    };
+
     (async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user || cancelled) return;
 
       channel = supabase
-        .channel(`dashboard-tips-${user.id}`)
+        .channel(`dashboard-tips-${user.id}-${Date.now()}`)
         .on(
           'postgres_changes',
           {
@@ -504,62 +598,27 @@ export default function DashboardPage() {
             table: 'wallet_transactions',
             filter: `user_id=eq.${user.id}`,
           },
-          async (payload) => {
-            const row = payload.new as any;
-            if (!row || row.type !== 'tip_received') return;
-
-            let from_name = 'Subscriber';
-            let from_username: string | null = null;
-            let from_avatar: string | null = null;
-            if (row.counterparty_id) {
-              const { data: p } = await supabase
-                .from('profiles')
-                .select('username, display_name, avatar_url')
-                .eq('id', row.counterparty_id)
-                .maybeSingle();
-              if (p) {
-                from_name = p.display_name || p.username || from_name;
-                from_username = p.username;
-                from_avatar = p.avatar_url;
-              }
-            }
-
-            const tip = {
-              id: row.id,
-              amount_gbp: Number(row.amount_gbp || 0),
-              created_at: row.created_at || new Date().toISOString(),
-              description: row.description,
-              from_name,
-              from_username,
-              from_avatar,
-            };
-
-            setRecentTips((prev) => {
-              if (prev.some((t) => t.id === tip.id)) return prev;
-              return [tip, ...prev].slice(0, 20);
-            });
-
-            // Bump earnings cards
-            const amt = Number(row.amount_gbp || 0);
-            if (amt > 0) {
-              setEarnToday((v) => Math.round((v + amt) * 100) / 100);
-              setEarnWeek((v) => Math.round((v + amt) * 100) / 100);
-              setEarnMonth((v) => Math.round((v + amt) * 100) / 100);
-              setEarnAllTime((v) => Math.round((v + amt) * 100) / 100);
-            }
-            if (typeof row.balance_after === 'number') {
-              setProfile((p: any) =>
-                p ? { ...p, balance_gbp: row.balance_after } : p
-              );
-              notifyBalanceUpdated(Number(row.balance_after));
-            }
+          (payload) => {
+            mergeTipRow(payload.new, user.id);
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          // If realtime isn't enabled, status may be CHANNEL_ERROR / TIMED_OUT
+          if (status === 'SUBSCRIBED') {
+            console.log('[tips] realtime connected');
+          }
+        });
+
+      // Backup: refresh tips every 12s while dashboard is open
+      pollTimer = setInterval(() => {
+        refreshTipsQuiet(user.id);
+      }, 12000);
     })();
 
     return () => {
+      cancelled = true;
       if (channel) supabase.removeChannel(channel);
+      if (pollTimer) clearInterval(pollTimer);
     };
   }, []);
 
