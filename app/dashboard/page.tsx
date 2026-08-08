@@ -147,7 +147,10 @@ export default function DashboardPage() {
       case 'requested':
         return 'bg-zinc-800 text-zinc-300';
       case 'accepted':
+      case 'awaiting_payment':
         return 'bg-pink-500/15 text-pink-400';
+      case 'paid':
+        return 'bg-emerald-500/15 text-emerald-400';
       case 'shipped':
         return 'bg-amber-500/15 text-amber-400';
       case 'completed':
@@ -158,6 +161,28 @@ export default function DashboardPage() {
         return 'bg-zinc-800 text-zinc-400';
     }
   };
+
+  const shopEscrow = async (
+    orderId: string,
+    action: 'accept' | 'release' | 'refund'
+  ) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Please log in again');
+    const res = await fetch('/api/wallet/shop-escrow', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action, order_id: orderId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Escrow action failed');
+    return data;
+  };
+
   const [trackingDraft, setTrackingDraft] = useState<Record<string, string>>({});
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [subCount, setSubCount] = useState(0);
@@ -1055,50 +1080,49 @@ export default function DashboardPage() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
-    const { error } = await supabase
-      .from('shop_orders')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', order.id)
-      .eq('buyer_id', user.id);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    setBuyerOrders((prev) =>
-      prev.map((x) => (x.id === order.id ? { ...x, status: 'completed' } : x))
-    );
-    // Notify creator
-    if (order.creator_id) {
-      await createNotification({
-        userId: order.creator_id,
-        actorId: user.id,
-        type: 'unlock',
-        title: 'Order completed by buyer',
-        body: `"${order.item_title}" marked complete`,
-        link: '/dashboard',
-      });
-      const { data: existing } = await supabase
-        .from('conversations')
-        .select('id')
-        .or(
-          `and(participant_1.eq.${user.id},participant_2.eq.${order.creator_id}),and(participant_1.eq.${order.creator_id},participant_2.eq.${user.id})`
+    try {
+      // Release pending funds to creator available balance
+      await shopEscrow(order.id, 'release');
+
+      setBuyerOrders((prev) =>
+        prev.map((x) =>
+          x.id === order.id
+            ? { ...x, status: 'completed', funds_status: 'released' }
+            : x
         )
-        .maybeSingle();
-      if (existing?.id) {
-        await supabase.from('messages').insert({
-          conversation_id: existing.id,
-          sender_id: user.id,
-          content: `✨ Order complete: "${order.item_title}"\n\nBuyer confirmed they received this order.`,
-          media_type: 'system',
+      );
+
+      if (order.creator_id) {
+        await createNotification({
+          userId: order.creator_id,
+          actorId: user.id,
+          type: 'unlock',
+          title: 'Order complete — funds released',
+          body: `"${order.item_title}" · payment added to your available balance`,
+          link: '/dashboard',
         });
-        await supabase
+        const { data: existing } = await supabase
           .from('conversations')
-          .update({ last_message_at: new Date().toISOString() })
-          .eq('id', existing.id);
+          .select('id')
+          .or(
+            `and(participant_1.eq.${user.id},participant_2.eq.${order.creator_id}),and(participant_1.eq.${order.creator_id},participant_2.eq.${user.id})`
+          )
+          .maybeSingle();
+        if (existing?.id) {
+          await supabase.from('messages').insert({
+            conversation_id: existing.id,
+            sender_id: user.id,
+            content: `✨ Order complete: "${order.item_title}"\n\nBuyer confirmed receipt. Funds released to seller.`,
+            media_type: 'system',
+          });
+          await supabase
+            .from('conversations')
+            .update({ last_message_at: new Date().toISOString() })
+            .eq('id', existing.id);
+        }
       }
+    } catch (err: any) {
+      alert(err.message || 'Could not complete order');
     }
   };
 
@@ -1279,8 +1303,15 @@ export default function DashboardPage() {
                           {o.status === 'requested' && (
                             <span className="text-sm text-zinc-400">Awaiting seller</span>
                           )}
-                          {o.status === 'accepted' && (
-                            <span className="text-sm text-pink-400">Accepted · shipping soon</span>
+                          {o.status === 'requested' && o.funds_status === 'held' && (
+                            <span className="text-sm text-amber-400">
+                              Funds held · awaiting seller
+                            </span>
+                          )}
+                          {(o.status === 'paid' || o.status === 'label_ready') && (
+                            <span className="text-sm text-emerald-400 font-medium">
+                              Paid · {o.status === 'label_ready' ? 'label ready' : 'shipping soon'}
+                            </span>
                           )}
                           {o.status === 'cancelled' && (
                             <span className="text-sm text-zinc-500">Cancelled</span>
@@ -1595,6 +1626,9 @@ export default function DashboardPage() {
                   <p className="font-semibold">Wallet & payouts</p>
                   <p className="text-sm text-zinc-400">
                     Available {money(Number(profile?.balance_gbp || 0))}
+                    {Number(profile?.pending_gbp || 0) > 0
+                      ? ` · Pending ${money(Number(profile.pending_gbp))} (shop escrow)`
+                      : ''}
                     {earnAllTime > 0 ? ` · All-time earned ${money(earnAllTime)}` : ''}
                     {' · '}Min payout £150 (Mondays)
                   </p>
@@ -1861,80 +1895,68 @@ export default function DashboardPage() {
                                     data: { user },
                                   } = await supabase.auth.getUser();
                                   if (!user) return;
+                                  try {
+                                    // Move held funds → creator pending
+                                    await shopEscrow(o.id, 'accept');
 
-                                  await supabase
-                                    .from('shop_orders')
-                                    .update({ status: 'accepted' })
-                                    .eq('id', o.id);
-
-                                  setShopOrders((prev) =>
-                                    prev.map((x) =>
-                                      x.id === o.id ? { ...x, status: 'accepted' } : x
-                                    )
-                                  );
-
-                                  if (o.item_id) {
-                                    setMyItems((prev) =>
-                                      prev.map((it) =>
-                                        it.id === o.item_id
+                                    setShopOrders((prev) =>
+                                      prev.map((x) =>
+                                        x.id === o.id
                                           ? {
-                                              ...it,
-                                              status: 'sold',
-                                              reserved_for_id: null,
-                                              reserved_for_username: null,
+                                              ...x,
+                                              status: 'paid',
+                                              funds_status: 'pending_creator',
                                             }
-                                          : it
+                                          : x
                                       )
                                     );
-                                  }
-
-                                  // Notify buyer + chat message
-                                  if (o.buyer_id) {
-                                    await createNotification({
-                                      userId: o.buyer_id,
-                                      actorId: user.id,
-                                      type: 'unlock',
-                                      title: 'Order accepted',
-                                      body: `"${o.item_title}" · £${Number(o.item_price).toFixed(2)} — pay to confirm (coming soon)`,
-                                      link: '/messages',
-                                    });
-
-                                    const { data: existing } = await supabase
-                                      .from('conversations')
-                                      .select('id')
-                                      .or(
-                                        `and(participant_1.eq.${user.id},participant_2.eq.${o.buyer_id}),and(participant_1.eq.${o.buyer_id},participant_2.eq.${user.id})`
-                                      )
-                                      .maybeSingle();
-
-                                    let convoId = existing?.id;
-                                    if (!convoId) {
-                                      const { data: created } = await supabase
-                                        .from('conversations')
-                                        .insert({
-                                          participant_1: user.id,
-                                          participant_2: o.buyer_id,
-                                          last_message_at: new Date().toISOString(),
-                                        })
-                                        .select('id')
-                                        .single();
-                                      convoId = created?.id;
+                                    if (o.item_id) {
+                                      setMyItems((prev) =>
+                                        prev.map((it) =>
+                                          it.id === o.item_id
+                                            ? {
+                                                ...it,
+                                                status: 'sold',
+                                                reserved_for_id: null,
+                                              }
+                                            : it
+                                        )
+                                      );
                                     }
 
-                                    if (convoId) {
-                                      await supabase.from('messages').insert({
-                                        conversation_id: convoId,
-                                        sender_id: user.id,
-                                        content: `✅ Order accepted: "${o.item_title}" · £${Number(o.item_price).toFixed(2)}\n\nSeller confirmed your request. Payment to confirm will be available soon — your address stays private.`,
-                                        media_type: 'system',
+                                    if (o.buyer_id) {
+                                      await createNotification({
+                                        userId: o.buyer_id,
+                                        actorId: user.id,
+                                        type: 'unlock',
+                                        title: 'Order accepted',
+                                        body: `"${o.item_title}" · seller accepted — shipping next`,
+                                        link: '/dashboard',
                                       });
-                                      await supabase
+                                      const { data: existing } = await supabase
                                         .from('conversations')
-                                        .update({
-                                          last_message_at: new Date().toISOString(),
-                                        })
-                                        .eq('id', convoId);
+                                        .select('id')
+                                        .or(
+                                          `and(participant_1.eq.${user.id},participant_2.eq.${o.buyer_id}),and(participant_1.eq.${o.buyer_id},participant_2.eq.${user.id})`
+                                        )
+                                        .maybeSingle();
+                                      if (existing?.id) {
+                                        await supabase.from('messages').insert({
+                                          conversation_id: existing.id,
+                                          sender_id: user.id,
+                                          content: `✅ Order accepted: "${o.item_title}" · £${Number(o.item_price).toFixed(2)}\n\nYour held payment is with the seller (pending until you confirm receipt). Shipping label next.`,
+                                          media_type: 'system',
+                                        });
+                                        await supabase
+                                          .from('conversations')
+                                          .update({
+                                            last_message_at: new Date().toISOString(),
+                                          })
+                                          .eq('id', existing.id);
+                                      }
                                     }
+                                  } catch (err: any) {
+                                    alert(err.message || 'Could not accept order');
                                   }
                                 }}
                                 className="text-sm px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-medium transition"
@@ -1948,49 +1970,68 @@ export default function DashboardPage() {
                                     data: { user },
                                   } = await supabase.auth.getUser();
                                   if (!user) return;
+                                  try {
+                                    // Refund held funds to buyer
+                                    await shopEscrow(o.id, 'refund');
 
-                                  await supabase
-                                    .from('shop_orders')
-                                    .update({ status: 'cancelled' })
-                                    .eq('id', o.id);
-                                  setShopOrders((prev) =>
-                                    prev.map((x) =>
-                                      x.id === o.id ? { ...x, status: 'cancelled' } : x
-                                    )
-                                  );
-
-                                  if (o.buyer_id) {
-                                    await createNotification({
-                                      userId: o.buyer_id,
-                                      actorId: user.id,
-                                      type: 'unlock',
-                                      title: 'Order declined',
-                                      body: `"${o.item_title}" was not accepted`,
-                                      link: '/messages',
-                                    });
-
-                                    const { data: existing } = await supabase
-                                      .from('conversations')
-                                      .select('id')
-                                      .or(
-                                        `and(participant_1.eq.${user.id},participant_2.eq.${o.buyer_id}),and(participant_1.eq.${o.buyer_id},participant_2.eq.${user.id})`
+                                    setShopOrders((prev) =>
+                                      prev.map((x) =>
+                                        x.id === o.id
+                                          ? {
+                                              ...x,
+                                              status: 'cancelled',
+                                              funds_status: 'refunded',
+                                            }
+                                          : x
                                       )
-                                      .maybeSingle();
-
-                                    if (existing?.id) {
-                                      await supabase.from('messages').insert({
-                                        conversation_id: existing.id,
-                                        sender_id: user.id,
-                                        content: `❌ Order declined: "${o.item_title}"\n\nThis request was not accepted.`,
-                                        media_type: 'system',
-                                      });
-                                      await supabase
-                                        .from('conversations')
-                                        .update({
-                                          last_message_at: new Date().toISOString(),
-                                        })
-                                        .eq('id', existing.id);
+                                    );
+                                    if (o.item_id) {
+                                      setMyItems((prev) =>
+                                        prev.map((it) =>
+                                          it.id === o.item_id
+                                            ? {
+                                                ...it,
+                                                status: 'available',
+                                                reserved_for_id: null,
+                                              }
+                                            : it
+                                        )
+                                      );
                                     }
+
+                                    if (o.buyer_id) {
+                                      await createNotification({
+                                        userId: o.buyer_id,
+                                        actorId: user.id,
+                                        type: 'unlock',
+                                        title: 'Order declined — refunded',
+                                        body: `"${o.item_title}" · held funds returned to your wallet`,
+                                        link: '/wallet',
+                                      });
+                                      const { data: existing } = await supabase
+                                        .from('conversations')
+                                        .select('id')
+                                        .or(
+                                          `and(participant_1.eq.${user.id},participant_2.eq.${o.buyer_id}),and(participant_1.eq.${o.buyer_id},participant_2.eq.${user.id})`
+                                        )
+                                        .maybeSingle();
+                                      if (existing?.id) {
+                                        await supabase.from('messages').insert({
+                                          conversation_id: existing.id,
+                                          sender_id: user.id,
+                                          content: `❌ Order declined: "${o.item_title}"\n\nYour held payment has been returned to your wallet.`,
+                                          media_type: 'system',
+                                        });
+                                        await supabase
+                                          .from('conversations')
+                                          .update({
+                                            last_message_at: new Date().toISOString(),
+                                          })
+                                          .eq('id', existing.id);
+                                      }
+                                    }
+                                  } catch (err: any) {
+                                    alert(err.message || 'Could not decline order');
                                   }
                                 }}
                                 className="text-sm px-4 py-2 rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition"
@@ -1999,7 +2040,7 @@ export default function DashboardPage() {
                               </button>
                             </>
                           )}
-                          {(o.status === 'accepted' || o.status === 'paid' || o.status === 'awaiting_payment' || o.status === 'label_ready') && (
+                          {(o.status === 'paid' || o.status === 'label_ready') && (
                             <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[240px]">
                               <p className="text-xs text-zinc-500">
                                 InPost: generate label, then drop off at any locker. Buyer collects at theirs.
