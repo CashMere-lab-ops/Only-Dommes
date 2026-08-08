@@ -19,6 +19,9 @@ import {
   ChevronDown,
   Download,
   Package,
+  Target,
+  Sparkles,
+  Pencil,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -63,6 +66,9 @@ const EARNING_TYPES = [
 ];
 
 const PAYOUT_TYPES = ['payout', 'payout_requested', 'payout_sent'];
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const GOAL_PRESETS = [100, 250, 500, 1000, 2500];
 
 function money(n: number) {
   return `£${Number(n || 0).toLocaleString('en-GB', {
@@ -153,12 +159,17 @@ function csvEscape(v: string) {
   return v;
 }
 
+function isCountableEarning(type: string) {
+  return EARNING_TYPES.includes(type) && type !== 'shop_received';
+}
+
 export default function EarningsPage() {
   const router = useRouter();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
   const [isCreator, setIsCreator] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [available, setAvailable] = useState(0);
   const [pending, setPending] = useState(0);
   const [txs, setTxs] = useState<any[]>([]);
@@ -173,6 +184,13 @@ export default function EarningsPage() {
   const [showPayout, setShowPayout] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('');
 
+  // Phase 3 — monthly goal
+  const [goalGbp, setGoalGbp] = useState(0);
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState('');
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [goalMsg, setGoalMsg] = useState('');
+
   const load = async () => {
     const {
       data: { user },
@@ -181,10 +199,11 @@ export default function EarningsPage() {
       router.push('/login');
       return;
     }
+    setUserId(user.id);
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('balance_gbp, pending_gbp, account_type')
+      .select('balance_gbp, pending_gbp, account_type, earnings_goal_gbp')
       .eq('id', user.id)
       .single();
 
@@ -192,6 +211,14 @@ export default function EarningsPage() {
     setIsCreator(creator);
     setAvailable(Number(profile?.balance_gbp || 0));
     setPending(Number(profile?.pending_gbp || 0));
+
+    // Goal from DB, fallback localStorage
+    let g = Number(profile?.earnings_goal_gbp || 0);
+    if (!g && typeof window !== 'undefined') {
+      const ls = localStorage.getItem(`wod_earnings_goal_${user.id}`);
+      if (ls) g = Number(ls) || 0;
+    }
+    setGoalGbp(g);
 
     if (!creator) {
       setLoading(false);
@@ -274,8 +301,7 @@ export default function EarningsPage() {
     let month = 0;
     let all = 0;
     for (const t of txs) {
-      if (!EARNING_TYPES.includes(t.type)) continue;
-      if (t.type === 'shop_received') continue;
+      if (!isCountableEarning(t.type)) continue;
       const amt = Number(t.amount_gbp || 0);
       if (amt <= 0) continue;
       all += amt;
@@ -285,6 +311,13 @@ export default function EarningsPage() {
     }
     return { week, month, all };
   }, [txs, weekStart, monthStart]);
+
+  const goalProgress = useMemo(() => {
+    if (goalGbp <= 0) return 0;
+    return Math.min(100, Math.round((totals.month / goalGbp) * 100));
+  }, [goalGbp, totals.month]);
+
+  const goalReached = goalGbp > 0 && totals.month >= goalGbp;
 
   const breakdown = useMemo(() => {
     const buckets: Record<
@@ -323,7 +356,9 @@ export default function EarningsPage() {
       }
     }
 
-    const list = Object.values(buckets).filter((b) => b.count > 0 || b.amount > 0);
+    const list = Object.values(buckets).filter(
+      (b) => b.count > 0 || b.amount > 0
+    );
     const total = list.reduce((s, b) => s + b.amount, 0) || 1;
     return list
       .map((b) => ({
@@ -346,13 +381,16 @@ export default function EarningsPage() {
       map[key] = 0;
       days.push({
         key,
-        label: d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+        label: d.toLocaleDateString(undefined, {
+          day: 'numeric',
+          month: 'short',
+        }),
         amount: 0,
       });
     }
 
     for (const t of txs) {
-      if (!EARNING_TYPES.includes(t.type) || t.type === 'shop_received') continue;
+      if (!isCountableEarning(t.type)) continue;
       const amt = Number(t.amount_gbp || 0);
       if (amt <= 0) continue;
       const key = dayKey(new Date(t.created_at));
@@ -367,6 +405,65 @@ export default function EarningsPage() {
     [chartDays]
   );
 
+  /** Best day of week + best hour (all-time countable earnings) */
+  const insights = useMemo(() => {
+    const byDay = Array(7).fill(0) as number[];
+    const byHour = Array(24).fill(0) as number[];
+
+    for (const t of txs) {
+      if (!isCountableEarning(t.type)) continue;
+      const amt = Number(t.amount_gbp || 0);
+      if (amt <= 0) continue;
+      const d = new Date(t.created_at);
+      byDay[d.getDay()] += amt;
+      byHour[d.getHours()] += amt;
+    }
+
+    let bestDayIdx = 0;
+    let bestHourIdx = 0;
+    for (let i = 1; i < 7; i++) if (byDay[i] > byDay[bestDayIdx]) bestDayIdx = i;
+    for (let i = 1; i < 24; i++)
+      if (byHour[i] > byHour[bestHourIdx]) bestHourIdx = i;
+
+    const dayMax = Math.max(...byDay, 1);
+    const hourMax = Math.max(...byHour, 1);
+    const hasData = byDay.some((v) => v > 0);
+
+    const hourLabel = (h: number) => {
+      const ampm = h >= 12 ? 'pm' : 'am';
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}${ampm}`;
+    };
+
+    return {
+      hasData,
+      bestDay: DAY_NAMES[bestDayIdx],
+      bestDayAmount: byDay[bestDayIdx],
+      bestHour: hourLabel(bestHourIdx),
+      bestHourAmount: byHour[bestHourIdx],
+      byDay: DAY_NAMES.map((name, i) => ({
+        name,
+        amount: byDay[i],
+        pct: Math.round((byDay[i] / dayMax) * 100),
+      })),
+      byHourTop: [0, 1, 2, 3, 4, 5]
+        .map(() => 0)
+        .map((_, rank) => {
+          const sorted = byHour
+            .map((amount, hour) => ({ hour, amount }))
+            .sort((a, b) => b.amount - a.amount);
+          return sorted[rank];
+        })
+        .filter((x) => x && x.amount > 0)
+        .slice(0, 5)
+        .map((x) => ({
+          label: hourLabel(x.hour),
+          amount: x.amount,
+          pct: Math.round((x.amount / hourMax) * 100),
+        })),
+    };
+  }, [txs]);
+
   const filtered = useMemo(() => {
     return txs.filter((t) => {
       if (!matchesFilter(t.type, filter)) return false;
@@ -380,6 +477,37 @@ export default function EarningsPage() {
       return true;
     });
   }, [txs, filter, range]);
+
+  const saveGoal = async () => {
+    const n = Math.max(0, Math.round(Number(goalDraft) * 100) / 100);
+    if (Number.isNaN(n) || n < 0) {
+      setGoalMsg('Enter a valid amount');
+      return;
+    }
+    setGoalSaving(true);
+    setGoalMsg('');
+    try {
+      if (userId) {
+        localStorage.setItem(`wod_earnings_goal_${userId}`, String(n));
+        const { error } = await supabase
+          .from('profiles')
+          .update({ earnings_goal_gbp: n })
+          .eq('id', userId);
+        // Column may not exist yet — localStorage still works
+        if (error && !String(error.message || '').includes('earnings_goal')) {
+          console.warn(error.message);
+        }
+      }
+      setGoalGbp(n);
+      setShowGoalModal(false);
+      setGoalMsg(n > 0 ? 'Goal saved' : 'Goal cleared');
+      setTimeout(() => setGoalMsg(''), 2500);
+    } catch (e: any) {
+      setGoalMsg(e.message || 'Could not save goal');
+    } finally {
+      setGoalSaving(false);
+    }
+  };
 
   const exportCsv = () => {
     const rows = [
@@ -489,12 +617,18 @@ export default function EarningsPage() {
     );
   }
 
+  const monthName = new Date().toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-24 lg:pb-10">
           <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
               <div>
                 <Link
@@ -537,13 +671,14 @@ export default function EarningsPage() {
               </div>
             </div>
 
-            {payoutMsg && (
+            {(payoutMsg || goalMsg) && (
               <div className="mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm px-4 py-3">
-                {payoutMsg}
+                {payoutMsg || goalMsg}
               </div>
             )}
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 lg:p-5">
                 <p className="text-xs text-zinc-500 flex items-center gap-1.5 mb-2">
                   <Wallet size={14} className="text-pink-400" /> Available
@@ -591,11 +726,153 @@ export default function EarningsPage() {
               </div>
             </div>
 
-            <p className="text-xs text-zinc-500 mb-8">
+            {/* Monthly goal */}
+            <div
+              className={`rounded-2xl p-5 mb-6 border ${
+                goalReached
+                  ? 'bg-gradient-to-br from-pink-600/20 to-rose-600/10 border-pink-500/40'
+                  : 'bg-zinc-900 border-zinc-800'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <Target
+                    size={18}
+                    className={goalReached ? 'text-pink-300' : 'text-pink-400'}
+                  />
+                  <div>
+                    <h2 className="font-semibold">
+                      {monthName} goal
+                      {goalReached && (
+                        <span className="ml-2 text-xs font-medium text-pink-300">
+                          Reached ✨
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {goalGbp > 0
+                        ? `${money(totals.month)} of ${money(goalGbp)}`
+                        : 'Set a target to track this month'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGoalDraft(goalGbp > 0 ? String(goalGbp) : '500');
+                    setShowGoalModal(true);
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800 inline-flex items-center gap-1.5"
+                >
+                  <Pencil size={12} />
+                  {goalGbp > 0 ? 'Edit' : 'Set goal'}
+                </button>
+              </div>
+              {goalGbp > 0 ? (
+                <>
+                  <div className="h-3 rounded-full bg-zinc-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        goalReached
+                          ? 'bg-gradient-to-r from-pink-400 to-rose-400'
+                          : 'bg-gradient-to-r from-pink-600 to-rose-500'
+                      }`}
+                      style={{ width: `${goalProgress}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-2 text-xs text-zinc-500">
+                    <span>{goalProgress}%</span>
+                    <span>
+                      {goalReached
+                        ? `${money(totals.month - goalGbp)} over goal`
+                        : `${money(Math.max(0, goalGbp - totals.month))} to go`}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-zinc-500">
+                  Creators who set a monthly goal earn more on average — pick a
+                  number that stretches you a little.
+                </p>
+              )}
+            </div>
+
+            <p className="text-xs text-zinc-500 mb-6">
               You keep 100% until payout. Platform fee is 20% on withdrawal only.
               Min payout £150 · processed Mondays.
             </p>
 
+            {/* Insights: best day / hour */}
+            {insights.hasData && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Sparkles size={16} className="text-pink-400" />
+                    <h2 className="font-semibold text-sm">Best day of week</h2>
+                  </div>
+                  <p className="text-2xl font-bold mb-1">{insights.bestDay}</p>
+                  <p className="text-xs text-zinc-500 mb-4">
+                    {money(insights.bestDayAmount)} all-time on this day
+                  </p>
+                  <div className="flex items-end gap-1.5 h-20">
+                    {insights.byDay.map((d) => (
+                      <div
+                        key={d.name}
+                        className="flex-1 flex flex-col items-center gap-1"
+                      >
+                        <div
+                          className={`w-full rounded-t-sm ${
+                            d.name === insights.bestDay
+                              ? 'bg-pink-500'
+                              : 'bg-zinc-700'
+                          }`}
+                          style={{
+                            height: `${Math.max(d.pct, d.amount > 0 ? 8 : 4)}%`,
+                            minHeight: d.amount > 0 ? 6 : 3,
+                          }}
+                          title={`${d.name}: ${money(d.amount)}`}
+                        />
+                        <span className="text-[9px] text-zinc-600">{d.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Clock size={16} className="text-pink-400" />
+                    <h2 className="font-semibold text-sm">Best hours</h2>
+                  </div>
+                  <p className="text-2xl font-bold mb-1">{insights.bestHour}</p>
+                  <p className="text-xs text-zinc-500 mb-4">
+                    Peak earning hour · {money(insights.bestHourAmount)} all-time
+                  </p>
+                  {insights.byHourTop.length === 0 ? (
+                    <p className="text-sm text-zinc-500">Not enough data yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {insights.byHourTop.map((h) => (
+                        <div key={h.label}>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-zinc-300">{h.label}</span>
+                            <span className="text-zinc-400">
+                              {money(h.amount)}
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-pink-600"
+                              style={{ width: `${Math.max(h.pct, 6)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 30-day chart */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold">Last 30 days</h2>
@@ -637,6 +914,7 @@ export default function EarningsPage() {
               </div>
             </div>
 
+            {/* Breakdown by type */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
               <h2 className="font-semibold mb-4">Breakdown by type</h2>
               {breakdown.length === 0 ? (
@@ -675,6 +953,7 @@ export default function EarningsPage() {
               )}
             </div>
 
+            {/* Shop pending escrow */}
             {pendingOrders.length > 0 && (
               <div className="bg-zinc-900 border border-amber-500/20 rounded-2xl overflow-hidden mb-6">
                 <div className="px-5 py-4 border-b border-zinc-800 flex items-center gap-2">
@@ -713,6 +992,7 @@ export default function EarningsPage() {
               </div>
             )}
 
+            {/* Filters */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2 overflow-x-auto pb-1">
                 <Filter size={16} className="text-zinc-500 flex-shrink-0" />
@@ -750,6 +1030,7 @@ export default function EarningsPage() {
               </div>
             </div>
 
+            {/* Activity */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden mb-8">
               <div className="px-5 py-4 border-b border-zinc-800">
                 <h2 className="font-semibold">Activity</h2>
@@ -850,6 +1131,7 @@ export default function EarningsPage() {
               )}
             </div>
 
+            {/* Payout history */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="font-semibold">Payout history</h2>
@@ -901,6 +1183,74 @@ export default function EarningsPage() {
           </div>
         </main>
 
+        {/* Goal modal */}
+        {showGoalModal && (
+          <div className="fixed inset-0 z-[100] bg-black/70 flex items-end sm:items-center justify-center p-4">
+            <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+              <h3 className="text-lg font-semibold mb-1">Monthly earnings goal</h3>
+              <p className="text-sm text-zinc-400 mb-4">
+                Track progress for {monthName}. You can change this anytime.
+              </p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {GOAL_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setGoalDraft(String(p))}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                      goalDraft === String(p)
+                        ? 'bg-pink-600 border-pink-500 text-white'
+                        : 'border-zinc-700 text-zinc-300 hover:border-zinc-500'
+                    }`}
+                  >
+                    £{p.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+              <label className="text-xs text-zinc-500 block mb-1.5">
+                Custom amount (GBP)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step="1"
+                value={goalDraft}
+                onChange={(e) => setGoalDraft(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 outline-none focus:border-pink-500 mb-4"
+                placeholder="e.g. 500"
+              />
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGoalDraft('0');
+                    setTimeout(() => saveGoal(), 0);
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-zinc-700 text-sm text-zinc-400 hover:bg-zinc-800"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowGoalModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={goalSaving}
+                  onClick={saveGoal}
+                  className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 font-medium disabled:opacity-50"
+                >
+                  {goalSaving ? 'Saving…' : 'Save goal'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Payout modal */}
         {showPayout && (
           <div className="fixed inset-0 z-[100] bg-black/70 flex items-end sm:items-center justify-center p-4">
             <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
