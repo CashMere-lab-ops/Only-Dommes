@@ -16,6 +16,7 @@ import { isWithinVoiceDnd } from '../../../lib/voiceDnd';
 import {
   spendFromWallet,
   insufficientFundsMessage,
+  handleInsufficientBalance,
 } from '../../../lib/wallet';
 
 const TIP_AMOUNTS = [5, 10, 20, 50];
@@ -610,8 +611,10 @@ export default function ChatPage() {
         });
         if (!paid.ok) {
           if (paid.code === 'INSUFFICIENT_BALANCE') {
-            alert(insufficientFundsMessage(paid.needed, paid.balance));
-            window.location.href = '/wallet';
+            handleInsufficientBalance({
+              needed: paid.needed,
+              balance: paid.balance,
+            });
             return;
           }
           throw new Error(paid.error);
@@ -1284,8 +1287,10 @@ export default function ChatPage() {
         });
         if (!paid.ok) {
           if (paid.code === 'INSUFFICIENT_BALANCE') {
-            alert(insufficientFundsMessage(paid.needed, paid.balance));
-            window.location.href = '/wallet';
+            handleInsufficientBalance({
+              needed: paid.needed,
+              balance: paid.balance,
+            });
             return;
           }
           throw new Error(paid.error);
@@ -1342,8 +1347,10 @@ export default function ChatPage() {
       });
       if (!paid.ok) {
         if (paid.code === 'INSUFFICIENT_BALANCE') {
-          alert(insufficientFundsMessage(paid.needed, paid.balance));
-          window.location.href = '/wallet';
+          handleInsufficientBalance({
+            needed: paid.needed,
+            balance: paid.balance,
+          });
           return;
         }
         throw new Error(paid.error);

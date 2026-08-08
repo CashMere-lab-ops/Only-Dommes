@@ -13,7 +13,7 @@ import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
 import {
   spendFromWallet,
-  insufficientFundsMessage,
+  handleInsufficientBalance,
 } from '../../lib/wallet';
 
 const POSTS_PER_PAGE = 20;
@@ -447,8 +447,10 @@ export default function DiscoverPage() {
       });
       if (!paid.ok) {
         if (paid.code === 'INSUFFICIENT_BALANCE') {
-          alert(insufficientFundsMessage(paid.needed, paid.balance));
-          window.location.href = '/wallet';
+          handleInsufficientBalance({
+            needed: paid.needed,
+            balance: paid.balance,
+          });
           return;
         }
         throw new Error(paid.error);

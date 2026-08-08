@@ -11,6 +11,7 @@ import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
+import { notifyBalanceUpdated } from '../../lib/wallet';
 
 type Item = {
   id: string;
@@ -220,6 +221,7 @@ export default function DashboardPage() {
       setPayoutMsg(data.message || 'Payout requested');
       if (typeof data.balance === 'number') {
         setProfile((p: any) => (p ? { ...p, balance_gbp: data.balance } : p));
+        notifyBalanceUpdated(data.balance);
       }
       if (data.payout) {
         setPayoutHistory((prev) => [data.payout, ...prev]);

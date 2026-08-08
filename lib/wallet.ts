@@ -17,6 +17,14 @@ export type SpendResult =
       needed?: number;
     };
 
+/** Update sidebar / mobile balance chip after a successful spend or top-up */
+export function notifyBalanceUpdated(balance: number) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent('wod-balance-updated', { detail: balance })
+  );
+}
+
 /**
  * Spend from the logged-in user's wallet balance.
  * Credits the recipient and writes ledger rows.
@@ -66,6 +74,10 @@ export async function spendFromWallet(opts: {
     };
   }
 
+  if (typeof data.balance === 'number') {
+    notifyBalanceUpdated(data.balance);
+  }
+
   return {
     ok: true,
     amount: data.amount,
@@ -74,9 +86,43 @@ export async function spendFromWallet(opts: {
   };
 }
 
+/**
+ * Friendly message when balance is too low.
+ * Use with handleInsufficientBalance() for Top up redirect.
+ */
 export function insufficientFundsMessage(needed?: number, balance?: number) {
-  const n = needed != null ? `£${Number(needed).toFixed(2)}` : 'this amount';
-  const b =
-    balance != null ? ` Your balance is £${Number(balance).toFixed(2)}.` : '';
-  return `Not enough wallet balance for ${n}.${b} Top up your wallet first.`;
+  const need =
+    needed != null
+      ? `£${Number(needed).toLocaleString('en-GB', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`
+      : 'this';
+  const have =
+    balance != null
+      ? ` You have £${Number(balance).toLocaleString('en-GB', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}.`
+      : '';
+  return `Not enough balance for ${need}.${have}\n\nTop up your wallet to continue.`;
+}
+
+/**
+ * Show low-balance alert and offer to open wallet.
+ * Returns true if user chose to go to wallet.
+ */
+export function handleInsufficientBalance(opts: {
+  needed?: number;
+  balance?: number;
+  from?: 'account' | 'dashboard';
+}): boolean {
+  const msg = insufficientFundsMessage(opts.needed, opts.balance);
+  const go = window.confirm(`${msg}\n\nOpen wallet to top up?`);
+  if (go) {
+    const q =
+      opts.from === 'dashboard' ? '?from=dashboard' : '?from=account';
+    window.location.href = `/wallet${q}`;
+  }
+  return go;
 }
