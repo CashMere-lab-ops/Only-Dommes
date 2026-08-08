@@ -16,6 +16,10 @@ import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
+import {
+  handleInsufficientBalance,
+  notifyBalanceUpdated,
+} from '../../lib/wallet';
 
 const CATEGORIES = [
   'All',
@@ -338,6 +342,37 @@ export default function ShopPage() {
         .single();
       if (error) throw error;
 
+      // Hold funds from buyer wallet until seller accepts
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please log in again');
+
+      const holdRes = await fetch('/api/wallet/shop-escrow', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: 'hold', order_id: order.id }),
+      });
+      const holdData = await holdRes.json().catch(() => ({}));
+      if (!holdRes.ok) {
+        await supabase.from('shop_orders').delete().eq('id', order.id);
+        if (holdData.code === 'INSUFFICIENT_BALANCE') {
+          handleInsufficientBalance({
+            needed: holdData.needed,
+            balance: holdData.balance,
+            from: 'account',
+          });
+          return;
+        }
+        throw new Error(holdData.error || 'Could not hold funds');
+      }
+      if (typeof holdData.balance === 'number') {
+        notifyBalanceUpdated(holdData.balance);
+      }
+
       const otherId = viewer.creator_id;
       const { data: existing } = await supabase
         .from('conversations')
@@ -374,6 +409,7 @@ export default function ShopPage() {
           noteLine ? `note:${noteLine}` : '',
           `ship:${pudo.carrier} · ${pudo.point_name.trim()} · ${pudo.point_town.trim()}`,
           'Locker / pick-up only — no home delivery',
+          'Funds held from buyer wallet until you Accept or Decline',
           'Open Dashboard → Accept or Decline',
         ]
           .filter(Boolean)
