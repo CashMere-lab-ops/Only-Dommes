@@ -1,17 +1,53 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Home, Radio, Video, Trophy, MessageCircle, LayoutDashboard,
-  Search, ShoppingBag, Heart, Settings,
-  LogOut, Menu, X, Bell, BookOpen, Ban, HelpCircle, User
+  Home,
+  Radio,
+  Video,
+  Trophy,
+  MessageCircle,
+  LayoutDashboard,
+  Search,
+  ShoppingBag,
+  Heart,
+  Settings,
+  LogOut,
+  X,
+  Bell,
+  BookOpen,
+  HelpCircle,
+  User,
+  Crown,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
-import { playNotificationSound, getSoundForType } from '../lib/notifications';
+import WalletBalance from './WalletBalance';
 
-let cachedProfile: any = null;
+/** Shared profile cache — stops flash on every navigation */
+let cachedProfile: {
+  username?: string;
+  display_name?: string;
+  avatar_url?: string;
+  account_type?: string;
+  balance_gbp?: number;
+} | null = null;
+
+export function setCachedBalance(balance: number) {
+  if (cachedProfile) {
+    cachedProfile = { ...cachedProfile, balance_gbp: balance };
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('wod-balance-updated', { detail: balance })
+    );
+  }
+}
+
+export function clearCachedProfile() {
+  cachedProfile = null;
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -19,167 +55,150 @@ export default function Sidebar() {
   const supabase = createClient();
 
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [profile, setProfile] = useState<any>(cachedProfile);
+  const [profile, setProfile] = useState<typeof cachedProfile>(cachedProfile);
   const [profileLoaded, setProfileLoaded] = useState(!!cachedProfile);
+  const [balance, setBalance] = useState<number | null>(
+    cachedProfile?.balance_gbp != null
+      ? Number(cachedProfile.balance_gbp)
+      : null
+  );
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifCount, setNotifCount] = useState(0);
-  const notifPrefsRef = useRef<any>(null);
+  const [loggedIn, setLoggedIn] = useState(!!cachedProfile);
+
+  const refreshBalance = useCallback(async (userId: string) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('balance_gbp')
+      .eq('id', userId)
+      .single();
+    if (data && data.balance_gbp != null) {
+      const n = Number(data.balance_gbp);
+      setBalance(n);
+      setCachedBalance(n);
+    }
+  }, [supabase]);
 
   useEffect(() => {
     if (cachedProfile) {
       setProfile(cachedProfile);
       setProfileLoaded(true);
-      if (cachedProfile.notification_prefs) {
-        notifPrefsRef.current = cachedProfile.notification_prefs;
+      setLoggedIn(true);
+      if (cachedProfile.balance_gbp != null) {
+        setBalance(Number(cachedProfile.balance_gbp));
       }
     }
 
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    const load = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         setProfileLoaded(true);
+        setLoggedIn(false);
+        setBalance(null);
         return;
       }
+      setLoggedIn(true);
 
       const { data } = await supabase
         .from('profiles')
-        .select('username, display_name, avatar_url, account_type, notification_prefs')
+        .select('username, display_name, avatar_url, account_type, balance_gbp')
         .eq('id', user.id)
         .single();
 
       if (data) {
         cachedProfile = data;
         setProfile(data);
-        notifPrefsRef.current = data.notification_prefs || null;
+        setBalance(Number(data.balance_gbp ?? 0));
       }
-
       setProfileLoaded(true);
 
-      const { count: msgCount } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_read', false)
-        .neq('sender_id', user.id);
-      setUnreadCount(msgCount || 0);
-
-      const { count: nCount } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('is_read', false);
-      setNotifCount(nCount || 0);
-    };
-
-    getUser();
-
-    const channel = supabase
-      .channel('sidebar-badges')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
-        async () => {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
+      // Unread messages
+      try {
+        const { data: convos } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`);
+        if (convos && convos.length > 0) {
+          const ids = convos.map((c) => c.id);
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
-            .eq('is_read', false)
-            .neq('sender_id', user.id);
+            .in('conversation_id', ids)
+            .neq('sender_id', user.id)
+            .eq('is_read', false);
           setUnreadCount(count || 0);
         }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications' },
-        async (payload) => {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
+      } catch {
+        /* optional columns may differ */
+      }
 
-          // Only for this user
-          if (payload.new?.user_id !== user.id) return;
-
-          const { count } = await supabase
-            .from('notifications')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('is_read', false);
-          setNotifCount(count || 0);
-
-          // Play sound based on prefs + type
-          const type = payload.new?.type || 'message';
-          const sound = getSoundForType(notifPrefsRef.current, type);
-          playNotificationSound(sound);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'notifications' },
-        async () => {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
-          const { count } = await supabase
-            .from('notifications')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('is_read', false);
-          setNotifCount(count || 0);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (pathname?.startsWith('/messages')) {
-      const t = setTimeout(async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const { count } = await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_read', false)
-          .neq('sender_id', user.id);
-        setUnreadCount(count || 0);
-      }, 800);
-      return () => clearTimeout(t);
-    }
-  }, [pathname]);
-
-  useEffect(() => {
-    if (pathname?.startsWith('/notifications')) {
-      const t = setTimeout(async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+      // Unread notifications
+      try {
         const { count } = await supabase
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
           .eq('is_read', false);
         setNotifCount(count || 0);
-      }, 500);
-      return () => clearTimeout(t);
-    }
-  }, [pathname]);
+      } catch {
+        /* optional */
+      }
+    };
+
+    load();
+
+    const onBalance = (e: Event) => {
+      const n = (e as CustomEvent).detail;
+      if (typeof n === 'number') setBalance(n);
+    };
+    window.addEventListener('wod-balance-updated', onBalance);
+
+    // Soft refresh when tab becomes visible (after top-up in another flow)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user) refreshBalance(user.id);
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      window.removeEventListener('wod-balance-updated', onBalance);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [supabase, refreshBalance]);
+
+  // Refresh balance when route changes (after wallet / tip pages)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) refreshBalance(user.id);
+    });
+  }, [pathname, refreshBalance, supabase.auth]);
 
   const handleLogout = async () => {
-    cachedProfile = null;
+    clearCachedProfile();
     await supabase.auth.signOut();
     router.push('/login');
   };
 
-  const isCreator = profile?.account_type === 'creator';
+  const isActive = (path: string) =>
+    path === '/'
+      ? pathname === '/'
+      : pathname === path || pathname.startsWith(path + '/');
 
   const navItems = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/live', label: 'Live', icon: Radio },
     { href: '/clips', label: 'Clips', icon: Video },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-    { href: '/messages', label: 'Messages', icon: MessageCircle },
+    { href: '/messages', label: 'Messages', icon: MessageCircle, badge: unreadCount },
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   ];
+
+  const isCreator = profile?.account_type === 'creator';
 
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
@@ -189,214 +208,265 @@ export default function Sidebar() {
       ? [{ href: '/subscriptions', label: 'Subscriptions', icon: Heart }]
       : []),
     { href: '/library', label: 'My Library', icon: BookOpen },
-    { href: '/notifications', label: 'Notifications', icon: Bell },
+    { href: '/notifications', label: 'Notifications', icon: Bell, badge: notifCount },
     { href: '/settings', label: 'Settings', icon: Settings },
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
   const mobileMoreItems = [
-    { href: '/clips', label: 'Clips', icon: Video },
     { href: '/account', label: 'My Account', icon: User },
-    { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
+    { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ...(!isCreator
       ? [{ href: '/subscriptions', label: 'Subscriptions', icon: Heart }]
       : []),
     { href: '/library', label: 'My Library', icon: BookOpen },
-    { href: '/notifications', label: 'Notifications', icon: Bell },
-    { href: '/blocked', label: 'Blocked', icon: Ban },
+    { href: '/notifications', label: 'Notifications', icon: Bell, badge: notifCount },
     { href: '/settings', label: 'Settings', icon: Settings },
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
-  const isActive = (href: string) => pathname === href;
+  const mobileNav = [
+    { href: '/', label: 'Home', icon: Home },
+    { href: '/live', label: 'Live', icon: Radio },
+    { href: '/clips', label: 'Clips', icon: Video },
+    { href: '/messages', label: 'Messages', icon: MessageCircle, badge: unreadCount },
+    { href: '#more', label: 'More', icon: null },
+  ];
 
-  const UnreadBadge = ({ count }: { count: number }) => {
-    if (count <= 0) return null;
-    return (
-      <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-pink-500 text-white text-[10px] font-bold flex items-center justify-center">
-        {count > 99 ? '99+' : count}
-      </span>
-    );
-  };
+  const displayName = profile?.display_name || profile?.username || 'User';
+  const initial = displayName.charAt(0).toUpperCase();
+  const isSub = profile?.account_type === 'sub';
+
+  const linkClass = (path: string) =>
+    `flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-sm ${
+      isActive(path)
+        ? 'bg-pink-600/20 text-pink-400 font-medium'
+        : 'text-zinc-300 hover:bg-zinc-800'
+    }`;
+
+  // Hide chrome on pure auth pages
+  const hideChrome =
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/signup') ||
+    pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password') ||
+    pathname.startsWith('/auth/');
+
+  if (hideChrome) return null;
 
   return (
     <>
-      <div className="hidden lg:flex w-64 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0">
-        <div className="flex items-center gap-3 px-6 py-6 border-b border-zinc-800">
-          <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
-            <span className="text-white font-bold text-2xl">♕</span>
+      {/* ── Mobile top bar: logo + balance + avatar ── */}
+      {loggedIn && (
+        <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-500 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Crown className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-sm truncate">
+              <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+                World of Dommes
+              </span>
+            </span>
+          </Link>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <WalletBalance
+              balance={profileLoaded ? balance : null}
+              compact
+              showTopUpHint={isSub}
+              from="account"
+            />
+            <Link
+              href="/account"
+              className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold overflow-hidden"
+            >
+              {profile?.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={profile.avatar_url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                initial
+              )}
+            </Link>
           </div>
-          <span className="font-bold text-xl bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-            World Of Dommes
+        </div>
+      )}
+
+      {/* ── Desktop sidebar ── */}
+      <aside className="hidden lg:flex w-64 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0 flex-shrink-0">
+        <div className="p-5 flex items-center gap-3">
+          <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
+            <Crown className="w-5 h-5 text-white" />
+          </div>
+          <span className="text-lg font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+            World of Dommes
           </span>
         </div>
 
-        <div className="px-3 py-4 flex-1 overflow-y-auto sidebar-scroll">
-          <div className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isMessages = item.href === '/messages';
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition ${
-                    isActive(item.href)
-                      ? 'bg-pink-600 text-white'
-                      : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
-                  }`}
-                >
+        <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link key={item.href} href={item.href} className={linkClass(item.href)}>
+                <span className="relative">
                   <Icon size={20} />
-                  {item.label}
-                  {isMessages && <UnreadBadge count={unreadCount} />}
-                </Link>
-              );
-            })}
+                  {item.badge && item.badge > 0 ? (
+                    <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-pink-500 text-[9px] font-bold flex items-center justify-center">
+                      {item.badge > 9 ? '9+' : item.badge}
+                    </span>
+                  ) : null}
+                </span>
+                {item.label}
+              </Link>
+            );
+          })}
+
+          <div className="pt-5 pb-2 px-3 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+            More
           </div>
 
-          <div className="mt-2">
-            <p className="px-4 py-2 text-xs font-semibold text-zinc-500 tracking-wider">MORE</p>
-            <div className="space-y-1">
-              {desktopMoreItems.map((item) => {
-                const Icon = item.icon;
-                const isNotif = item.href === '/notifications';
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition ${
-                      isActive(item.href)
-                        ? 'bg-pink-600 text-white'
-                        : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
-                    }`}
-                  >
-                    <Icon size={20} />
-                    {item.label}
-                    {isNotif && <UnreadBadge count={notifCount} />}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+          {desktopMoreItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link key={item.href} href={item.href} className={linkClass(item.href)}>
+                <span className="relative">
+                  <Icon size={20} />
+                  {'badge' in item && item.badge && item.badge > 0 ? (
+                    <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-pink-500 text-[9px] font-bold flex items-center justify-center">
+                      {item.badge > 9 ? '9+' : item.badge}
+                    </span>
+                  ) : null}
+                </span>
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
 
-        <div className="p-4 border-t border-zinc-800 space-y-3">
-          {profileLoaded && profile ? (
+        {/* Profile + balance + logout */}
+        <div className="p-3 border-t border-zinc-800 space-y-2">
+          {loggedIn && (
+            <WalletBalance
+              balance={profileLoaded ? balance : null}
+              showTopUpHint={isSub}
+              from="account"
+            />
+          )}
+          {loggedIn && profileLoaded && (
             <Link
               href="/account"
-              className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-zinc-800 transition"
+              className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-zinc-800 transition"
             >
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
-                {profile.avatar_url ? (
+                {profile?.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={profile.avatar_url}
-                    alt="Profile"
+                    alt=""
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <span>
-                    {(profile.display_name || profile.username || 'U').charAt(0).toUpperCase()}
-                  </span>
+                  initial
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">
-                  {profile.display_name || profile.username || 'User'}
-                </p>
-                <p className="text-xs text-zinc-400 truncate">
-                  @{profile.username || 'username'}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{displayName}</p>
+                <p className="text-xs text-zinc-500 truncate">
+                  @{profile?.username || 'user'}
                 </p>
               </div>
             </Link>
-          ) : (
-            <div className="h-[52px]" />
           )}
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 w-full px-4 py-3 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-xl transition"
-          >
-            <LogOut size={18} /> Logout
-          </button>
+          {loggedIn && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-950/30 transition"
+            >
+              <LogOut size={18} /> Logout
+            </button>
+          )}
         </div>
-      </div>
+      </aside>
 
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-800">
-        <div className="flex justify-around items-center h-16 px-2 pb-safe">
-          <Link
-            href="/"
-            className={`flex flex-col items-center justify-center flex-1 ${
-              isActive('/') ? 'text-pink-500' : 'text-zinc-400'
-            }`}
-          >
-            <Home size={22} />
-            <span className="text-[10px] mt-1">Home</span>
-          </Link>
-          <Link
-            href="/live"
-            className={`flex flex-col items-center justify-center flex-1 ${
-              isActive('/live') ? 'text-pink-500' : 'text-zinc-400'
-            }`}
-          >
-            <Radio size={22} />
-            <span className="text-[10px] mt-1">Live</span>
-          </Link>
-          <Link
-            href="/dashboard"
-            className={`flex flex-col items-center justify-center flex-1 ${
-              isActive('/dashboard') ? 'text-pink-500' : 'text-zinc-400'
-            }`}
-          >
-            <LayoutDashboard size={22} />
-            <span className="text-[10px] mt-1">Dashboard</span>
-          </Link>
-          <Link
-            href="/messages"
-            className={`relative flex flex-col items-center justify-center flex-1 ${
-              isActive('/messages') ? 'text-pink-500' : 'text-zinc-400'
-            }`}
-          >
-            <div className="relative">
-              <MessageCircle size={22} />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-pink-500 text-white text-[9px] font-bold flex items-center justify-center">
-                  {unreadCount > 9 ? '9+' : unreadCount}
+      {/* ── Mobile bottom nav ── */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-zinc-950 border-t border-zinc-800 pb-[env(safe-area-inset-bottom)]">
+        <div className="flex items-stretch justify-around h-14">
+          {mobileNav.map((item) => {
+            if (item.href === '#more') {
+              return (
+                <button
+                  key="more"
+                  type="button"
+                  onClick={() => setShowMoreMenu(true)}
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 text-zinc-400 text-[10px]"
+                >
+                  <span className="text-lg leading-none">☰</span>
+                  More
+                </button>
+              );
+            }
+            const Icon = item.icon!;
+            const active = isActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] relative ${
+                  active ? 'text-pink-400' : 'text-zinc-400'
+                }`}
+              >
+                <span className="relative">
+                  <Icon size={22} />
+                  {item.badge && item.badge > 0 ? (
+                    <span className="absolute -top-1 -right-2 min-w-[14px] h-3.5 px-0.5 rounded-full bg-pink-500 text-[8px] font-bold flex items-center justify-center text-white">
+                      {item.badge > 9 ? '9+' : item.badge}
+                    </span>
+                  ) : null}
                 </span>
-              )}
-            </div>
-            <span className="text-[10px] mt-1">Messages</span>
-          </Link>
-          <button
-            onClick={() => setShowMoreMenu(true)}
-            className="relative flex flex-col items-center justify-center flex-1 text-zinc-400"
-          >
-            <div className="relative">
-              <Menu size={22} />
-              {notifCount > 0 && (
-                <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-pink-500 text-white text-[9px] font-bold flex items-center justify-center">
-                  {notifCount > 9 ? '9+' : notifCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] mt-1">More</span>
-          </button>
+                {item.label}
+              </Link>
+            );
+          })}
         </div>
-      </div>
+      </nav>
 
+      {/* ── Mobile More sheet ── */}
       {showMoreMenu && (
         <>
           <div
-            className="lg:hidden fixed inset-0 z-40 bg-black/50"
+            className="lg:hidden fixed inset-0 z-50 bg-black/70"
             onClick={() => setShowMoreMenu(false)}
           />
-          <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-3xl p-4">
-            <div className="flex justify-between items-center mb-4 px-2">
-              <h2 className="text-xl font-semibold">More</h2>
-              <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400">
+          <div className="lg:hidden fixed bottom-0 inset-x-0 z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-3xl p-5 pb-10 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">More</h2>
+              <button
+                type="button"
+                onClick={() => setShowMoreMenu(false)}
+                className="text-zinc-400"
+              >
                 <X size={24} />
               </button>
             </div>
+
+            {loggedIn && (
+              <div className="mb-4">
+                <WalletBalance
+                  balance={profileLoaded ? balance : null}
+                  showTopUpHint={isSub}
+                  from="account"
+                />
+              </div>
+            )}
+
             <div className="grid grid-cols-4 gap-3">
               {mobileMoreItems.map((item) => {
                 const Icon = item.icon;
@@ -423,8 +493,10 @@ export default function Sidebar() {
                 );
               })}
             </div>
+
             <div className="mt-6 pt-4 border-t border-zinc-700">
               <button
+                type="button"
                 onClick={() => {
                   setShowMoreMenu(false);
                   handleLogout();

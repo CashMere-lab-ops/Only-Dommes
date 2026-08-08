@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Wallet, Plus, Loader2 } from 'lucide-react';
-import Sidebar from '../../components/Sidebar';
+import Sidebar, { setCachedBalance } from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
@@ -54,7 +54,9 @@ function WalletPageInner() {
       .eq('id', user.id)
       .single();
 
-    setBalance(Number(profile?.balance_gbp ?? 0));
+    const bal = Number(profile?.balance_gbp ?? 0);
+    setBalance(bal);
+    setCachedBalance(bal);
 
     const { data: txs } = await supabase
       .from('wallet_transactions')
@@ -125,6 +127,7 @@ function WalletPageInner() {
         } else {
           if (typeof data.balance === 'number') {
             setBalance(data.balance);
+            setCachedBalance(data.balance);
           }
           setMessage(
             data.already
@@ -224,22 +227,15 @@ function WalletPageInner() {
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto pb-24 lg:pb-8">
-          <div className="lg:hidden sticky top-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
-            <Link href={backHref} className="text-zinc-400 hover:text-white">
-              <ArrowLeft size={22} />
-            </Link>
-            <h1 className="text-lg font-semibold">Wallet</h1>
-          </div>
-
-          <div className="max-w-2xl mx-auto px-4 lg:px-8 py-8">
-            <div className="hidden lg:flex items-center gap-3 mb-2">
-              <Wallet className="text-pink-500" size={28} />
-              <h1 className="text-3xl font-bold">Wallet</h1>
+        <main className="flex-1 overflow-y-auto pb-24 lg:pb-8 pt-14 lg:pt-0">
+          <div className="max-w-2xl mx-auto px-4 lg:px-8 py-6 lg:py-8">
+            <div className="flex items-center gap-3 mb-2">
+              <Wallet className="text-pink-500 hidden lg:block" size={28} />
+              <h1 className="text-2xl lg:text-3xl font-bold">Wallet</h1>
             </div>
             <Link
               href={backHref}
-              className="hidden lg:inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-pink-400 mb-8 transition"
+              className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-pink-400 mb-6 lg:mb-8 transition"
             >
               <ArrowLeft size={16} /> {backLabel}
             </Link>
