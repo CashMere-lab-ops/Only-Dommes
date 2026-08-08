@@ -85,3 +85,10 @@ body {
   animation: heart-pop 0.7s ease-out forwards;
   pointer-events: none;
 }
+
+/* Clear fixed mobile top bar (balance header) so page titles aren't hidden */
+@media (max-width: 1023px) {
+  main {
+    padding-top: var(--mobile-top-offset, 0px);
+  }
+}

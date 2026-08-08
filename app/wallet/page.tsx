@@ -227,7 +227,7 @@ function WalletPageInner() {
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto pb-24 lg:pb-8 pt-14 lg:pt-0">
+        <main className="flex-1 overflow-y-auto pb-24 lg:pb-8">
           <div className="max-w-2xl mx-auto px-4 lg:px-8 py-6 lg:py-8">
             <div className="flex items-center gap-3 mb-2">
               <Wallet className="text-pink-500 hidden lg:block" size={28} />

@@ -214,11 +214,11 @@ export default function Sidebar() {
   ];
 
   const mobileMoreItems = [
+    { href: '/clips', label: 'Clips', icon: Video },
     { href: '/account', label: 'My Account', icon: User },
     { href: '/discover', label: 'Discover', icon: Search },
     { href: '/shop', label: 'Shop', icon: ShoppingBag },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ...(!isCreator
       ? [{ href: '/subscriptions', label: 'Subscriptions', icon: Heart }]
       : []),
@@ -228,10 +228,11 @@ export default function Sidebar() {
     { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
+  // Bottom bar: Home · Live · Dashboard · Messages · More (Clips lives in More)
   const mobileNav = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/live', label: 'Live', icon: Radio },
-    { href: '/clips', label: 'Clips', icon: Video },
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/messages', label: 'Messages', icon: MessageCircle, badge: unreadCount },
     { href: '#more', label: 'More', icon: null },
   ];
@@ -241,10 +242,10 @@ export default function Sidebar() {
   const isSub = profile?.account_type === 'sub';
 
   const linkClass = (path: string) =>
-    `flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-sm ${
+    `flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-[15px] ${
       isActive(path)
-        ? 'bg-pink-600/20 text-pink-400 font-medium'
-        : 'text-zinc-300 hover:bg-zinc-800'
+        ? 'bg-pink-600/20 text-pink-400 font-semibold'
+        : 'text-zinc-200 hover:bg-zinc-800'
     }`;
 
   // Hide chrome on pure auth pages
@@ -255,6 +256,18 @@ export default function Sidebar() {
     pathname.startsWith('/forgot-password') ||
     pathname.startsWith('/reset-password') ||
     pathname.startsWith('/auth/');
+
+  // Push page content below fixed mobile top bar (all pages at once)
+  useEffect(() => {
+    if (hideChrome || !loggedIn) {
+      document.documentElement.style.setProperty('--mobile-top-offset', '0px');
+      return;
+    }
+    document.documentElement.style.setProperty('--mobile-top-offset', '3.5rem');
+    return () => {
+      document.documentElement.style.setProperty('--mobile-top-offset', '0px');
+    };
+  }, [loggedIn, hideChrome]);
 
   if (hideChrome) return null;
 
@@ -300,23 +313,23 @@ export default function Sidebar() {
       )}
 
       {/* ── Desktop sidebar ── */}
-      <aside className="hidden lg:flex w-64 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0 flex-shrink-0">
+      <aside className="hidden lg:flex w-72 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0 flex-shrink-0">
         <div className="p-5 flex items-center gap-3">
-          <div className="w-9 h-9 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
+          <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
             <Crown className="w-5 h-5 text-white" />
           </div>
-          <span className="text-lg font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+          <span className="text-xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
             World of Dommes
           </span>
         </div>
 
-        <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <Link key={item.href} href={item.href} className={linkClass(item.href)}>
-                <span className="relative">
-                  <Icon size={20} />
+                <span className="relative flex-shrink-0">
+                  <Icon size={22} />
                   {item.badge && item.badge > 0 ? (
                     <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-pink-500 text-[9px] font-bold flex items-center justify-center">
                       {item.badge > 9 ? '9+' : item.badge}
@@ -328,7 +341,7 @@ export default function Sidebar() {
             );
           })}
 
-          <div className="pt-5 pb-2 px-3 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+          <div className="pt-5 pb-2 px-3.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
             More
           </div>
 
@@ -336,8 +349,8 @@ export default function Sidebar() {
             const Icon = item.icon;
             return (
               <Link key={item.href} href={item.href} className={linkClass(item.href)}>
-                <span className="relative">
-                  <Icon size={20} />
+                <span className="relative flex-shrink-0">
+                  <Icon size={22} />
                   {'badge' in item && item.badge && item.badge > 0 ? (
                     <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-pink-500 text-[9px] font-bold flex items-center justify-center">
                       {item.badge > 9 ? '9+' : item.badge}
@@ -377,8 +390,8 @@ export default function Sidebar() {
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">{displayName}</p>
-                <p className="text-xs text-zinc-500 truncate">
+                <p className="text-[15px] font-medium truncate">{displayName}</p>
+                <p className="text-sm text-zinc-500 truncate">
                   @{profile?.username || 'user'}
                 </p>
               </div>
@@ -388,9 +401,9 @@ export default function Sidebar() {
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-950/30 transition"
+              className="w-full flex items-center gap-2 px-3.5 py-3 rounded-xl text-[15px] text-red-400 hover:bg-red-950/30 transition"
             >
-              <LogOut size={18} /> Logout
+              <LogOut size={20} /> Logout
             </button>
           )}
         </div>
