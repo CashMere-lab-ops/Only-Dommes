@@ -12,6 +12,7 @@ import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
 import { notifyBalanceUpdated } from '../../lib/wallet';
+import { compressClip } from '../../lib/compressClip';
 
 type Item = {
   id: string;
@@ -62,6 +63,8 @@ export default function DashboardPage() {
   });
   const [clipFile, setClipFile] = useState<File | null>(null);
   const [clipThumb, setClipThumb] = useState<File | null>(null);
+  const [clipCompressPct, setClipCompressPct] = useState(0);
+  const [clipCompressStatus, setClipCompressStatus] = useState('');
   const [itemForm, setItemForm] = useState({
     title: '',
     description: '',
@@ -717,21 +720,44 @@ export default function DashboardPage() {
       return;
     }
 
-    const maxBytes = 500 * 1024 * 1024; // 500MB — long paid clips
+    // Allow large phone files; we compress before upload
+    const maxBytes = 1024 * 1024 * 1024; // 1GB original
     if (clipFile.size > maxBytes) {
-      alert('Video must be under 500MB. Compress longer videos (HandBrake 720p/1080p) if needed.');
+      alert(
+        'Video must be under 1GB. For longer videos, compress with HandBrake first (1080p).'
+      );
       return;
     }
 
     setCreating(true);
+    setClipCompressPct(0);
+    setClipCompressStatus('Preparing…');
     try {
-      const ext = clipFile.name.split('.').pop() || 'mp4';
+      // Auto-compress to good-quality 1080p (keeps quality high, shrinks big files)
+      const result = await compressClip(clipFile, {
+        maxHeight: 1080,
+        crf: 22, // lower = better quality; 22 is high quality
+        onProgress: (p) => setClipCompressPct(p),
+        onStatus: (msg) => setClipCompressStatus(msg),
+      });
+
+      const fileToUpload = result.file;
+      if (result.compressed) {
+        setClipCompressStatus(
+          `Compressed ${result.originalMB.toFixed(0)}MB → ${result.finalMB.toFixed(0)}MB`
+        );
+      } else {
+        setClipCompressStatus('Uploading original…');
+      }
+
+      setClipCompressPct(98);
+      const ext = fileToUpload.name.split('.').pop() || 'mp4';
       const path = `${profile.id}/${Date.now()}.${ext}`;
 
       const { error: upErr } = await supabase.storage
         .from('clips')
-        .upload(path, clipFile, {
-          contentType: clipFile.type || 'video/mp4',
+        .upload(path, fileToUpload, {
+          contentType: fileToUpload.type || 'video/mp4',
           upsert: false,
         });
       if (upErr) throw upErr;
@@ -769,7 +795,9 @@ export default function DashboardPage() {
           thumbnail_url: thumbUrl,
           is_published: true,
         })
-        .select('id, title, price_gbp, sales_count, thumbnail_url, video_url, is_published')
+        .select(
+          'id, title, price_gbp, sales_count, thumbnail_url, video_url, is_published'
+        )
         .single();
 
       if (insErr) throw insErr;
@@ -790,10 +818,14 @@ export default function DashboardPage() {
       setClipForm({ title: '', description: '', price: 9.99, category: '' });
       setClipFile(null);
       setClipThumb(null);
+      setClipCompressPct(0);
+      setClipCompressStatus('');
     } catch (e: any) {
       alert(e.message || 'Upload failed');
     } finally {
       setCreating(false);
+      setClipCompressPct(0);
+      setClipCompressStatus('');
     }
   };
 
@@ -2670,18 +2702,42 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm text-zinc-400 mb-1.5 block">
-                    Video file <span className="text-zinc-600">(max 500MB · long paid clips)</span>
+                    Video file{' '}
+                    <span className="text-zinc-600">
+                      (max 1GB · auto 1080p compress)
+                    </span>
                   </label>
                   <input
                     type="file"
                     accept="video/mp4,video/webm,video/quicktime"
                     onChange={(e) => setClipFile(e.target.files?.[0] || null)}
-                    className="w-full text-sm text-zinc-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-pink-600 file:text-white file:text-sm"
+                    disabled={creating}
+                    className="w-full text-sm text-zinc-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-pink-600 file:text-white file:text-sm disabled:opacity-50"
                   />
                   {clipFile && (
                     <p className="text-xs text-zinc-500 mt-1 truncate">
-                      {clipFile.name} · {(clipFile.size / (1024 * 1024)).toFixed(1)}MB
+                      {clipFile.name} ·{' '}
+                      {(clipFile.size / (1024 * 1024)).toFixed(1)}MB
                     </p>
+                  )}
+                  {creating && (
+                    <div className="mt-3 space-y-1.5">
+                      <p className="text-xs text-pink-400">
+                        {clipCompressStatus || 'Working…'}
+                      </p>
+                      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-pink-500 transition-all duration-300"
+                          style={{
+                            width: `${Math.max(clipCompressPct, 4)}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-zinc-500">
+                        Long clips can take a few minutes the first time (engine
+                        download + compress). Quality stays high (1080p).
+                      </p>
+                    </div>
                   )}
                 </div>
                 <div>
@@ -2777,7 +2833,11 @@ export default function DashboardPage() {
                   disabled={creating || !clipForm.title || !clipFile}
                   className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
                 >
-                  {creating ? 'Uploading...' : 'Publish Clip'}
+                  {creating
+                    ? clipCompressPct < 97
+                      ? 'Compressing…'
+                      : 'Uploading…'
+                    : 'Publish Clip'}
                 </button>
               </div>
             </div>
