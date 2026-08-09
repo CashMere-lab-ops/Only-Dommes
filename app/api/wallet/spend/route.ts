@@ -8,7 +8,8 @@ type SpendType =
   | 'unlock'
   | 'message_unlock'
   | 'call'
-  | 'shop';
+  | 'shop'
+  | 'clip';
 
 const TYPE_MAP: Record<
   SpendType,
@@ -23,6 +24,7 @@ const TYPE_MAP: Record<
   },
   call: { sent: 'call_sent', received: 'call_received', label: 'Voice call' },
   shop: { sent: 'shop_sent', received: 'shop_received', label: 'Shop purchase' },
+  clip: { sent: 'clip_sent', received: 'clip_received', label: 'Clip purchase' },
 };
 
 /**
@@ -221,3 +223,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

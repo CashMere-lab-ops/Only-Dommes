@@ -61,6 +61,7 @@ const EARNING_TYPES = [
   'shop_received',
   'call_received',
   'unlock_received',
+  'clip_received',
   'sub_received',
   'subscription_received',
 ];
@@ -106,6 +107,8 @@ function labelForType(type: string) {
       return 'Voice call';
     case 'unlock_received':
       return 'Unlock';
+    case 'clip_received':
+      return 'Clip sale';
     case 'sub_received':
     case 'subscription_received':
       return 'Subscription';

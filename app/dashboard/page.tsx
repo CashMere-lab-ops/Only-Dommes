@@ -60,6 +60,8 @@ export default function DashboardPage() {
     price: 9.99,
     category: '',
   });
+  const [clipFile, setClipFile] = useState<File | null>(null);
+  const [clipThumb, setClipThumb] = useState<File | null>(null);
   const [itemForm, setItemForm] = useState({
     title: '',
     description: '',
@@ -74,10 +76,17 @@ export default function DashboardPage() {
     minPrivateMinutes: 5,
     tipMenuEnabled: true,
   });
-  const [myClips] = useState([
-    { id: 1, title: 'Morning Stretch Session', price: 12.99, sales: 0 },
-    { id: 2, title: 'Private JOI Custom', price: 45.0, sales: 0 },
-  ]);
+  const [myClips, setMyClips] = useState<
+    {
+      id: string;
+      title: string;
+      price: number;
+      sales: number;
+      thumbnail_url?: string | null;
+      video_url?: string;
+      is_published?: boolean;
+    }[]
+  >([]);
   const [myItems, setMyItems] = useState<Item[]>([]);
   const [itemFilter, setItemFilter] = useState<'all' | 'available' | 'reserved' | 'sold' | 'hidden'>('all');
   const [reserveUsername, setReserveUsername] = useState('');
@@ -325,6 +334,27 @@ export default function DashboardPage() {
         setEarnWeek(Math.round(w * 100) / 100);
         setEarnMonth(Math.round(m * 100) / 100);
         setEarnAllTime(Math.round(all * 100) / 100);
+
+        // My clips
+        const { data: clipRows } = await supabase
+          .from('clips')
+          .select(
+            'id, title, price_gbp, sales_count, thumbnail_url, video_url, is_published'
+          )
+          .eq('creator_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        setMyClips(
+          (clipRows || []).map((c: any) => ({
+            id: c.id,
+            title: c.title,
+            price: Number(c.price_gbp || 0),
+            sales: Number(c.sales_count || 0),
+            thumbnail_url: c.thumbnail_url,
+            video_url: c.video_url,
+            is_published: c.is_published,
+          }))
+        );
 
         // Recent tips (with tipper profile)
         const { data: tipRows } = await supabase
@@ -675,15 +705,107 @@ export default function DashboardPage() {
     });
   };
 
-  const handleCreateClip = () => {
-    if (!clipForm.title) return;
+  const handleCreateClip = async () => {
+    if (!clipForm.title.trim()) return;
+    if (!clipFile) {
+      alert('Please choose a video file');
+      return;
+    }
+    if (!profile?.id) return;
+    if (profile.account_type !== 'creator') {
+      alert('Only creators can upload clips');
+      return;
+    }
+
+    const maxBytes = 80 * 1024 * 1024; // 80MB
+    if (clipFile.size > maxBytes) {
+      alert('Video must be under 80MB');
+      return;
+    }
+
     setCreating(true);
-    setTimeout(() => {
-      setCreating(false);
+    try {
+      const ext = clipFile.name.split('.').pop() || 'mp4';
+      const path = `${profile.id}/${Date.now()}.${ext}`;
+
+      const { error: upErr } = await supabase.storage
+        .from('clips')
+        .upload(path, clipFile, {
+          contentType: clipFile.type || 'video/mp4',
+          upsert: false,
+        });
+      if (upErr) throw upErr;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('clips').getPublicUrl(path);
+
+      let thumbUrl: string | null = null;
+      if (clipThumb) {
+        const tExt = clipThumb.name.split('.').pop() || 'jpg';
+        const tPath = `${profile.id}/thumbs/${Date.now()}.${tExt}`;
+        const { error: tErr } = await supabase.storage
+          .from('clips')
+          .upload(tPath, clipThumb, {
+            contentType: clipThumb.type || 'image/jpeg',
+            upsert: false,
+          });
+        if (!tErr) {
+          thumbUrl = supabase.storage.from('clips').getPublicUrl(tPath).data
+            .publicUrl;
+        }
+      }
+
+      const price = Math.max(0, Number(clipForm.price) || 0);
+      const { data: row, error: insErr } = await supabase
+        .from('clips')
+        .insert({
+          creator_id: profile.id,
+          title: clipForm.title.trim(),
+          description: clipForm.description.trim() || null,
+          price_gbp: Math.round(price * 100) / 100,
+          category: clipForm.category || 'Other',
+          video_url: publicUrl,
+          thumbnail_url: thumbUrl,
+          is_published: true,
+        })
+        .select('id, title, price_gbp, sales_count, thumbnail_url, video_url, is_published')
+        .single();
+
+      if (insErr) throw insErr;
+
+      setMyClips((prev) => [
+        {
+          id: row.id,
+          title: row.title,
+          price: Number(row.price_gbp),
+          sales: Number(row.sales_count || 0),
+          thumbnail_url: row.thumbnail_url,
+          video_url: row.video_url,
+          is_published: row.is_published,
+        },
+        ...prev,
+      ]);
       setShowUpload(false);
       setClipForm({ title: '', description: '', price: 9.99, category: '' });
-      alert('Clip uploaded successfully! (Demo)');
-    }, 1200);
+      setClipFile(null);
+      setClipThumb(null);
+    } catch (e: any) {
+      alert(e.message || 'Upload failed');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeleteClip = async (id: string) => {
+    if (!confirm('Delete this clip? Buyers who already purchased keep access.'))
+      return;
+    const { error } = await supabase.from('clips').delete().eq('id', id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setMyClips((prev) => prev.filter((c) => c.id !== id));
   };
 
   const openEditItem = (item: Item) => {
@@ -1822,31 +1944,63 @@ export default function DashboardPage() {
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Film size={20} className="text-pink-400" /> My Clips
                   </h2>
-                  <button
-                    onClick={() => setShowUpload(true)}
-                    className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
-                  >
-                    <Plus size={16} /> Upload
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href="/clips"
+                      className="text-xs text-zinc-400 hover:text-pink-400"
+                    >
+                      View store
+                    </Link>
+                    <button
+                      onClick={() => setShowUpload(true)}
+                      className="flex items-center gap-1.5 text-sm bg-pink-600 hover:bg-pink-700 px-3 py-1.5 rounded-lg transition"
+                    >
+                      <Plus size={16} /> Upload
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-3">
-                  {myClips.map((clip) => (
-                    <div key={clip.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50">
-                      <div className="w-14 h-10 rounded-lg bg-zinc-700 flex items-center justify-center">
-                        <Film size={18} className="text-zinc-400" />
+                  {myClips.length === 0 ? (
+                    <p className="text-sm text-zinc-500 py-4 text-center">
+                      No clips yet — upload your first paid video
+                    </p>
+                  ) : (
+                    myClips.map((clip) => (
+                      <div
+                        key={clip.id}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50"
+                      >
+                        <div className="w-14 h-10 rounded-lg bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {clip.thumbnail_url ? (
+                            <img
+                              src={clip.thumbnail_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Film size={18} className="text-zinc-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{clip.title}</p>
+                          <p className="text-xs text-zinc-400 flex items-center gap-2">
+                            <span className="flex items-center gap-1">
+                              <ShoppingBag size={12} /> {clip.sales}
+                            </span>
+                            <span>·</span>
+                            <span>£{clip.price.toFixed(2)}</span>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteClip(clip.id)}
+                          className="text-xs text-zinc-500 hover:text-red-400 px-2"
+                        >
+                          Delete
+                        </button>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{clip.title}</p>
-                        <p className="text-xs text-zinc-400 flex items-center gap-2">
-                          <span className="flex items-center gap-1">
-                            <ShoppingBag size={12} /> {clip.sales}
-                          </span>
-                          <span>·</span>
-                          <span>£{clip.price.toFixed(2)}</span>
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -2499,29 +2653,69 @@ export default function DashboardPage() {
 
         {showUpload && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-            <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+            <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-xl font-semibold">Upload New Clip</h2>
-                <button onClick={() => setShowUpload(false)} className="text-zinc-400 hover:text-white">
+                <button
+                  onClick={() => {
+                    setShowUpload(false);
+                    setClipFile(null);
+                    setClipThumb(null);
+                  }}
+                  className="text-zinc-400 hover:text-white"
+                >
                   <X size={22} />
                 </button>
               </div>
               <div className="space-y-4">
                 <div>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">
+                    Video file <span className="text-zinc-600">(max 80MB)</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime"
+                    onChange={(e) => setClipFile(e.target.files?.[0] || null)}
+                    className="w-full text-sm text-zinc-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-pink-600 file:text-white file:text-sm"
+                  />
+                  {clipFile && (
+                    <p className="text-xs text-zinc-500 mt-1 truncate">
+                      {clipFile.name} · {(clipFile.size / (1024 * 1024)).toFixed(1)}MB
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">
+                    Thumbnail (optional)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => setClipThumb(e.target.files?.[0] || null)}
+                    className="w-full text-sm text-zinc-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:text-white file:text-sm"
+                  />
+                </div>
+                <div>
                   <label className="text-sm text-zinc-400 mb-1.5 block">Title</label>
                   <input
                     type="text"
                     value={clipForm.title}
-                    onChange={(e) => setClipForm({ ...clipForm, title: e.target.value })}
+                    onChange={(e) =>
+                      setClipForm({ ...clipForm, title: e.target.value })
+                    }
                     placeholder="Clip title"
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-zinc-400 mb-1.5 block">Description</label>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">
+                    Description
+                  </label>
                   <textarea
                     value={clipForm.description}
-                    onChange={(e) => setClipForm({ ...clipForm, description: e.target.value })}
+                    onChange={(e) =>
+                      setClipForm({ ...clipForm, description: e.target.value })
+                    }
                     placeholder="Describe your clip..."
                     rows={3}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500 resize-none"
@@ -2529,19 +2723,32 @@ export default function DashboardPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm text-zinc-400 mb-1.5 block">Price (£)</label>
+                    <label className="text-sm text-zinc-400 mb-1.5 block">
+                      Price (£)
+                    </label>
                     <input
                       type="number"
+                      min={0}
+                      step="0.01"
                       value={clipForm.price}
-                      onChange={(e) => setClipForm({ ...clipForm, price: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setClipForm({
+                          ...clipForm,
+                          price: Number(e.target.value),
+                        })
+                      }
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-zinc-400 mb-1.5 block">Category</label>
+                    <label className="text-sm text-zinc-400 mb-1.5 block">
+                      Category
+                    </label>
                     <select
                       value={clipForm.category}
-                      onChange={(e) => setClipForm({ ...clipForm, category: e.target.value })}
+                      onChange={(e) =>
+                        setClipForm({ ...clipForm, category: e.target.value })
+                      }
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
                     >
                       <option value="">Select category</option>
@@ -2556,14 +2763,18 @@ export default function DashboardPage() {
               </div>
               <div className="flex gap-3 mt-6">
                 <button
-                  onClick={() => setShowUpload(false)}
+                  onClick={() => {
+                    setShowUpload(false);
+                    setClipFile(null);
+                    setClipThumb(null);
+                  }}
                   className="flex-1 py-2.5 rounded-xl border border-zinc-700 hover:bg-zinc-800 transition"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateClip}
-                  disabled={creating || !clipForm.title}
+                  disabled={creating || !clipForm.title || !clipFile}
                   className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
                 >
                   {creating ? 'Uploading...' : 'Publish Clip'}

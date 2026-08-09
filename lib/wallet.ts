@@ -5,7 +5,8 @@ export type SpendType =
   | 'unlock'
   | 'message_unlock'
   | 'call'
-  | 'shop';
+  | 'shop'
+  | 'clip';
 
 export type SpendResult =
   | { ok: true; amount: number; balance: number; already?: boolean }
