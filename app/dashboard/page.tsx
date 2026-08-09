@@ -717,9 +717,9 @@ export default function DashboardPage() {
       return;
     }
 
-    const maxBytes = 80 * 1024 * 1024; // 80MB
+    const maxBytes = 500 * 1024 * 1024; // 500MB — long paid clips
     if (clipFile.size > maxBytes) {
-      alert('Video must be under 80MB');
+      alert('Video must be under 500MB. Compress longer videos (HandBrake 720p/1080p) if needed.');
       return;
     }
 
@@ -2670,7 +2670,7 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm text-zinc-400 mb-1.5 block">
-                    Video file <span className="text-zinc-600">(max 80MB)</span>
+                    Video file <span className="text-zinc-600">(max 500MB · long paid clips)</span>
                   </label>
                   <input
                     type="file"
