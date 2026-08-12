@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle, Package, ShoppingBag
+  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle, Package, ShoppingBag, Film, Lock, Play
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
@@ -19,6 +19,8 @@ export default function PublicProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
   const [shopItems, setShopItems] = useState<any[]>([]);
+  const [clips, setClips] = useState<any[]>([]);
+  const [ownedClipIds, setOwnedClipIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -82,8 +84,30 @@ export default function PublicProfilePage() {
             photos: Array.isArray(row.photos) ? row.photos : [],
           }))
         );
+
+        const { data: clipData } = await supabase
+          .from('clips')
+          .select(
+            'id, title, price_gbp, thumbnail_url, duration_seconds, sales_count, is_published'
+          )
+          .eq('creator_id', profileData.id)
+          .eq('is_published', true)
+          .order('created_at', { ascending: false })
+          .limit(12);
+        setClips(clipData || []);
       } else {
         setShopItems([]);
+        setClips([]);
+      }
+
+      if (user) {
+        const { data: buys } = await supabase
+          .from('clip_purchases')
+          .select('clip_id')
+          .eq('buyer_id', user.id);
+        setOwnedClipIds(new Set((buys || []).map((b: any) => b.clip_id)));
+      } else {
+        setOwnedClipIds(new Set());
       }
 
       const { count: fCount } = await supabase
@@ -489,6 +513,84 @@ export default function PublicProfilePage() {
               <div className="text-3xl font-semibold">{posts.length}</div>
             </div>
           </div>
+
+          {profile?.account_type === 'creator' && clips.length > 0 && (
+            <div className="mb-10">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <Film size={22} className="text-pink-400" />
+                  Clips
+                </h2>
+                <Link
+                  href="/clips"
+                  className="text-sm text-pink-400 hover:text-pink-300"
+                >
+                  View all →
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {clips.map((clip) => {
+                  const owns =
+                    ownedClipIds.has(clip.id) ||
+                    currentUser?.id === profile.id ||
+                    Number(clip.price_gbp) === 0;
+                  const dur =
+                    clip.duration_seconds && clip.duration_seconds > 0
+                      ? `${Math.floor(clip.duration_seconds / 60)}:${String(
+                          clip.duration_seconds % 60
+                        ).padStart(2, '0')}`
+                      : null;
+                  return (
+                    <Link
+                      key={clip.id}
+                      href="/clips"
+                      className="bg-zinc-900 border border-zinc-800 hover:border-pink-500/40 rounded-2xl overflow-hidden transition group"
+                    >
+                      <div className="aspect-video bg-zinc-800 relative">
+                        {clip.thumbnail_url ? (
+                          <img
+                            src={clip.thumbnail_url}
+                            alt={clip.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                            <Film size={28} />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                          {owns ? (
+                            <Play size={22} className="text-white" />
+                          ) : (
+                            <Lock size={18} className="text-white" />
+                          )}
+                        </div>
+                        {dur && (
+                          <span className="absolute bottom-1.5 right-1.5 text-[10px] bg-black/75 px-1.5 py-0.5 rounded">
+                            {dur}
+                          </span>
+                        )}
+                        {owns && (
+                          <span className="absolute top-1.5 left-1.5 text-[9px] font-semibold bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">
+                            Owned
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-2.5">
+                        <p className="text-sm font-medium truncate">{clip.title}</p>
+                        <p className="text-pink-400 text-sm font-semibold">
+                          {Number(clip.price_gbp) === 0
+                            ? 'Free'
+                            : `£${Number(clip.price_gbp).toFixed(2)}`}
+                        </p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {profile?.account_type === 'creator' && shopItems.length > 0 && (
             <div className="mb-10">

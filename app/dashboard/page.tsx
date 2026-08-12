@@ -780,6 +780,24 @@ export default function DashboardPage() {
         }
       }
 
+      // Read duration from the original file (before/after compress)
+      let durationSeconds: number | null = null;
+      try {
+        durationSeconds = await new Promise<number | null>((resolve) => {
+          const v = document.createElement('video');
+          v.preload = 'metadata';
+          v.onloadedmetadata = () => {
+            const d = Math.round(v.duration);
+            URL.revokeObjectURL(v.src);
+            resolve(Number.isFinite(d) && d > 0 ? d : null);
+          };
+          v.onerror = () => resolve(null);
+          v.src = URL.createObjectURL(clipFile);
+        });
+      } catch {
+        durationSeconds = null;
+      }
+
       const price = Math.max(0, Number(clipForm.price) || 0);
       const { data: row, error: insErr } = await supabase
         .from('clips')
@@ -791,10 +809,11 @@ export default function DashboardPage() {
           category: clipForm.category || 'Other',
           video_url: publicUrl,
           thumbnail_url: thumbUrl,
+          duration_seconds: durationSeconds,
           is_published: true,
         })
         .select(
-          'id, title, price_gbp, sales_count, thumbnail_url, video_url, is_published'
+          'id, title, price_gbp, sales_count, thumbnail_url, video_url, is_published, duration_seconds'
         )
         .single();
 

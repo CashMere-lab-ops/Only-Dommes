@@ -230,10 +230,10 @@ export default function ClipsPage() {
                   Clips
                 </h1>
                 <p className="text-zinc-500 text-sm mt-1">
-                  Short paid videos from creators — unlock once, watch anytime
+                  Premium locked videos — unlock once, watch anytime
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setTab('browse')}
@@ -254,8 +254,14 @@ export default function ClipsPage() {
                       : 'bg-zinc-900 border border-zinc-800 text-zinc-300'
                   }`}
                 >
-                  My library
+                  Owned here
                 </button>
+                <Link
+                  href="/library"
+                  className="px-4 py-2 rounded-xl text-sm font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:border-pink-500/40 transition"
+                >
+                  Full library →
+                </Link>
               </div>
             </div>
 
@@ -456,3 +462,4 @@ export default function ClipsPage() {
     </AuthGuard>
   );
 }
+
