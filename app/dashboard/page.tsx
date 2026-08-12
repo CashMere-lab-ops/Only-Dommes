@@ -733,10 +733,8 @@ export default function DashboardPage() {
     setClipCompressPct(0);
     setClipCompressStatus('Preparing…');
     try {
-      // Auto-compress to good-quality 1080p (keeps quality high, shrinks big files)
+      // Fast auto-compress (big files → 720p ultrafast; smaller → 1080p veryfast)
       const result = await compressClip(clipFile, {
-        maxHeight: 1080,
-        crf: 22, // lower = better quality; 22 is high quality
         onProgress: (p) => setClipCompressPct(p),
         onStatus: (msg) => setClipCompressStatus(msg),
       });
@@ -2704,7 +2702,7 @@ export default function DashboardPage() {
                   <label className="text-sm text-zinc-400 mb-1.5 block">
                     Video file{' '}
                     <span className="text-zinc-600">
-                      (max 1GB · auto 1080p compress)
+                      (max 1GB · fast auto-compress)
                     </span>
                   </label>
                   <input
@@ -2734,8 +2732,8 @@ export default function DashboardPage() {
                         />
                       </div>
                       <p className="text-[11px] text-zinc-500">
-                        Long clips can take a few minutes the first time (engine
-                        download + compress). Quality stays high (1080p).
+                        First time loads the engine once. Big clips use a fast
+                        720p pass so uploads finish much quicker.
                       </p>
                     </div>
                   )}
