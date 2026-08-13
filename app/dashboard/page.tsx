@@ -2105,120 +2105,6 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Full transactions ledger */}
-            <div
-              ref={txSectionRef}
-              id="transactions"
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8 scroll-mt-24"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                  <List size={20} className="text-pink-400" /> Transactions
-                </h2>
-                <button
-                  type="button"
-                  onClick={exportTxCsv}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-700 text-sm text-zinc-200 hover:border-pink-500/40 hover:text-white transition"
-                >
-                  <Download size={16} className="text-pink-400" />
-                  Export CSV
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {(
-                  [
-                    ['all', 'All'],
-                    ['in', 'Money in'],
-                    ['out', 'Money out'],
-                    ['tips', 'Tips'],
-                    ['clips', 'Clips'],
-                    ['topup', 'Top-ups'],
-                    ['payout', 'Payouts'],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setTxFilter(key)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                      txFilter === key
-                        ? 'bg-pink-600 text-white'
-                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {filteredTxs.length === 0 ? (
-                <p className="text-sm text-zinc-500 text-center py-10">
-                  No transactions yet
-                </p>
-              ) : (
-                <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
-                  {filteredTxs.map((tx) => {
-                    const amt = Number(tx.amount_gbp || 0);
-                    const isIn = amt > 0;
-                    return (
-                      <div
-                        key={tx.id}
-                        className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-zinc-800/50 transition"
-                      >
-                        <div
-                          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            isIn
-                              ? 'bg-emerald-500/15 text-emerald-400'
-                              : 'bg-zinc-800 text-zinc-400'
-                          }`}
-                        >
-                          {isIn ? (
-                            <ArrowDownLeft size={16} />
-                          ) : (
-                            <ArrowUpRight size={16} />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">
-                            {txLabel(String(tx.type || ''))}
-                          </p>
-                          <p className="text-xs text-zinc-500 truncate">
-                            {tx.description || '—'} ·{' '}
-                            {tx.created_at
-                              ? new Date(tx.created_at).toLocaleString('en-GB', {
-                                  day: 'numeric',
-                                  month: 'short',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : ''}
-                          </p>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p
-                            className={`text-sm font-semibold tabular-nums ${
-                              isIn ? 'text-emerald-400' : 'text-zinc-200'
-                            }`}
-                          >
-                            {isIn ? '+' : ''}
-                            {money(amt)}
-                          </p>
-                          {tx.balance_after != null && (
-                            <p className="text-[10px] text-zinc-600 tabular-nums">
-                              Bal {money(Number(tx.balance_after))}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <p className="text-[11px] text-zinc-600 mt-3">
-                Showing up to 300 most recent movements. Export CSV for records /
-                tax.
-              </p>
-            </div>
-
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
               <div className="flex items-center gap-2 mb-5">
                 <Settings size={20} className="text-pink-400" />
@@ -2988,7 +2874,7 @@ export default function DashboardPage() {
             </div>
 
             {isLive && (
-              <div className="rounded-2xl border border-pink-500/40 bg-pink-500/10 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="rounded-2xl border border-pink-500/40 bg-pink-500/10 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-3">
                   <div className="bg-red-600 text-xs font-bold px-2.5 py-1 rounded-full">LIVE</div>
                   <div>
@@ -3003,6 +2889,120 @@ export default function DashboardPage() {
                 </Link>
               </div>
             )}
+
+            {/* Full transactions ledger — bottom of dashboard */}
+            <div
+              ref={txSectionRef}
+              id="transactions"
+              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-4 scroll-mt-24"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <List size={20} className="text-pink-400" /> Transactions
+                </h2>
+                <button
+                  type="button"
+                  onClick={exportTxCsv}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-700 text-sm text-zinc-200 hover:border-pink-500/40 hover:text-white transition"
+                >
+                  <Download size={16} className="text-pink-400" />
+                  Export CSV
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {(
+                  [
+                    ['all', 'All'],
+                    ['in', 'Money in'],
+                    ['out', 'Money out'],
+                    ['tips', 'Tips'],
+                    ['clips', 'Clips'],
+                    ['topup', 'Top-ups'],
+                    ['payout', 'Payouts'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTxFilter(key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                      txFilter === key
+                        ? 'bg-pink-600 text-white'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {filteredTxs.length === 0 ? (
+                <p className="text-sm text-zinc-500 text-center py-10">
+                  No transactions yet
+                </p>
+              ) : (
+                <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
+                  {filteredTxs.map((tx) => {
+                    const amt = Number(tx.amount_gbp || 0);
+                    const isIn = amt > 0;
+                    return (
+                      <div
+                        key={tx.id}
+                        className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-zinc-800/50 transition"
+                      >
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            isIn
+                              ? 'bg-emerald-500/15 text-emerald-400'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          {isIn ? (
+                            <ArrowDownLeft size={16} />
+                          ) : (
+                            <ArrowUpRight size={16} />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">
+                            {txLabel(String(tx.type || ''))}
+                          </p>
+                          <p className="text-xs text-zinc-500 truncate">
+                            {tx.description || '—'} ·{' '}
+                            {tx.created_at
+                              ? new Date(tx.created_at).toLocaleString('en-GB', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : ''}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p
+                            className={`text-sm font-semibold tabular-nums ${
+                              isIn ? 'text-emerald-400' : 'text-zinc-200'
+                            }`}
+                          >
+                            {isIn ? '+' : ''}
+                            {money(amt)}
+                          </p>
+                          {tx.balance_after != null && (
+                            <p className="text-[10px] text-zinc-600 tabular-nums">
+                              Bal {money(Number(tx.balance_after))}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-zinc-600 mt-3">
+                Showing up to 300 most recent movements. Export CSV for records /
+                tax.
+              </p>
+            </div>
           </div>
         </main>
 
