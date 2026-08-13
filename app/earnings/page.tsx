@@ -22,6 +22,8 @@ import {
   Target,
   Sparkles,
   Pencil,
+  Film,
+  List,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -30,6 +32,7 @@ import { createClient } from '../../lib/supabase';
 type FilterKey =
   | 'all'
   | 'tips'
+  | 'clips'
   | 'shop'
   | 'calls'
   | 'unlocks'
@@ -41,6 +44,7 @@ type RangeKey = '7d' | '30d' | 'month' | 'all';
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'tips', label: 'Tips' },
+  { key: 'clips', label: 'Clips' },
   { key: 'shop', label: 'Shop' },
   { key: 'calls', label: 'Calls' },
   { key: 'unlocks', label: 'Unlocks' },
@@ -55,6 +59,7 @@ const RANGES: { key: RangeKey; label: string }[] = [
   { key: 'all', label: 'All time' },
 ];
 
+/** Income types counted toward week / month / all-time (positive only) */
 const EARNING_TYPES = [
   'tip_received',
   'shop_pending',
@@ -66,7 +71,12 @@ const EARNING_TYPES = [
   'subscription_received',
 ];
 
-const PAYOUT_TYPES = ['payout', 'payout_requested', 'payout_sent'];
+const PAYOUT_TYPES = [
+  'payout',
+  'payout_requested',
+  'payout_sent',
+  'payout_paid',
+];
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const GOAL_PRESETS = [100, 250, 500, 1000, 2500];
@@ -98,25 +108,43 @@ function dayKey(d: Date) {
 function labelForType(type: string) {
   switch (type) {
     case 'tip_received':
-      return 'Tip';
+      return 'Tip received';
+    case 'tip_sent':
+      return 'Tip sent';
     case 'shop_pending':
       return 'Shop sale (pending)';
     case 'shop_received':
       return 'Shop sale released';
+    case 'shop_held':
+      return 'Shop funds held';
+    case 'shop_released':
+      return 'Shop funds released';
+    case 'shop_refund':
+      return 'Shop refund';
     case 'call_received':
-      return 'Voice call';
+      return 'Voice call earned';
+    case 'call_sent':
+      return 'Voice call paid';
     case 'unlock_received':
-      return 'Unlock';
+      return 'Media unlock';
+    case 'unlock_sent':
+      return 'Unlocked media';
     case 'clip_received':
       return 'Clip sale';
+    case 'clip_sent':
+      return 'Clip purchase';
     case 'sub_received':
     case 'subscription_received':
       return 'Subscription';
     case 'payout':
     case 'payout_requested':
-      return 'Payout request';
+      return 'Payout requested';
     case 'payout_sent':
+    case 'payout_paid':
       return 'Payout sent';
+    case 'top_up':
+    case 'topup':
+      return 'Wallet top-up';
     default:
       return type.replace(/_/g, ' ');
   }
@@ -124,6 +152,7 @@ function labelForType(type: string) {
 
 function iconForType(type: string) {
   if (type.startsWith('tip')) return Heart;
+  if (type.startsWith('clip')) return Film;
   if (type.startsWith('shop')) return ShoppingBag;
   if (type.startsWith('call')) return Phone;
   if (type.startsWith('unlock')) return Lock;
@@ -135,8 +164,14 @@ function iconForType(type: string) {
 function matchesFilter(type: string, filter: FilterKey) {
   if (filter === 'all') return true;
   if (filter === 'tips') return type === 'tip_received';
+  if (filter === 'clips') return type === 'clip_received';
   if (filter === 'shop')
-    return type === 'shop_pending' || type === 'shop_received';
+    return (
+      type === 'shop_pending' ||
+      type === 'shop_received' ||
+      type === 'shop_held' ||
+      type === 'shop_released'
+    );
   if (filter === 'calls') return type === 'call_received';
   if (filter === 'unlocks') return type === 'unlock_received';
   if (filter === 'subs')
@@ -328,6 +363,7 @@ export default function EarningsPage() {
       { key: string; label: string; amount: number; count: number }
     > = {
       tips: { key: 'tips', label: 'Tips', amount: 0, count: 0 },
+      clips: { key: 'clips', label: 'Clip sales', amount: 0, count: 0 },
       shop: { key: 'shop', label: 'Shop sales', amount: 0, count: 0 },
       calls: { key: 'calls', label: 'Voice calls', amount: 0, count: 0 },
       unlocks: { key: 'unlocks', label: 'Unlocks', amount: 0, count: 0 },
@@ -335,13 +371,17 @@ export default function EarningsPage() {
     };
 
     for (const t of txs) {
+      // Avoid double-counting shop when both pending + released exist
       if (t.type === 'shop_received') continue;
       const amt = Number(t.amount_gbp || 0);
       if (amt <= 0) continue;
       if (t.type === 'tip_received') {
         buckets.tips.amount += amt;
         buckets.tips.count += 1;
-      } else if (t.type === 'shop_pending') {
+      } else if (t.type === 'clip_received') {
+        buckets.clips.amount += amt;
+        buckets.clips.count += 1;
+      } else if (t.type === 'shop_pending' || t.type === 'shop_held') {
         buckets.shop.amount += amt;
         buckets.shop.count += 1;
       } else if (t.type === 'call_received') {
@@ -645,10 +685,16 @@ export default function EarningsPage() {
                   Earnings
                 </h1>
                 <p className="text-zinc-500 text-sm mt-1">
-                  Tips, sales, calls and payouts — all in one place
+                  Tips, clips, shop, calls & payouts — your creator income hub
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/dashboard#transactions"
+                  className="px-4 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition inline-flex items-center gap-2"
+                >
+                  <List size={16} className="text-pink-400" /> Full ledger
+                </Link>
                 <button
                   type="button"
                   onClick={exportCsv}
