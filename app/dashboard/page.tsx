@@ -5,7 +5,8 @@ import Link from 'next/link';
 import {
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye,
   ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon,
-  ChevronLeft, ChevronRight, Heart, Users, Clock, Search, Phone
+  ChevronLeft, ChevronRight, Heart, Users, Clock, Search, Phone,
+  Download, ArrowDownLeft, ArrowUpRight, List
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -221,12 +222,105 @@ export default function DashboardPage() {
       from_avatar?: string | null;
     }[]
   >([]);
+  const [allTxs, setAllTxs] = useState<any[]>([]);
+  const [txFilter, setTxFilter] = useState<
+    'all' | 'in' | 'out' | 'tips' | 'clips' | 'topup' | 'payout'
+  >('all');
+  const txSectionRef = useRef<HTMLDivElement | null>(null);
 
   const money = (n: number) =>
     `£${Number(n || 0).toLocaleString('en-GB', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+
+  const txLabel = (type: string) => {
+    const map: Record<string, string> = {
+      tip_received: 'Tip received',
+      tip_sent: 'Tip sent',
+      clip_received: 'Clip sale',
+      clip_sent: 'Clip purchase',
+      unlock_received: 'Media unlock',
+      unlock_sent: 'Unlocked media',
+      call_received: 'Voice call earned',
+      call_sent: 'Voice call paid',
+      shop_received: 'Shop sale',
+      shop_sent: 'Shop purchase',
+      shop_held: 'Shop funds held',
+      shop_released: 'Shop funds released',
+      shop_refund: 'Shop refund',
+      top_up: 'Wallet top-up',
+      topup: 'Wallet top-up',
+      payout: 'Payout',
+      payout_requested: 'Payout requested',
+      payout_paid: 'Payout sent',
+      subscription_received: 'Subscription',
+      subscription_sent: 'Subscription payment',
+    };
+    return map[type] || type.replace(/_/g, ' ');
+  };
+
+  const filteredTxs = allTxs.filter((tx) => {
+    const amt = Number(tx.amount_gbp || 0);
+    const t = String(tx.type || '');
+    if (txFilter === 'all') return true;
+    if (txFilter === 'in') return amt > 0;
+    if (txFilter === 'out') return amt < 0;
+    if (txFilter === 'tips') return t.includes('tip');
+    if (txFilter === 'clips') return t.includes('clip');
+    if (txFilter === 'topup') return t.includes('top');
+    if (txFilter === 'payout') return t.includes('payout');
+    return true;
+  });
+
+  const exportTxCsv = () => {
+    const rows = filteredTxs.length ? filteredTxs : allTxs;
+    if (!rows.length) {
+      alert('No transactions to export');
+      return;
+    }
+    const header = [
+      'Date',
+      'Type',
+      'Label',
+      'Amount GBP',
+      'Balance after',
+      'Description',
+      'Reference',
+    ];
+    const lines = rows.map((tx) => {
+      const d = tx.created_at
+        ? new Date(tx.created_at).toISOString()
+        : '';
+      const cells = [
+        d,
+        tx.type || '',
+        txLabel(String(tx.type || '')),
+        Number(tx.amount_gbp || 0).toFixed(2),
+        tx.balance_after != null ? Number(tx.balance_after).toFixed(2) : '',
+        (tx.description || '').replace(/"/g, '""'),
+        tx.reference_id || '',
+      ];
+      return cells.map((c) => `"${c}"`).join(',');
+    });
+    const csv = [header.join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `world-of-dommes-transactions-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const scrollToTransactions = () => {
+    setTxFilter('all');
+    setTimeout(() => {
+      txSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  };
 
   const openPayoutModal = () => {
     const bal = Number(profile?.balance_gbp || 0);
@@ -521,6 +615,17 @@ export default function DashboardPage() {
         .limit(30);
       setBuyerOrders(myBuys || []);
 
+      // Full wallet ledger (subs + creators)
+      const { data: ledger } = await supabase
+        .from('wallet_transactions')
+        .select(
+          'id, type, amount_gbp, balance_after, description, reference_type, reference_id, counterparty_id, created_at'
+        )
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(300);
+      setAllTxs(ledger || []);
+
       // Recent voice calls (sub or creator)
       const { data: callRows } = await supabase
         .from('voice_calls')
@@ -592,6 +697,10 @@ export default function DashboardPage() {
         from_avatar,
       };
 
+      setAllTxs((prev) => {
+        if (prev.some((t) => t.id === row.id)) return prev;
+        return [row, ...prev].slice(0, 300);
+      });
       setRecentTips((prev) => {
         if (prev.some((t) => t.id === tip.id)) return prev;
         return [tip, ...prev].slice(0, 20);
@@ -1661,6 +1770,118 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               </div>
+
+              {/* Sub full transactions */}
+              <div
+                ref={txSectionRef}
+                id="transactions"
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8 scroll-mt-24"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <List size={20} className="text-pink-400" /> Transactions
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={exportTxCsv}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-700 text-sm text-zinc-200 hover:border-pink-500/40 transition"
+                  >
+                    <Download size={16} className="text-pink-400" />
+                    Export CSV
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {(
+                    [
+                      ['all', 'All'],
+                      ['in', 'Money in'],
+                      ['out', 'Money out'],
+                      ['tips', 'Tips'],
+                      ['clips', 'Clips'],
+                      ['topup', 'Top-ups'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setTxFilter(key)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                        txFilter === key
+                          ? 'bg-pink-600 text-white'
+                          : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {filteredTxs.length === 0 ? (
+                  <p className="text-sm text-zinc-500 text-center py-10">
+                    No transactions yet — top up or buy content to see history here
+                  </p>
+                ) : (
+                  <div className="space-y-1 max-h-[420px] overflow-y-auto pr-1">
+                    {filteredTxs.map((tx) => {
+                      const amt = Number(tx.amount_gbp || 0);
+                      const isIn = amt > 0;
+                      return (
+                        <div
+                          key={tx.id}
+                          className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-zinc-800/50 transition"
+                        >
+                          <div
+                            className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              isIn
+                                ? 'bg-emerald-500/15 text-emerald-400'
+                                : 'bg-zinc-800 text-zinc-400'
+                            }`}
+                          >
+                            {isIn ? (
+                              <ArrowDownLeft size={16} />
+                            ) : (
+                              <ArrowUpRight size={16} />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">
+                              {txLabel(String(tx.type || ''))}
+                            </p>
+                            <p className="text-xs text-zinc-500 truncate">
+                              {tx.description || '—'} ·{' '}
+                              {tx.created_at
+                                ? new Date(tx.created_at).toLocaleString(
+                                    'en-GB',
+                                    {
+                                      day: 'numeric',
+                                      month: 'short',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    }
+                                  )
+                                : ''}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p
+                              className={`text-sm font-semibold tabular-nums ${
+                                isIn ? 'text-emerald-400' : 'text-zinc-200'
+                              }`}
+                            >
+                              {isIn ? '+' : ''}
+                              {money(amt)}
+                            </p>
+                            {tx.balance_after != null && (
+                              <p className="text-[10px] text-zinc-600 tabular-nums">
+                                Bal {money(Number(tx.balance_after))}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </main>
         </div>
@@ -1884,6 +2105,120 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* Full transactions ledger */}
+            <div
+              ref={txSectionRef}
+              id="transactions"
+              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8 scroll-mt-24"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <List size={20} className="text-pink-400" /> Transactions
+                </h2>
+                <button
+                  type="button"
+                  onClick={exportTxCsv}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-zinc-700 text-sm text-zinc-200 hover:border-pink-500/40 hover:text-white transition"
+                >
+                  <Download size={16} className="text-pink-400" />
+                  Export CSV
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {(
+                  [
+                    ['all', 'All'],
+                    ['in', 'Money in'],
+                    ['out', 'Money out'],
+                    ['tips', 'Tips'],
+                    ['clips', 'Clips'],
+                    ['topup', 'Top-ups'],
+                    ['payout', 'Payouts'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTxFilter(key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                      txFilter === key
+                        ? 'bg-pink-600 text-white'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {filteredTxs.length === 0 ? (
+                <p className="text-sm text-zinc-500 text-center py-10">
+                  No transactions yet
+                </p>
+              ) : (
+                <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
+                  {filteredTxs.map((tx) => {
+                    const amt = Number(tx.amount_gbp || 0);
+                    const isIn = amt > 0;
+                    return (
+                      <div
+                        key={tx.id}
+                        className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-zinc-800/50 transition"
+                      >
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            isIn
+                              ? 'bg-emerald-500/15 text-emerald-400'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          {isIn ? (
+                            <ArrowDownLeft size={16} />
+                          ) : (
+                            <ArrowUpRight size={16} />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">
+                            {txLabel(String(tx.type || ''))}
+                          </p>
+                          <p className="text-xs text-zinc-500 truncate">
+                            {tx.description || '—'} ·{' '}
+                            {tx.created_at
+                              ? new Date(tx.created_at).toLocaleString('en-GB', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : ''}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p
+                            className={`text-sm font-semibold tabular-nums ${
+                              isIn ? 'text-emerald-400' : 'text-zinc-200'
+                            }`}
+                          >
+                            {isIn ? '+' : ''}
+                            {money(amt)}
+                          </p>
+                          {tx.balance_after != null && (
+                            <p className="text-[10px] text-zinc-600 tabular-nums">
+                              Bal {money(Number(tx.balance_after))}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-zinc-600 mt-3">
+                Showing up to 300 most recent movements. Export CSV for records /
+                tax.
+              </p>
+            </div>
+
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
               <div className="flex items-center gap-2 mb-5">
                 <Settings size={20} className="text-pink-400" />
@@ -1940,9 +2275,18 @@ export default function DashboardPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <DollarSign size={20} className="text-pink-400" /> Recent Tips
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <DollarSign size={20} className="text-pink-400" /> Recent Tips
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={scrollToTransactions}
+                    className="text-sm text-pink-400 hover:text-pink-300"
+                  >
+                    View all →
+                  </button>
+                </div>
                 {recentTips.length === 0 ? (
                   <p className="text-zinc-500 text-sm py-8 text-center">
                     No tips yet — when someone tips you, it shows up here live
