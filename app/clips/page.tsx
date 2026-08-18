@@ -53,13 +53,106 @@ function formatDuration(sec?: number | null) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** Prefer real 15s preview URL; never expose full video to non-owners in UI */
 function previewSrc(clip: ClipRow) {
-  return clip.preview_url || null;
+  if (clip.preview_url) return clip.preview_url;
+  if (clip.mux_playback_id) {
+    return `https://stream.mux.com/${clip.mux_playback_id}.m3u8?asset_start_time=0&asset_end_time=15`;
+  }
+  return null;
 }
 
 function fullSrc(clip: ClipRow) {
   return clip.video_url || null;
+}
+
+function MuxVideo({
+  src,
+  className,
+  poster,
+  muted,
+  loop,
+  autoPlay,
+  controls,
+}: {
+  src: string;
+  className?: string;
+  poster?: string;
+  muted?: boolean;
+  loop?: boolean;
+  autoPlay?: boolean;
+  controls?: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+
+    let hls: any = null;
+    let cancelled = false;
+
+    const setup = async () => {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = src;
+        if (autoPlay) video.play().catch(() => {});
+        return;
+      }
+
+      try {
+        const w = window as any;
+        if (!w.Hls) {
+          await new Promise<void>((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('hls.js load failed'));
+            document.head.appendChild(s);
+          });
+        }
+        if (cancelled) return;
+        const Hls = (window as any).Hls;
+        if (Hls?.isSupported()) {
+          hls = new Hls({ enableWorker: true, maxBufferLength: 20 });
+          hls.loadSource(src);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (autoPlay) video.play().catch(() => {});
+          });
+        } else {
+          video.src = src;
+          if (autoPlay) video.play().catch(() => {});
+        }
+      } catch {
+        video.src = src;
+      }
+    };
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      if (hls) {
+        try {
+          hls.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+  }, [src, autoPlay]);
+
+  return (
+    <video
+      ref={videoRef}
+      className={className}
+      poster={poster}
+      muted={muted}
+      loop={loop}
+      playsInline
+      controls={controls}
+      preload="metadata"
+    />
+  );
 }
 
 function ClipCard({
@@ -73,7 +166,6 @@ function ClipCard({
   buying: boolean;
   onOpen: () => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [hovering, setHovering] = useState(false);
   const preview = previewSrc(clip);
   const name =
@@ -81,30 +173,16 @@ function ClipCard({
     (clip.profiles?.username ? `@${clip.profiles.username}` : 'Creator');
   const dur = formatDuration(clip.duration_seconds);
 
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v || !preview) return;
-    if (hovering) {
-      v.currentTime = 0;
-      v.play().catch(() => {});
-    } else {
-      v.pause();
-      v.currentTime = 0;
-    }
-  }, [hovering, preview]);
-
   return (
     <button
       type="button"
       onClick={onOpen}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
-      onFocus={() => setHovering(true)}
-      onBlur={() => setHovering(false)}
+      onTouchStart={() => setHovering(true)}
       className="text-left bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-pink-500/40 transition group"
     >
       <div className="relative aspect-video bg-zinc-800 overflow-hidden">
-        {/* Thumbnail always underneath */}
         {clip.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -120,24 +198,22 @@ function ClipCard({
           </div>
         )}
 
-        {/* 15s preview — only public preview asset, never full video */}
-        {preview && (
-          <video
-            ref={videoRef}
+        {preview && hovering && (
+          <MuxVideo
+            key={`hover-${clip.id}`}
             src={preview}
             muted
-            playsInline
             loop
-            preload="metadata"
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity ${
-              hovering ? 'opacity-100' : 'opacity-0'
-            }`}
+            autoPlay
+            className="absolute inset-0 w-full h-full object-cover"
           />
         )}
 
         <div
           className={`absolute inset-0 flex items-center justify-center transition ${
-            hovering && preview ? 'bg-black/10' : 'bg-black/30 group-hover:bg-black/40'
+            hovering && preview
+              ? 'bg-black/10'
+              : 'bg-black/30 group-hover:bg-black/40'
           }`}
         >
           {owns ? (
@@ -156,7 +232,7 @@ function ClipCard({
             {dur}
           </span>
         )}
-        {!owns && preview && (
+        {!owns && (
           <span className="absolute bottom-2 left-2 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-zinc-200">
             15s preview
           </span>
@@ -190,7 +266,9 @@ function ClipCard({
         </div>
         <div className="flex items-center justify-between mt-3">
           <span className="text-sm font-semibold text-pink-400">
-            {Number(clip.price_gbp) === 0 ? 'Free' : money(Number(clip.price_gbp))}
+            {Number(clip.price_gbp) === 0
+              ? 'Free'
+              : money(Number(clip.price_gbp))}
           </span>
           <span className="text-xs text-zinc-500 flex items-center gap-1">
             <ShoppingBag size={12} />
@@ -362,7 +440,6 @@ export default function ClipsPage() {
     }
   };
 
-  /** Click card: always open modal. Locked users see 15s preview + buy. */
   const openClip = (clip: ClipRow) => {
     setViewer(clip);
   };
@@ -372,6 +449,9 @@ export default function ClipsPage() {
     (ownedIds.has(viewer.id) ||
       viewer.creator_id === userId ||
       Number(viewer.price_gbp) === 0);
+
+  const viewerPreview = viewer ? previewSrc(viewer) : null;
+  const viewerFull = viewer ? fullSrc(viewer) : null;
 
   return (
     <AuthGuard>
@@ -386,7 +466,7 @@ export default function ClipsPage() {
                   Clips
                 </h1>
                 <p className="text-zinc-500 text-sm mt-1">
-                  Hover for a 15s preview · unlock once, watch anytime
+                  Hover or tap for a 15s preview · unlock once, watch anytime
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -461,7 +541,9 @@ export default function ClipsPage() {
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
                 <Film className="mx-auto text-zinc-600 mb-3" size={32} />
                 <p className="text-zinc-300 font-medium">
-                  {tab === 'owned' ? 'No clips in your library yet' : 'No clips yet'}
+                  {tab === 'owned'
+                    ? 'No clips in your library yet'
+                    : 'No clips yet'}
                 </p>
                 <p className="text-sm text-zinc-500 mt-1">
                   {tab === 'owned'
@@ -491,7 +573,6 @@ export default function ClipsPage() {
           </div>
         </main>
 
-        {/* Modal: full video if owned; else 15s preview + unlock */}
         {viewer && (
           <div className="fixed inset-0 z-[100] bg-black/80 flex items-end sm:items-center justify-center p-4">
             <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
@@ -506,60 +587,69 @@ export default function ClipsPage() {
                 </button>
               </div>
               <div className="bg-black aspect-video relative">
-                {ownsViewer && fullSrc(viewer) ? (
-                  <video
+                {ownsViewer && viewerFull ? (
+                  <MuxVideo
                     key={`full-${viewer.id}`}
-                    src={fullSrc(viewer)!}
+                    src={viewerFull}
                     controls
-                    playsInline
                     autoPlay
                     className="w-full h-full"
                     poster={viewer.thumbnail_url || undefined}
                   />
-                ) : previewSrc(viewer) ? (
+                ) : viewerPreview ? (
                   <>
-                    <video
+                    <MuxVideo
                       key={`prev-${viewer.id}`}
-                      src={previewSrc(viewer)!}
+                      src={viewerPreview}
                       controls
-                      playsInline
                       autoPlay
-                      muted={false}
                       className="w-full h-full"
                       poster={viewer.thumbnail_url || undefined}
                     />
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-4 pt-10">
-                      <p className="text-xs text-zinc-300 mb-2 flex items-center gap-1.5">
-                        <Lock size={12} /> 15s preview · unlock for full video
+                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-4 pt-10 pointer-events-none">
+                      <div className="pointer-events-auto">
+                        <p className="text-xs text-zinc-300 mb-2 flex items-center gap-1.5">
+                          <Lock size={12} /> 15s preview · unlock for full video
+                        </p>
+                        <button
+                          type="button"
+                          disabled={buyingId === viewer.id}
+                          onClick={() => buy(viewer)}
+                          className="w-full py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
+                        >
+                          {buyingId === viewer.id
+                            ? 'Unlocking…'
+                            : `Unlock · ${money(Number(viewer.price_gbp))}`}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-zinc-400 p-6 relative">
+                    {viewer.thumbnail_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={viewer.thumbnail_url}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover opacity-40"
+                      />
+                    )}
+                    <div className="relative z-10 flex flex-col items-center gap-3">
+                      <Lock size={28} />
+                      <p className="text-sm text-center">
+                        Unlock to watch the full clip
                       </p>
                       <button
                         type="button"
                         disabled={buyingId === viewer.id}
                         onClick={() => buy(viewer)}
-                        className="w-full py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
+                        className="mt-2 px-6 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
                       >
                         {buyingId === viewer.id
                           ? 'Unlocking…'
                           : `Unlock · ${money(Number(viewer.price_gbp))}`}
                       </button>
                     </div>
-                  </>
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-zinc-400 p-6">
-                    <Lock size={28} />
-                    <p className="text-sm text-center">
-                      Preview not ready yet. You can still unlock the full clip.
-                    </p>
-                    <button
-                      type="button"
-                      disabled={buyingId === viewer.id}
-                      onClick={() => buy(viewer)}
-                      className="mt-2 px-6 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
-                    >
-                      {buyingId === viewer.id
-                        ? 'Unlocking…'
-                        : `Unlock · ${money(Number(viewer.price_gbp))}`}
-                    </button>
                   </div>
                 )}
               </div>
@@ -575,5 +665,3 @@ export default function ClipsPage() {
     </AuthGuard>
   );
 }
-
-

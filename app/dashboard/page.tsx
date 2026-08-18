@@ -953,6 +953,9 @@ export default function DashboardPage() {
         }
       }
 
+      // Instant 15s preview via Mux playback modifiers (no extra encode wait)
+      const previewUrl = `https://stream.mux.com/${ready.playbackId}.m3u8?asset_start_time=0&asset_end_time=15`;
+
       const price = Math.max(0, Number(clipForm.price) || 0);
       const { data: row, error: insErr } = await supabase
         .from('clips')
@@ -963,10 +966,12 @@ export default function DashboardPage() {
           price_gbp: Math.round(price * 100) / 100,
           category: clipForm.category || 'Other',
           video_url: ready.videoUrl,
+          preview_url: previewUrl,
           thumbnail_url: thumbUrl,
           duration_seconds: ready.duration,
           mux_asset_id: ready.assetId,
           mux_playback_id: ready.playbackId,
+          mux_preview_playback_id: ready.playbackId,
           is_published: true,
         })
         .select(
@@ -975,29 +980,6 @@ export default function DashboardPage() {
         .single();
 
       if (insErr) throw insErr;
-
-      // Separate ~15s public preview for hover / locked modal (non-fatal if slow)
-      setClipCompressStatus('Creating 15s preview…');
-      setClipCompressPct(98);
-      try {
-        const prevRes = await fetch('/api/mux/create-preview', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            assetId: ready.assetId,
-            clipId: row.id,
-            seconds: 15,
-          }),
-        });
-        if (!prevRes.ok) {
-          console.warn('preview create failed', await prevRes.text());
-        }
-      } catch (prevErr) {
-        console.warn('preview create error', prevErr);
-      }
 
       setMyClips((prev) => [
         {
