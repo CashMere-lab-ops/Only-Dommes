@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   Film,
   Lock,
@@ -16,6 +17,16 @@ import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { notifyBalanceUpdated } from '../../lib/wallet';
+
+// Mux Player — client only (no SSR)
+const MuxPlayer = dynamic(() => import('@mux/mux-player-react'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-black">
+      <Loader2 className="animate-spin text-pink-500" size={28} />
+    </div>
+  ),
+});
 
 type ClipRow = {
   id: string;
@@ -53,108 +64,6 @@ function formatDuration(sec?: number | null) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function previewSrc(clip: ClipRow) {
-  if (clip.preview_url) return clip.preview_url;
-  if (clip.mux_playback_id) {
-    return `https://stream.mux.com/${clip.mux_playback_id}.m3u8?asset_start_time=0&asset_end_time=15`;
-  }
-  return null;
-}
-
-function fullSrc(clip: ClipRow) {
-  return clip.video_url || null;
-}
-
-function MuxVideo({
-  src,
-  className,
-  poster,
-  muted,
-  loop,
-  autoPlay,
-  controls,
-}: {
-  src: string;
-  className?: string;
-  poster?: string;
-  muted?: boolean;
-  loop?: boolean;
-  autoPlay?: boolean;
-  controls?: boolean;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !src) return;
-
-    let hls: any = null;
-    let cancelled = false;
-
-    const setup = async () => {
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = src;
-        if (autoPlay) video.play().catch(() => {});
-        return;
-      }
-
-      try {
-        const w = window as any;
-        if (!w.Hls) {
-          await new Promise<void>((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';
-            s.onload = () => resolve();
-            s.onerror = () => reject(new Error('hls.js load failed'));
-            document.head.appendChild(s);
-          });
-        }
-        if (cancelled) return;
-        const Hls = (window as any).Hls;
-        if (Hls?.isSupported()) {
-          hls = new Hls({ enableWorker: true, maxBufferLength: 20 });
-          hls.loadSource(src);
-          hls.attachMedia(video);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            if (autoPlay) video.play().catch(() => {});
-          });
-        } else {
-          video.src = src;
-          if (autoPlay) video.play().catch(() => {});
-        }
-      } catch {
-        video.src = src;
-      }
-    };
-
-    setup();
-
-    return () => {
-      cancelled = true;
-      if (hls) {
-        try {
-          hls.destroy();
-        } catch {
-          /* ignore */
-        }
-      }
-    };
-  }, [src, autoPlay]);
-
-  return (
-    <video
-      ref={videoRef}
-      className={className}
-      poster={poster}
-      muted={muted}
-      loop={loop}
-      playsInline
-      controls={controls}
-      preload="metadata"
-    />
-  );
-}
-
 function ClipCard({
   clip,
   owns,
@@ -167,11 +76,35 @@ function ClipCard({
   onOpen: () => void;
 }) {
   const [hovering, setHovering] = useState(false);
-  const preview = previewSrc(clip);
+  const [previewToken, setPreviewToken] = useState<string | null>(null);
+  const [previewPublic, setPreviewPublic] = useState(false);
+  const playbackId = clip.mux_playback_id;
+
   const name =
     clip.profiles?.display_name ||
     (clip.profiles?.username ? `@${clip.profiles.username}` : 'Creator');
   const dur = formatDuration(clip.duration_seconds);
+
+  useEffect(() => {
+    if (!hovering || !playbackId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/mux/preview-token?clipId=${encodeURIComponent(clip.id)}`
+        );
+        const data = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok) return;
+        setPreviewToken(data.token || null);
+        setPreviewPublic(!!data.public || !data.token);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hovering, playbackId, clip.id]);
 
   return (
     <button
@@ -189,7 +122,7 @@ function ClipCard({
             src={clip.thumbnail_url}
             alt=""
             className={`absolute inset-0 w-full h-full object-cover transition-opacity ${
-              hovering && preview ? 'opacity-0' : 'opacity-100'
+              hovering && playbackId ? 'opacity-0' : 'opacity-100'
             }`}
           />
         ) : (
@@ -198,20 +131,34 @@ function ClipCard({
           </div>
         )}
 
-        {preview && hovering && (
-          <MuxVideo
-            key={`hover-${clip.id}`}
-            src={preview}
-            muted
-            loop
-            autoPlay
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+        {hovering && playbackId && (
+          <div className="absolute inset-0">
+            <MuxPlayer
+              playbackId={playbackId}
+              tokens={
+                previewToken
+                  ? { playback: previewToken }
+                  : undefined
+              }
+              extraSourceParams={
+                previewPublic || !previewToken
+                  ? { asset_start_time: 0, asset_end_time: 15 }
+                  : undefined
+              }
+              muted
+              autoPlay
+              loop
+              playsInline
+              streamType="on-demand"
+              className="w-full h-full object-cover"
+              style={{ width: '100%', height: '100%', '--controls': 'none' } as any}
+            />
+          </div>
         )}
 
         <div
-          className={`absolute inset-0 flex items-center justify-center transition ${
-            hovering && preview
+          className={`absolute inset-0 flex items-center justify-center pointer-events-none transition ${
+            hovering && playbackId
               ? 'bg-black/10'
               : 'bg-black/30 group-hover:bg-black/40'
           }`}
@@ -282,6 +229,138 @@ function ClipCard({
         )}
       </div>
     </button>
+  );
+}
+
+function ViewerPlayer({
+  clip,
+  owns,
+}: {
+  clip: ClipRow;
+  owns: boolean;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
+  const [thumbToken, setThumbToken] = useState<string | null>(null);
+  const [isPublic, setIsPublic] = useState(false);
+  const [err, setErr] = useState('');
+  const supabase = createClient();
+  const playbackId = clip.mux_playback_id;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!playbackId) {
+        setErr('No video');
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setErr('');
+      try {
+        if (owns) {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          const res = await fetch(
+            `/api/mux/playback-token?clipId=${encodeURIComponent(clip.id)}`,
+            {
+              headers: session?.access_token
+                ? { Authorization: `Bearer ${session.access_token}` }
+                : {},
+            }
+          );
+          const data = await res.json().catch(() => ({}));
+          if (cancelled) return;
+          if (data.public || data.token === undefined) {
+            // Signing not configured — play public URL
+            setIsPublic(true);
+            setToken(null);
+          } else if (!res.ok) {
+            setErr(data.error || 'Could not load video');
+          } else {
+            setToken(data.token);
+            setThumbToken(data.thumbnailToken || null);
+            setIsPublic(false);
+          }
+        } else {
+          const res = await fetch(
+            `/api/mux/preview-token?clipId=${encodeURIComponent(clip.id)}`
+          );
+          const data = await res.json().catch(() => ({}));
+          if (cancelled) return;
+          if (!res.ok) {
+            setErr(data.error || 'Preview unavailable');
+          } else {
+            setToken(data.token || null);
+            setThumbToken(data.thumbnailToken || null);
+            setIsPublic(!!data.public || !data.token);
+          }
+        }
+      } catch (e: any) {
+        if (!cancelled) setErr(e.message || 'Player error');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clip.id, owns, playbackId]);
+
+  if (!playbackId) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm">
+        Video not available
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <Loader2 className="animate-spin text-pink-500" size={28} />
+      </div>
+    );
+  }
+
+  if (err) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-red-300 text-sm px-4 text-center">
+        {err}
+      </div>
+    );
+  }
+
+  return (
+    <MuxPlayer
+      playbackId={playbackId}
+      tokens={
+        token
+          ? {
+              playback: token,
+              ...(thumbToken ? { thumbnail: thumbToken } : {}),
+            }
+          : undefined
+      }
+      extraSourceParams={
+        !owns && isPublic
+          ? { asset_start_time: 0, asset_end_time: 15 }
+          : !owns && token
+            ? undefined
+            : undefined
+      }
+      streamType="on-demand"
+      autoPlay
+      playsInline
+      accentColor="#ec4899"
+      primaryColor="#ffffff"
+      secondaryColor="#18181b"
+      metadata={{
+        video_title: clip.title,
+      }}
+      style={{ width: '100%', height: '100%', aspectRatio: '16/9' }}
+    />
   );
 }
 
@@ -385,11 +464,7 @@ export default function ClipsPage() {
       setError('Please log in to buy clips');
       return;
     }
-    if (clip.creator_id === userId) {
-      setViewer(clip);
-      return;
-    }
-    if (ownedIds.has(clip.id)) {
+    if (clip.creator_id === userId || ownedIds.has(clip.id)) {
       setViewer(clip);
       return;
     }
@@ -440,18 +515,11 @@ export default function ClipsPage() {
     }
   };
 
-  const openClip = (clip: ClipRow) => {
-    setViewer(clip);
-  };
-
   const ownsViewer =
-    viewer &&
+    !!viewer &&
     (ownedIds.has(viewer.id) ||
       viewer.creator_id === userId ||
       Number(viewer.price_gbp) === 0);
-
-  const viewerPreview = viewer ? previewSrc(viewer) : null;
-  const viewerFull = viewer ? fullSrc(viewer) : null;
 
   return (
     <AuthGuard>
@@ -466,7 +534,7 @@ export default function ClipsPage() {
                   Clips
                 </h1>
                 <p className="text-zinc-500 text-sm mt-1">
-                  Hover or tap for a 15s preview · unlock once, watch anytime
+                  Hover for 15s preview · unlock once, watch anytime
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -545,11 +613,6 @@ export default function ClipsPage() {
                     ? 'No clips in your library yet'
                     : 'No clips yet'}
                 </p>
-                <p className="text-sm text-zinc-500 mt-1">
-                  {tab === 'owned'
-                    ? 'Buy a clip to unlock it here forever.'
-                    : 'Creators can upload from their Dashboard.'}
-                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -564,7 +627,7 @@ export default function ClipsPage() {
                       clip={clip}
                       owns={owns}
                       buying={buyingId === clip.id}
-                      onOpen={() => openClip(clip)}
+                      onOpen={() => setViewer(clip)}
                     />
                   );
                 })}
@@ -587,63 +650,18 @@ export default function ClipsPage() {
                 </button>
               </div>
               <div className="bg-black aspect-video relative">
-                {ownsViewer && viewerFull ? (
-                  <MuxVideo
-                    key={`full-${viewer.id}`}
-                    src={viewerFull}
-                    controls
-                    autoPlay
-                    className="w-full h-full"
-                    poster={viewer.thumbnail_url || undefined}
-                  />
-                ) : viewerPreview ? (
-                  <>
-                    <MuxVideo
-                      key={`prev-${viewer.id}`}
-                      src={viewerPreview}
-                      controls
-                      autoPlay
-                      className="w-full h-full"
-                      poster={viewer.thumbnail_url || undefined}
-                    />
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-4 pt-10 pointer-events-none">
-                      <div className="pointer-events-auto">
-                        <p className="text-xs text-zinc-300 mb-2 flex items-center gap-1.5">
-                          <Lock size={12} /> 15s preview · unlock for full video
-                        </p>
-                        <button
-                          type="button"
-                          disabled={buyingId === viewer.id}
-                          onClick={() => buy(viewer)}
-                          className="w-full py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
-                        >
-                          {buyingId === viewer.id
-                            ? 'Unlocking…'
-                            : `Unlock · ${money(Number(viewer.price_gbp))}`}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-zinc-400 p-6 relative">
-                    {viewer.thumbnail_url && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={viewer.thumbnail_url}
-                        alt=""
-                        className="absolute inset-0 w-full h-full object-cover opacity-40"
-                      />
-                    )}
-                    <div className="relative z-10 flex flex-col items-center gap-3">
-                      <Lock size={28} />
-                      <p className="text-sm text-center">
-                        Unlock to watch the full clip
+                <ViewerPlayer clip={viewer} owns={!!ownsViewer} />
+                {!ownsViewer && (
+                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-4 pt-10 pointer-events-none">
+                    <div className="pointer-events-auto">
+                      <p className="text-xs text-zinc-300 mb-2 flex items-center gap-1.5">
+                        <Lock size={12} /> 15s preview · unlock for full video
                       </p>
                       <button
                         type="button"
                         disabled={buyingId === viewer.id}
                         onClick={() => buy(viewer)}
-                        className="mt-2 px-6 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
+                        className="w-full py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
                       >
                         {buyingId === viewer.id
                           ? 'Unlocking…'

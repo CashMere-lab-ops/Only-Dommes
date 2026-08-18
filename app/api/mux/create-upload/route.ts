@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getMux } from '../../../../lib/mux';
+import { getMux, muxSigningConfigured } from '../../../../lib/mux';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Creates a Mux Direct Upload for authenticated creators.
- * Client uploads the video file straight to Mux (fast).
+ * Uses signed playback when MUX_SIGNING_* env is set (secure full video).
  */
 export async function POST(request: Request) {
   try {
@@ -49,11 +49,12 @@ export async function POST(request: Request) {
         : '*';
 
     const mux = getMux();
+    const useSigned = muxSigningConfigured();
 
     const upload = await mux.video.uploads.create({
       cors_origin: corsOrigin,
       new_asset_settings: {
-        playback_policy: ['public'],
+        playback_policy: [useSigned ? 'signed' : 'public'],
       },
       timeout: 3600,
     });
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
       ok: true,
       uploadId: upload.id,
       uploadUrl: upload.url,
+      signed: useSigned,
     });
   } catch (e: any) {
     console.error('mux create-upload', e);
