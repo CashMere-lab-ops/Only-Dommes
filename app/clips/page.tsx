@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Film,
@@ -25,6 +25,9 @@ type ClipRow = {
   price_gbp: number;
   category?: string | null;
   video_url: string;
+  preview_url?: string | null;
+  mux_playback_id?: string | null;
+  mux_preview_playback_id?: string | null;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
   sales_count?: number;
@@ -48,6 +51,160 @@ function formatDuration(sec?: number | null) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Prefer real 15s preview URL; never expose full video to non-owners in UI */
+function previewSrc(clip: ClipRow) {
+  return clip.preview_url || null;
+}
+
+function fullSrc(clip: ClipRow) {
+  return clip.video_url || null;
+}
+
+function ClipCard({
+  clip,
+  owns,
+  buying,
+  onOpen,
+}: {
+  clip: ClipRow;
+  owns: boolean;
+  buying: boolean;
+  onOpen: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [hovering, setHovering] = useState(false);
+  const preview = previewSrc(clip);
+  const name =
+    clip.profiles?.display_name ||
+    (clip.profiles?.username ? `@${clip.profiles.username}` : 'Creator');
+  const dur = formatDuration(clip.duration_seconds);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !preview) return;
+    if (hovering) {
+      v.currentTime = 0;
+      v.play().catch(() => {});
+    } else {
+      v.pause();
+      v.currentTime = 0;
+    }
+  }, [hovering, preview]);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onFocus={() => setHovering(true)}
+      onBlur={() => setHovering(false)}
+      className="text-left bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-pink-500/40 transition group"
+    >
+      <div className="relative aspect-video bg-zinc-800 overflow-hidden">
+        {/* Thumbnail always underneath */}
+        {clip.thumbnail_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={clip.thumbnail_url}
+            alt=""
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity ${
+              hovering && preview ? 'opacity-0' : 'opacity-100'
+            }`}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Film className="text-zinc-600" size={36} />
+          </div>
+        )}
+
+        {/* 15s preview — only public preview asset, never full video */}
+        {preview && (
+          <video
+            ref={videoRef}
+            src={preview}
+            muted
+            playsInline
+            loop
+            preload="metadata"
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity ${
+              hovering ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        )}
+
+        <div
+          className={`absolute inset-0 flex items-center justify-center transition ${
+            hovering && preview ? 'bg-black/10' : 'bg-black/30 group-hover:bg-black/40'
+          }`}
+        >
+          {owns ? (
+            <div className="w-12 h-12 rounded-full bg-pink-600/90 flex items-center justify-center">
+              <Play size={22} className="text-white ml-0.5" />
+            </div>
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-zinc-900/80 border border-zinc-600 flex items-center justify-center">
+              <Lock size={18} className="text-zinc-200" />
+            </div>
+          )}
+        </div>
+
+        {dur && (
+          <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 px-1.5 py-0.5 rounded">
+            {dur}
+          </span>
+        )}
+        {!owns && preview && (
+          <span className="absolute bottom-2 left-2 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-zinc-200">
+            15s preview
+          </span>
+        )}
+        {owns && (
+          <span className="absolute top-2 left-2 text-[10px] font-medium bg-emerald-500/90 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+            <Check size={10} /> Owned
+          </span>
+        )}
+      </div>
+      <div className="p-4">
+        <p className="font-semibold truncate">{clip.title}</p>
+        <div className="flex items-center gap-2 mt-1.5">
+          {clip.profiles?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={clip.profiles.avatar_url}
+              alt=""
+              className="w-5 h-5 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-5 h-5 rounded-full bg-zinc-700" />
+          )}
+          <Link
+            href={clip.profiles?.username ? `/${clip.profiles.username}` : '#'}
+            onClick={(e) => e.stopPropagation()}
+            className="text-xs text-zinc-400 hover:text-pink-400 truncate"
+          >
+            {name}
+          </Link>
+        </div>
+        <div className="flex items-center justify-between mt-3">
+          <span className="text-sm font-semibold text-pink-400">
+            {Number(clip.price_gbp) === 0 ? 'Free' : money(Number(clip.price_gbp))}
+          </span>
+          <span className="text-xs text-zinc-500 flex items-center gap-1">
+            <ShoppingBag size={12} />
+            {clip.sales_count || 0}
+          </span>
+        </div>
+        {buying && (
+          <p className="text-xs text-pink-300 mt-2 flex items-center gap-1">
+            <Loader2 size={12} className="animate-spin" /> Unlocking…
+          </p>
+        )}
+      </div>
+    </button>
+  );
 }
 
 export default function ClipsPage() {
@@ -74,24 +231,21 @@ export default function ClipsPage() {
     const { data: rows, error: qErr } = await supabase
       .from('clips')
       .select(
-        'id, creator_id, title, description, price_gbp, category, video_url, thumbnail_url, duration_seconds, sales_count, created_at'
+        'id, creator_id, title, description, price_gbp, category, video_url, preview_url, mux_playback_id, mux_preview_playback_id, thumbnail_url, duration_seconds, sales_count, created_at'
       )
       .eq('is_published', true)
       .order('created_at', { ascending: false })
-      .limit(60);
+      .limit(100);
 
     if (qErr) {
       setError(qErr.message);
-      setClips([]);
       setLoading(false);
       return;
     }
 
     const list = rows || [];
-    const creatorIds = [
-      ...new Set(list.map((c) => c.creator_id).filter(Boolean)),
-    ];
-    let profileMap: Record<string, any> = {};
+    const creatorIds = [...new Set(list.map((c: any) => c.creator_id))];
+    const profileMap: Record<string, any> = {};
     if (creatorIds.length) {
       const { data: people } = await supabase
         .from('profiles')
@@ -200,7 +354,7 @@ export default function ClipsPage() {
             : c
         )
       );
-      setViewer(clip);
+      setViewer({ ...clip });
     } catch (e: any) {
       setError(e.message || 'Purchase failed');
     } finally {
@@ -208,14 +362,16 @@ export default function ClipsPage() {
     }
   };
 
+  /** Click card: always open modal. Locked users see 15s preview + buy. */
   const openClip = (clip: ClipRow) => {
-    const owns =
-      ownedIds.has(clip.id) ||
-      clip.creator_id === userId ||
-      Number(clip.price_gbp) === 0;
-    if (owns) setViewer(clip);
-    else buy(clip);
+    setViewer(clip);
   };
+
+  const ownsViewer =
+    viewer &&
+    (ownedIds.has(viewer.id) ||
+      viewer.creator_id === userId ||
+      Number(viewer.price_gbp) === 0);
 
   return (
     <AuthGuard>
@@ -230,7 +386,7 @@ export default function ClipsPage() {
                   Clips
                 </h1>
                 <p className="text-zinc-500 text-sm mt-1">
-                  Premium locked videos — unlock once, watch anytime
+                  Hover for a 15s preview · unlock once, watch anytime
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -320,96 +476,14 @@ export default function ClipsPage() {
                     ownedIds.has(clip.id) ||
                     clip.creator_id === userId ||
                     Number(clip.price_gbp) === 0;
-                  const name =
-                    clip.profiles?.display_name ||
-                    (clip.profiles?.username
-                      ? `@${clip.profiles.username}`
-                      : 'Creator');
-                  const dur = formatDuration(clip.duration_seconds);
                   return (
-                    <button
+                    <ClipCard
                       key={clip.id}
-                      type="button"
-                      onClick={() => openClip(clip)}
-                      className="text-left bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-pink-500/40 transition group"
-                    >
-                      <div className="relative aspect-video bg-zinc-800">
-                        {clip.thumbnail_url ? (
-                          <img
-                            src={clip.thumbnail_url}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Film className="text-zinc-600" size={36} />
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 flex items-center justify-center transition">
-                          {owns ? (
-                            <div className="w-12 h-12 rounded-full bg-pink-600/90 flex items-center justify-center">
-                              <Play size={22} className="text-white ml-0.5" />
-                            </div>
-                          ) : (
-                            <div className="w-12 h-12 rounded-full bg-zinc-900/80 border border-zinc-600 flex items-center justify-center">
-                              <Lock size={18} className="text-zinc-200" />
-                            </div>
-                          )}
-                        </div>
-                        {dur && (
-                          <span className="absolute bottom-2 right-2 text-[10px] bg-black/70 px-1.5 py-0.5 rounded">
-                            {dur}
-                          </span>
-                        )}
-                        {owns && (
-                          <span className="absolute top-2 left-2 text-[10px] font-medium bg-emerald-500/90 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Check size={10} /> Owned
-                          </span>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <p className="font-semibold truncate">{clip.title}</p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          {clip.profiles?.avatar_url ? (
-                            <img
-                              src={clip.profiles.avatar_url}
-                              alt=""
-                              className="w-5 h-5 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-5 h-5 rounded-full bg-zinc-700" />
-                          )}
-                          <Link
-                            href={
-                              clip.profiles?.username
-                                ? `/${clip.profiles.username}`
-                                : '#'
-                            }
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs text-zinc-400 hover:text-pink-400 truncate"
-                          >
-                            {name}
-                          </Link>
-                        </div>
-                        <div className="flex items-center justify-between mt-3">
-                          <span className="text-sm font-semibold text-pink-400">
-                            {Number(clip.price_gbp) === 0
-                              ? 'Free'
-                              : money(Number(clip.price_gbp))}
-                          </span>
-                          <span className="text-xs text-zinc-500 flex items-center gap-1">
-                            <ShoppingBag size={12} />
-                            {clip.sales_count || 0}
-                          </span>
-                        </div>
-                        {buyingId === clip.id && (
-                          <p className="text-xs text-pink-300 mt-2 flex items-center gap-1">
-                            <Loader2 size={12} className="animate-spin" />{' '}
-                            Unlocking…
-                          </p>
-                        )}
-                      </div>
-                    </button>
+                      clip={clip}
+                      owns={owns}
+                      buying={buyingId === clip.id}
+                      onOpen={() => openClip(clip)}
+                    />
                   );
                 })}
               </div>
@@ -417,7 +491,7 @@ export default function ClipsPage() {
           </div>
         </main>
 
-        {/* Player / unlock modal */}
+        {/* Modal: full video if owned; else 15s preview + unlock */}
         {viewer && (
           <div className="fixed inset-0 z-[100] bg-black/80 flex items-end sm:items-center justify-center p-4">
             <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
@@ -431,22 +505,61 @@ export default function ClipsPage() {
                   <X size={20} />
                 </button>
               </div>
-              <div className="bg-black aspect-video">
-                {(ownedIds.has(viewer.id) ||
-                  viewer.creator_id === userId ||
-                  Number(viewer.price_gbp) === 0) &&
-                viewer.video_url ? (
+              <div className="bg-black aspect-video relative">
+                {ownsViewer && fullSrc(viewer) ? (
                   <video
-                    src={viewer.video_url}
+                    key={`full-${viewer.id}`}
+                    src={fullSrc(viewer)!}
                     controls
                     playsInline
+                    autoPlay
                     className="w-full h-full"
                     poster={viewer.thumbnail_url || undefined}
                   />
+                ) : previewSrc(viewer) ? (
+                  <>
+                    <video
+                      key={`prev-${viewer.id}`}
+                      src={previewSrc(viewer)!}
+                      controls
+                      playsInline
+                      autoPlay
+                      muted={false}
+                      className="w-full h-full"
+                      poster={viewer.thumbnail_url || undefined}
+                    />
+                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-4 pt-10">
+                      <p className="text-xs text-zinc-300 mb-2 flex items-center gap-1.5">
+                        <Lock size={12} /> 15s preview · unlock for full video
+                      </p>
+                      <button
+                        type="button"
+                        disabled={buyingId === viewer.id}
+                        onClick={() => buy(viewer)}
+                        className="w-full py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
+                      >
+                        {buyingId === viewer.id
+                          ? 'Unlocking…'
+                          : `Unlock · ${money(Number(viewer.price_gbp))}`}
+                      </button>
+                    </div>
+                  </>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-zinc-400">
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-zinc-400 p-6">
                     <Lock size={28} />
-                    <p className="text-sm">Purchase to unlock</p>
+                    <p className="text-sm text-center">
+                      Preview not ready yet. You can still unlock the full clip.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={buyingId === viewer.id}
+                      onClick={() => buy(viewer)}
+                      className="mt-2 px-6 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
+                    >
+                      {buyingId === viewer.id
+                        ? 'Unlocking…'
+                        : `Unlock · ${money(Number(viewer.price_gbp))}`}
+                    </button>
                   </div>
                 )}
               </div>
@@ -462,4 +575,5 @@ export default function ClipsPage() {
     </AuthGuard>
   );
 }
+
 

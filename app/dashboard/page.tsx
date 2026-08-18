@@ -976,6 +976,29 @@ export default function DashboardPage() {
 
       if (insErr) throw insErr;
 
+      // Separate ~15s public preview for hover / locked modal (non-fatal if slow)
+      setClipCompressStatus('Creating 15s preview…');
+      setClipCompressPct(98);
+      try {
+        const prevRes = await fetch('/api/mux/create-preview', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            assetId: ready.assetId,
+            clipId: row.id,
+            seconds: 15,
+          }),
+        });
+        if (!prevRes.ok) {
+          console.warn('preview create failed', await prevRes.text());
+        }
+      } catch (prevErr) {
+        console.warn('preview create error', prevErr);
+      }
+
       setMyClips((prev) => [
         {
           id: row.id,
