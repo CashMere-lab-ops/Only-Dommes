@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const mux = getMux();
 
     const previewAsset = await mux.video.assets.create({
-      input: [
+      inputs: [
         {
           url: `mux://${assetId}`,
           start_time: 0,
