@@ -13,7 +13,6 @@ import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
 import { notifyBalanceUpdated } from '../../lib/wallet';
-import { compressClip } from '../../lib/compressClip';
 
 type Item = {
   id: string;
@@ -829,51 +828,116 @@ export default function DashboardPage() {
       return;
     }
 
-    // Allow large phone files; we compress before upload
-    const maxBytes = 1024 * 1024 * 1024; // 1GB original
+    // Mux handles encoding; keep a hard ceiling so uploads don't hang forever
+    const maxBytes = 2 * 1024 * 1024 * 1024; // 2GB
     if (clipFile.size > maxBytes) {
-      alert(
-        'Video must be under 1GB. For longer videos, compress with HandBrake first (1080p).'
-      );
+      alert('Video must be under 2GB.');
       return;
     }
 
     setCreating(true);
-    setClipCompressPct(0);
-    setClipCompressStatus('Preparing…');
+    setClipCompressPct(5);
+    setClipCompressStatus('Getting secure upload…');
     try {
-      // Fast auto-compress (big files → 720p ultrafast; smaller → 1080p veryfast)
-      const result = await compressClip(clipFile, {
-        onProgress: (p) => setClipCompressPct(p),
-        onStatus: (msg) => setClipCompressStatus(msg),
-      });
-
-      const fileToUpload = result.file;
-      if (result.compressed) {
-        setClipCompressStatus(
-          `Compressed ${result.originalMB.toFixed(0)}MB → ${result.finalMB.toFixed(0)}MB`
-        );
-      } else {
-        setClipCompressStatus('Uploading original…');
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Please log in again');
       }
 
-      setClipCompressPct(98);
-      const ext = fileToUpload.name.split('.').pop() || 'mp4';
-      const path = `${profile.id}/${Date.now()}.${ext}`;
+      // 1) Create Mux direct upload
+      const createRes = await fetch('/api/mux/create-upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          cors_origin:
+            typeof window !== 'undefined' ? window.location.origin : '*',
+        }),
+      });
+      const createJson = await createRes.json();
+      if (!createRes.ok || !createJson.uploadUrl) {
+        throw new Error(createJson.error || 'Could not start Mux upload');
+      }
 
-      const { error: upErr } = await supabase.storage
-        .from('clips')
-        .upload(path, fileToUpload, {
-          contentType: fileToUpload.type || 'video/mp4',
-          upsert: false,
-        });
-      if (upErr) throw upErr;
+      const { uploadId, uploadUrl } = createJson;
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from('clips').getPublicUrl(path);
+      // 2) PUT file straight to Mux (progress via xhr)
+      setClipCompressStatus('Uploading to Mux…');
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl);
+        xhr.setRequestHeader(
+          'Content-Type',
+          clipFile.type || 'application/octet-stream'
+        );
+        xhr.upload.onprogress = (e) => {
+          if (!e.lengthComputable) return;
+          const pct = Math.round((e.loaded / e.total) * 70) + 5; // 5–75
+          setClipCompressPct(Math.min(pct, 75));
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`Upload failed (${xhr.status})`));
+        };
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.send(clipFile);
+      });
 
-      let thumbUrl: string | null = null;
+      // 3) Poll until Mux asset is ready
+      setClipCompressStatus('Processing video…');
+      setClipCompressPct(80);
+
+      let ready: {
+        videoUrl: string;
+        thumbnailUrl: string;
+        playbackId: string;
+        assetId: string;
+        duration: number | null;
+      } | null = null;
+
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const stRes = await fetch(
+          `/api/mux/asset-status?uploadId=${encodeURIComponent(uploadId)}`,
+          {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }
+        );
+        const st = await stRes.json();
+        if (!stRes.ok) throw new Error(st.error || 'Status check failed');
+
+        if (st.ready && st.videoUrl && st.playbackId) {
+          ready = {
+            videoUrl: st.videoUrl,
+            thumbnailUrl: st.thumbnailUrl,
+            playbackId: st.playbackId,
+            assetId: st.assetId,
+            duration: st.duration ?? null,
+          };
+          break;
+        }
+        if (st.status === 'errored' || st.status === 'cancelled') {
+          throw new Error('Mux could not process this video');
+        }
+        setClipCompressPct(Math.min(80 + i, 95));
+        setClipCompressStatus(`Processing video… (${st.status || 'waiting'})`);
+      }
+
+      if (!ready) {
+        throw new Error(
+          'Processing is taking longer than expected. Try again in a minute.'
+        );
+      }
+
+      setClipCompressPct(97);
+      setClipCompressStatus('Saving clip…');
+
+      // Optional custom thumbnail still goes to Supabase storage
+      let thumbUrl: string | null = ready.thumbnailUrl || null;
       if (clipThumb) {
         const tExt = clipThumb.name.split('.').pop() || 'jpg';
         const tPath = `${profile.id}/thumbs/${Date.now()}.${tExt}`;
@@ -889,24 +953,6 @@ export default function DashboardPage() {
         }
       }
 
-      // Read duration from the original file (before/after compress)
-      let durationSeconds: number | null = null;
-      try {
-        durationSeconds = await new Promise<number | null>((resolve) => {
-          const v = document.createElement('video');
-          v.preload = 'metadata';
-          v.onloadedmetadata = () => {
-            const d = Math.round(v.duration);
-            URL.revokeObjectURL(v.src);
-            resolve(Number.isFinite(d) && d > 0 ? d : null);
-          };
-          v.onerror = () => resolve(null);
-          v.src = URL.createObjectURL(clipFile);
-        });
-      } catch {
-        durationSeconds = null;
-      }
-
       const price = Math.max(0, Number(clipForm.price) || 0);
       const { data: row, error: insErr } = await supabase
         .from('clips')
@@ -916,9 +962,11 @@ export default function DashboardPage() {
           description: clipForm.description.trim() || null,
           price_gbp: Math.round(price * 100) / 100,
           category: clipForm.category || 'Other',
-          video_url: publicUrl,
+          video_url: ready.videoUrl,
           thumbnail_url: thumbUrl,
-          duration_seconds: durationSeconds,
+          duration_seconds: ready.duration,
+          mux_asset_id: ready.assetId,
+          mux_playback_id: ready.playbackId,
           is_published: true,
         })
         .select(
@@ -3065,7 +3113,7 @@ export default function DashboardPage() {
                   <label className="text-sm text-zinc-400 mb-1.5 block">
                     Video file{' '}
                     <span className="text-zinc-600">
-                      (max 1GB · fast auto-compress)
+                      (max 2GB · powered by Mux)
                     </span>
                   </label>
                   <input
@@ -3095,8 +3143,8 @@ export default function DashboardPage() {
                         />
                       </div>
                       <p className="text-[11px] text-zinc-500">
-                        First time loads the engine once. Big clips use a fast
-                        720p pass so uploads finish much quicker.
+                        File goes straight to Mux — no long browser compress.
+                        Processing usually finishes within a minute.
                       </p>
                     </div>
                   )}
@@ -3195,9 +3243,11 @@ export default function DashboardPage() {
                   className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
                 >
                   {creating
-                    ? clipCompressPct < 97
-                      ? 'Compressing…'
-                      : 'Uploading…'
+                    ? clipCompressPct < 75
+                      ? 'Uploading…'
+                      : clipCompressPct < 97
+                        ? 'Processing…'
+                        : 'Saving…'
                     : 'Publish Clip'}
                 </button>
               </div>
