@@ -54,10 +54,7 @@ export async function POST(request: Request) {
       cors_origin: corsOrigin,
       new_asset_settings: {
         playback_policy: ['public'],
-        // MP4 support helps some players / fallbacks
-        mp4_support: 'standard',
       },
-      // Optional: timeout in seconds for incomplete uploads
       timeout: 3600,
     });
 
