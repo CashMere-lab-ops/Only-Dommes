@@ -15,13 +15,13 @@ import {
   PhoneOff,
   DollarSign,
   X,
+  Send,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
   Room,
   RoomEvent,
   Track,
-  ConnectionState,
   createLocalVideoTrack,
   createLocalAudioTrack,
   type LocalTrack,
@@ -41,6 +41,21 @@ type StreamRow = {
   viewer_count?: number;
 };
 
+type ChatMsg = {
+  id: string;
+  stream_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  profile?: {
+    username?: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
+};
+
+const TIP_PRESETS = [5, 10, 20, 50];
+
 export default function LiveWatchPage() {
   const params = useParams();
   const router = useRouter();
@@ -52,6 +67,7 @@ export default function LiveWatchPage() {
   const [stream, setStream] = useState<StreamRow | null>(null);
   const [creator, setCreator] = useState<any>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [myProfile, setMyProfile] = useState<any>(null);
   const [error, setError] = useState('');
   const [ending, setEnding] = useState(false);
   const [liveStatus, setLiveStatus] = useState<
@@ -67,7 +83,12 @@ export default function LiveWatchPage() {
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
 
-  const TIP_PRESETS = [5, 10, 20, 50];
+  // Chat
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
+  const [chatText, setChatText] = useState('');
+  const [sendingChat, setSendingChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const chatBoxRef = useRef<HTMLDivElement | null>(null);
 
   const roomRef = useRef<Room | null>(null);
   const localTracksRef = useRef<LocalTrack[]>([]);
@@ -98,11 +119,46 @@ export default function LiveWatchPage() {
     }
   }, []);
 
+  const enrichMessages = async (rows: any[]): Promise<ChatMsg[]> => {
+    if (!rows.length) return [];
+    const ids = [...new Set(rows.map((r) => r.user_id))];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .in('id', ids);
+    const map = new Map((profiles || []).map((p: any) => [p.id, p]));
+    return rows.map((r) => ({
+      ...r,
+      profile: map.get(r.user_id) || null,
+    }));
+  };
+
+  const loadChat = async (streamId: string) => {
+    const { data } = await supabase
+      .from('live_chat_messages')
+      .select('*')
+      .eq('stream_id', streamId)
+      .order('created_at', { ascending: false })
+      .limit(40);
+    const rows = (data || []).reverse();
+    const enriched = await enrichMessages(rows);
+    setChatMessages(enriched);
+  };
+
   const loadMeta = async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
     setUserId(user?.id || null);
+
+    if (user) {
+      const { data: me } = await supabase
+        .from('profiles')
+        .select('username, display_name, avatar_url')
+        .eq('id', user.id)
+        .single();
+      setMyProfile(me);
+    }
 
     const { data, error: qErr } = await supabase
       .from('live_streams')
@@ -126,6 +182,8 @@ export default function LiveWatchPage() {
       .single();
     setCreator(profile);
     setLoading(false);
+
+    await loadChat(data.id);
     return { stream: data, userId: user?.id || null };
   };
 
@@ -181,10 +239,6 @@ export default function LiveWatchPage() {
         setViewerCount(Math.max(0, room.numParticipants - 1));
       });
 
-      room.on(RoomEvent.ConnectionStateChanged, (_state) => {
-        void _state;
-      });
-
       await room.connect(data.url, data.token);
 
       if (asCreator) {
@@ -215,7 +269,8 @@ export default function LiveWatchPage() {
         room.remoteParticipants.forEach((p) => {
           p.trackPublications.forEach((pub) => {
             if (pub.track && pub.track.kind === Track.Kind.Video) {
-              if (remoteVideoRef.current) pub.track.attach(remoteVideoRef.current);
+              if (remoteVideoRef.current)
+                pub.track.attach(remoteVideoRef.current);
             }
             if (pub.track && pub.track.kind === Track.Kind.Audio) {
               const el = pub.track.attach();
@@ -272,6 +327,59 @@ export default function LiveWatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Realtime chat
+  useEffect(() => {
+    if (!id) return;
+
+    const channel = supabase
+      .channel(`live-chat-${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'live_chat_messages',
+          filter: `stream_id=eq.${id}`,
+        },
+        async (payload) => {
+          const row = payload.new as any;
+          if (!row?.id) return;
+          setChatMessages((prev) => {
+            if (prev.some((m) => m.id === row.id)) return prev;
+            return [
+              ...prev,
+              {
+                ...row,
+                profile: null,
+              },
+            ].slice(-50);
+          });
+          // Enrich profile in background
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('username, display_name, avatar_url')
+            .eq('id', row.user_id)
+            .single();
+          if (profile) {
+            setChatMessages((prev) =>
+              prev.map((m) =>
+                m.id === row.id ? { ...m, profile } : m
+              )
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [id, supabase]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
   useEffect(() => {
     if (!isOwner || liveStatus !== 'live') return;
     const t = setInterval(() => {
@@ -287,7 +395,6 @@ export default function LiveWatchPage() {
     return () => clearInterval(t);
   }, [isOwner, liveStatus, id, supabase]);
 
-  // Lock body scroll on mobile while watching
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -310,6 +417,44 @@ export default function LiveWatchPage() {
     const next = !micOn;
     await room.localParticipant.setMicrophoneEnabled(next);
     setMicOn(next);
+  };
+
+  const sendChat = async () => {
+    const text = chatText.trim();
+    if (!text || !userId || !stream || sendingChat) return;
+    if (text.length > 300) return;
+    setSendingChat(true);
+    try {
+      const { data, error: insErr } = await supabase
+        .from('live_chat_messages')
+        .insert({
+          stream_id: stream.id,
+          user_id: userId,
+          content: text,
+        })
+        .select('*')
+        .single();
+
+      if (insErr) throw new Error(insErr.message);
+      setChatText('');
+      // Optimistic already covered by realtime; if slow, push local
+      if (data) {
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === data.id)) return prev;
+          return [
+            ...prev,
+            {
+              ...data,
+              profile: myProfile,
+            },
+          ].slice(-50);
+        });
+      }
+    } catch (e: any) {
+      alert(e.message || 'Could not send');
+    } finally {
+      setSendingChat(false);
+    }
   };
 
   const sendTip = async (amount: number) => {
@@ -357,6 +502,18 @@ export default function LiveWatchPage() {
       setTimeout(() => setTipFlash(null), 3000);
       setShowTip(false);
       setCustomTip('');
+
+      // Optional system-style chat line from tipper
+      const tipLine = `tipped £${Number(data.amount).toFixed(2)} 💸`;
+      try {
+        await supabase.from('live_chat_messages').insert({
+          stream_id: stream.id,
+          user_id: userId!,
+          content: tipLine,
+        });
+      } catch {
+        /* ignore */
+      }
     } catch (e: any) {
       setTipError(e.message || 'Tip failed');
     } finally {
@@ -426,21 +583,28 @@ export default function LiveWatchPage() {
   const goal = Number(stream?.tip_goal_gbp || 0);
   const raised = Number(stream?.tip_raised_gbp || 0);
 
+  const displayName = (m: ChatMsg) =>
+    m.profile?.display_name ||
+    (m.profile?.username ? `@${m.profile.username}` : 'Fan');
+
+  const isCreatorMsg = (m: ChatMsg) =>
+    !!stream && m.user_id === stream.creator_id;
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-black text-white flex">
-        {/* Desktop sidebar only */}
         <div className="hidden lg:block">
           <Sidebar />
         </div>
 
         <main className="flex-1 flex flex-col h-[100dvh] max-h-[100dvh] overflow-hidden relative">
-          {/* Video fills screen */}
           <div className="flex-1 min-h-0 relative bg-black">
             {ended ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 gap-2 px-6">
                 <Radio size={40} className="text-zinc-600" />
-                <p className="font-semibold text-zinc-200 text-lg">Stream ended</p>
+                <p className="font-semibold text-zinc-200 text-lg">
+                  Stream ended
+                </p>
                 <p className="text-sm text-center">This live was not saved</p>
                 <Link
                   href="/live"
@@ -491,7 +655,7 @@ export default function LiveWatchPage() {
               </>
             )}
 
-            {/* Top overlay */}
+            {/* Top bar */}
             {!ended && (
               <div
                 className="absolute top-0 inset-x-0 z-20 flex items-start justify-between gap-3 px-3 pointer-events-none"
@@ -532,7 +696,7 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Tip goal strip — always show if goal set; else show raised if any */}
+            {/* Tip goal */}
             {!ended && (goal > 0 || raised > 0) && (
               <div className="absolute top-16 sm:top-20 left-3 right-3 z-20 pointer-events-none">
                 <div className="bg-black/50 backdrop-blur rounded-xl px-3 py-2 border border-white/10 max-w-md">
@@ -562,94 +726,141 @@ export default function LiveWatchPage() {
 
             {tipFlash && (
               <div className="absolute top-1/3 inset-x-0 z-30 flex justify-center pointer-events-none px-4">
-                <div className="bg-pink-600/95 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl animate-pulse">
+                <div className="bg-pink-600/95 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl">
                   {tipFlash}
                 </div>
               </div>
             )}
 
-            {/* Creator controls — floating bottom */}
-            {isOwner && !ended && liveStatus === 'live' && (
+            {/* Floating chat (LoyalFans / IG Live style) */}
+            {!ended && (
               <div
-                className="absolute bottom-0 inset-x-0 z-20 flex justify-center gap-3 px-4 pointer-events-none"
+                ref={chatBoxRef}
+                className="absolute left-0 right-0 z-20 pointer-events-none px-3"
                 style={{
-                  paddingBottom:
-                    'max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))',
+                  bottom:
+                    'max(5.5rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
+                  maxHeight: '38vh',
                 }}
               >
-                <div className="pointer-events-auto flex items-center gap-3 bg-black/60 backdrop-blur border border-white/10 rounded-full px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={toggleMic}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition ${
-                      micOn
-                        ? 'bg-zinc-800 text-white'
-                        : 'bg-red-600 text-white'
-                    }`}
-                  >
-                    {micOn ? <Mic size={20} /> : <MicOff size={20} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={toggleCam}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition ${
-                      camOn
-                        ? 'bg-zinc-800 text-white'
-                        : 'bg-red-600 text-white'
-                    }`}
-                  >
-                    {camOn ? <Video size={20} /> : <VideoOff size={20} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={endLive}
-                    disabled={ending}
-                    className="h-12 px-5 rounded-full bg-red-600 hover:bg-red-500 font-semibold text-sm flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {ending ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <PhoneOff size={18} />
-                    )}
-                    End
-                  </button>
+                <div className="max-w-md space-y-1.5 overflow-y-auto pointer-events-auto mask-fade-chat pr-2">
+                  {chatMessages.slice(-25).map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-start gap-2 animate-in fade-in"
+                    >
+                      <div className="bg-black/45 backdrop-blur-sm rounded-2xl px-2.5 py-1.5 max-w-[90%]">
+                        <span
+                          className={`text-xs font-semibold mr-1.5 ${
+                            isCreatorMsg(m)
+                              ? 'text-pink-400'
+                              : 'text-pink-200/90'
+                          }`}
+                        >
+                          {displayName(m)}
+                          {isCreatorMsg(m) ? ' · Host' : ''}
+                        </span>
+                        <span className="text-sm text-white/95 break-words">
+                          {m.content}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={chatEndRef} />
                 </div>
               </div>
             )}
 
-            {/* Viewer tip button */}
-            {!isOwner && !ended && liveStatus === 'live' && (
+            {/* Bottom: chat input + tip / creator controls */}
+            {!ended && liveStatus === 'live' && (
               <div
-                className="absolute bottom-0 inset-x-0 z-20 flex justify-center px-4 pointer-events-none"
+                className="absolute bottom-0 inset-x-0 z-20 px-3 pointer-events-none"
                 style={{
                   paddingBottom:
-                    'max(1rem, calc(env(safe-area-inset-bottom) + 0.75rem))',
+                    'max(0.75rem, calc(env(safe-area-inset-bottom) + 0.5rem))',
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTipError('');
-                    setShowTip(true);
-                  }}
-                  className="pointer-events-auto min-h-[48px] px-8 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-base shadow-lg shadow-pink-900/40 flex items-center gap-2 active:scale-95 transition"
-                >
-                  <DollarSign size={20} />
-                  Tip
-                </button>
+                <div className="pointer-events-auto flex items-center gap-2 max-w-2xl mx-auto">
+                  <div className="flex-1 flex items-center gap-1.5 bg-black/55 backdrop-blur border border-white/15 rounded-full pl-4 pr-1.5 py-1.5 min-w-0">
+                    <input
+                      value={chatText}
+                      onChange={(e) => setChatText(e.target.value.slice(0, 300))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void sendChat();
+                        }
+                      }}
+                      placeholder="Say something…"
+                      className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-zinc-400"
+                      maxLength={300}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void sendChat()}
+                      disabled={sendingChat || !chatText.trim()}
+                      className="w-10 h-10 rounded-full bg-pink-600 hover:bg-pink-500 disabled:opacity-40 flex items-center justify-center flex-shrink-0 transition"
+                    >
+                      {sendingChat ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Send size={16} />
+                      )}
+                    </button>
+                  </div>
+
+                  {!isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTipError('');
+                        setShowTip(true);
+                      }}
+                      className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40"
+                      title="Tip"
+                    >
+                      <DollarSign size={20} />
+                    </button>
+                  )}
+
+                  {isOwner && (
+                    <div className="flex items-center gap-1.5 bg-black/55 backdrop-blur border border-white/15 rounded-full px-1.5 py-1.5">
+                      <button
+                        type="button"
+                        onClick={toggleMic}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          micOn ? 'bg-zinc-800' : 'bg-red-600'
+                        }`}
+                      >
+                        {micOn ? <Mic size={18} /> : <MicOff size={18} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleCam}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          camOn ? 'bg-zinc-800' : 'bg-red-600'
+                        }`}
+                      >
+                        {camOn ? <Video size={18} /> : <VideoOff size={18} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={endLive}
+                        disabled={ending}
+                        className="h-10 px-3 rounded-full bg-red-600 text-sm font-semibold flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {ending ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <PhoneOff size={16} />
+                        )}
+                        End
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-          </div>
-
-          {/* Desktop-only side note under video on large screens */}
-          <div className="hidden lg:block flex-shrink-0 border-t border-zinc-800 bg-zinc-950 px-6 py-4">
-            <div className="max-w-4xl flex items-center justify-between gap-4">
-              <div>
-                <p className="font-semibold">{stream?.title}</p>
-                <p className="text-sm text-zinc-400">{name}</p>
-              </div>
-              <p className="text-xs text-zinc-500">Live chat coming next</p>
-            </div>
           </div>
         </main>
 
@@ -748,4 +959,3 @@ export default function LiveWatchPage() {
     </AuthGuard>
   );
 }
-
