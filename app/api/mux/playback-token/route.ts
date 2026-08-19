@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
+  getPlaybackPolicy,
   muxSigningConfigured,
+  normalizePlaybackId,
   signFullPlayback,
   signThumbnail,
 } from '../../../../lib/mux';
@@ -9,18 +11,11 @@ import {
 export const dynamic = 'force-dynamic';
 
 /**
- * Full-video token — only creator or buyer of the clip.
- * GET ?clipId=...
+ * Full-video token — only creator or buyer.
+ * Public clips return { public: true } (no JWT).
  */
 export async function GET(request: Request) {
   try {
-    if (!muxSigningConfigured()) {
-      return NextResponse.json(
-        { error: 'Signed playback not configured', public: true },
-        { status: 200 }
-      );
-    }
-
     const auth = request.headers.get('authorization') || '';
     const token = auth.replace(/^Bearer\s+/i, '');
     if (!token) {
@@ -47,11 +42,12 @@ export async function GET(request: Request) {
 
     const { data: clip } = await admin
       .from('clips')
-      .select('id, creator_id, mux_playback_id, price_gbp')
+      .select('id, creator_id, mux_playback_id, mux_asset_id, price_gbp')
       .eq('id', clipId)
       .single();
 
-    if (!clip?.mux_playback_id) {
+    const playbackId = normalizePlaybackId(clip?.mux_playback_id);
+    if (!clip || !playbackId) {
       return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
     }
 
@@ -72,19 +68,35 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Purchase required' }, { status: 403 });
     }
 
-    const playbackToken = await signFullPlayback(clip.mux_playback_id);
+    const policy = await getPlaybackPolicy(
+      playbackId,
+      (clip as any).mux_asset_id
+    );
+
+    if (policy === 'public' || !muxSigningConfigured()) {
+      return NextResponse.json({
+        ok: true,
+        playbackId,
+        token: null,
+        thumbnailToken: null,
+        public: true,
+      });
+    }
+
+    const playbackToken = await signFullPlayback(playbackId);
     let thumbnailToken: string | null = null;
     try {
-      thumbnailToken = await signThumbnail(clip.mux_playback_id, 1);
+      thumbnailToken = await signThumbnail(playbackId, 1);
     } catch {
       thumbnailToken = null;
     }
 
     return NextResponse.json({
       ok: true,
-      playbackId: clip.mux_playback_id,
+      playbackId,
       token: playbackToken,
       thumbnailToken,
+      public: false,
     });
   } catch (e: any) {
     console.error('playback-token', e);

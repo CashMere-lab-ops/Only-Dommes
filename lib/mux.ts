@@ -29,6 +29,19 @@ export function getMux() {
   return muxClient;
 }
 
+/** Strip full stream URLs down to a bare Mux playback id */
+export function normalizePlaybackId(raw?: string | null): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  // https://stream.mux.com/PLAYBACK_ID.m3u8?...
+  const fromUrl = s.match(/stream\.mux\.com\/([A-Za-z0-9]+)/);
+  if (fromUrl?.[1]) return fromUrl[1];
+  // already an id (no slashes / dots except rare)
+  if (s.includes('://')) return null;
+  return s.split('?')[0].replace(/\.m3u8$/i, '');
+}
+
 export function muxPlaybackUrl(playbackId: string, token?: string) {
   if (token) {
     return `https://stream.mux.com/${playbackId}.m3u8?token=${token}`;
@@ -71,4 +84,28 @@ export async function signThumbnail(playbackId: string, time = 1) {
     type: 'thumbnail',
     params: { time },
   } as any);
+}
+
+/**
+ * Returns whether this playback id is "signed" or "public".
+ * Defaults to public if unknown (safe for older clips).
+ */
+export async function getPlaybackPolicy(
+  playbackId: string,
+  assetId?: string | null
+): Promise<'signed' | 'public'> {
+  try {
+    const mux = getMux();
+    if (assetId) {
+      const asset = await mux.video.assets.retrieve(assetId);
+      const match =
+        asset.playback_ids?.find((p) => p.id === playbackId) ||
+        asset.playback_ids?.[0];
+      if (match?.policy === 'signed') return 'signed';
+      return 'public';
+    }
+  } catch {
+    /* fall through */
+  }
+  return 'public';
 }
