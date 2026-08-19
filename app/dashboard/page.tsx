@@ -200,6 +200,8 @@ export default function DashboardPage() {
   const [subCount, setSubCount] = useState(0);
   const [mySubscriptions, setMySubscriptions] = useState<any[]>([]);
   const [mySubCount, setMySubCount] = useState(0);
+  const [spentThisMonth, setSpentThisMonth] = useState(0);
+  const [clipsOwned, setClipsOwned] = useState(0);
   const [earnToday, setEarnToday] = useState(0);
   const [earnWeek, setEarnWeek] = useState(0);
   const [earnMonth, setEarnMonth] = useState(0);
@@ -625,6 +627,27 @@ export default function DashboardPage() {
         .limit(300);
       setAllTxs(ledger || []);
 
+      // Sub stats: spent this month + clips owned
+      {
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        let spent = 0;
+        for (const row of ledger || []) {
+          const created = new Date(row.created_at);
+          if (created < monthStart) continue;
+          const amt = Number(row.amount_gbp || 0);
+          // Money leaving the wallet (tips, clips, unlocks, calls, shop, subs)
+          if (amt < 0) spent += Math.abs(amt);
+        }
+        setSpentThisMonth(Math.round(spent * 100) / 100);
+
+        const { count: ownedCount } = await supabase
+          .from('clip_purchases')
+          .select('*', { count: 'exact', head: true })
+          .eq('buyer_id', user.id);
+        setClipsOwned(ownedCount || 0);
+      }
+
       // Recent voice calls (sub or creator)
       const { data: callRows } = await supabase
         .from('voice_calls')
@@ -666,52 +689,72 @@ export default function DashboardPage() {
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
-    const mergeTipRow = async (row: any, userId: string) => {
-      if (!row || row.type !== 'tip_received') return;
+    const mergeWalletRow = async (row: any, userId: string) => {
+      if (!row) return;
       if (row.user_id && row.user_id !== userId) return;
-
-      let from_name = 'Subscriber';
-      let from_username: string | null = null;
-      let from_avatar: string | null = null;
-      if (row.counterparty_id) {
-        const { data: p } = await supabase
-          .from('profiles')
-          .select('username, display_name, avatar_url')
-          .eq('id', row.counterparty_id)
-          .maybeSingle();
-        if (p) {
-          from_name = p.display_name || p.username || from_name;
-          from_username = p.username;
-          from_avatar = p.avatar_url;
-        }
-      }
-
-      const tip = {
-        id: String(row.id),
-        amount_gbp: Number(row.amount_gbp || 0),
-        created_at: row.created_at || new Date().toISOString(),
-        description: row.description,
-        from_name,
-        from_username,
-        from_avatar,
-      };
 
       setAllTxs((prev) => {
         if (prev.some((t) => t.id === row.id)) return prev;
         return [row, ...prev].slice(0, 300);
       });
-      setRecentTips((prev) => {
-        if (prev.some((t) => t.id === tip.id)) return prev;
-        return [tip, ...prev].slice(0, 20);
-      });
 
       const amt = Number(row.amount_gbp || 0);
-      if (amt > 0) {
-        setEarnToday((v) => Math.round((v + amt) * 100) / 100);
-        setEarnWeek((v) => Math.round((v + amt) * 100) / 100);
-        setEarnMonth((v) => Math.round((v + amt) * 100) / 100);
-        setEarnAllTime((v) => Math.round((v + amt) * 100) / 100);
+      const created = new Date(row.created_at || Date.now());
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const inThisMonth = created >= monthStart;
+
+      // Sub spend (money out)
+      if (amt < 0 && inThisMonth) {
+        setSpentThisMonth((v) => Math.round((v + Math.abs(amt)) * 100) / 100);
       }
+
+      // Clip purchase → bump owned count
+      if (row.type === 'clip_sent') {
+        setClipsOwned((v) => v + 1);
+      }
+
+      // Creator tips still feed recent tips + earnings
+      if (row.type === 'tip_received') {
+        let from_name = 'Subscriber';
+        let from_username: string | null = null;
+        let from_avatar: string | null = null;
+        if (row.counterparty_id) {
+          const { data: p } = await supabase
+            .from('profiles')
+            .select('username, display_name, avatar_url')
+            .eq('id', row.counterparty_id)
+            .maybeSingle();
+          if (p) {
+            from_name = p.display_name || p.username || from_name;
+            from_username = p.username;
+            from_avatar = p.avatar_url;
+          }
+        }
+
+        const tip = {
+          id: String(row.id),
+          amount_gbp: Number(row.amount_gbp || 0),
+          created_at: row.created_at || new Date().toISOString(),
+          description: row.description,
+          from_name,
+          from_username,
+          from_avatar,
+        };
+
+        setRecentTips((prev) => {
+          if (prev.some((t) => t.id === tip.id)) return prev;
+          return [tip, ...prev].slice(0, 20);
+        });
+
+        if (amt > 0) {
+          setEarnToday((v) => Math.round((v + amt) * 100) / 100);
+          setEarnWeek((v) => Math.round((v + amt) * 100) / 100);
+          setEarnMonth((v) => Math.round((v + amt) * 100) / 100);
+          setEarnAllTime((v) => Math.round((v + amt) * 100) / 100);
+        }
+      }
+
       if (typeof row.balance_after === 'number') {
         setProfile((p: any) =>
           p ? { ...p, balance_gbp: row.balance_after } : p
@@ -778,7 +821,7 @@ export default function DashboardPage() {
             filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
-            mergeTipRow(payload.new, user.id);
+            mergeWalletRow(payload.new, user.id);
           }
         )
         .subscribe((status) => {
@@ -788,9 +831,32 @@ export default function DashboardPage() {
           }
         });
 
-      // Backup: refresh tips every 12s while dashboard is open
-      pollTimer = setInterval(() => {
+      // Backup: refresh tips + sub stats while dashboard is open
+      pollTimer = setInterval(async () => {
         refreshTipsQuiet(user.id);
+        // Spent this month + clips owned (sub dashboard)
+        const { data: recentLedger } = await supabase
+          .from('wallet_transactions')
+          .select('amount_gbp, created_at, type')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(300);
+        if (recentLedger) {
+          const now = new Date();
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          let spent = 0;
+          for (const row of recentLedger) {
+            if (new Date(row.created_at) < monthStart) continue;
+            const a = Number(row.amount_gbp || 0);
+            if (a < 0) spent += Math.abs(a);
+          }
+          setSpentThisMonth(Math.round(spent * 100) / 100);
+        }
+        const { count } = await supabase
+          .from('clip_purchases')
+          .select('*', { count: 'exact', head: true })
+          .eq('buyer_id', user.id);
+        setClipsOwned(count || 0);
       }, 12000);
     })();
 
@@ -1562,7 +1628,9 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                     <DollarSign size={16} /> Spent This Month
                   </div>
-                  <p className="text-2xl font-bold">£0.00</p>
+                  <p className="text-2xl font-bold">
+                    {money(spentThisMonth)}
+                  </p>
                 </div>
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                   <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
@@ -1574,7 +1642,13 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                     <Film size={16} /> Clips Owned
                   </div>
-                  <p className="text-2xl font-bold">0</p>
+                  <p className="text-2xl font-bold">{clipsOwned}</p>
+                  <Link
+                    href="/library"
+                    className="mt-2 inline-block text-xs text-pink-400 hover:text-pink-300 font-medium"
+                  >
+                    Open library →
+                  </Link>
                 </div>
                 <Link
                   href="/wallet?from=dashboard"
