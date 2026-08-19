@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   BookOpen,
   Film,
@@ -9,11 +10,19 @@ import {
   Play,
   Search,
   X,
-  ShoppingBag,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
+
+const MuxPlayer = dynamic(() => import('@mux/mux-player-react'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-black">
+      <Loader2 className="animate-spin text-pink-500" size={28} />
+    </div>
+  ),
+});
 
 type OwnedClip = {
   id: string;
@@ -21,6 +30,7 @@ type OwnedClip = {
   description?: string | null;
   price_gbp: number;
   video_url: string;
+  mux_playback_id?: string | null;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
   category?: string | null;
@@ -45,6 +55,136 @@ function formatDuration(sec?: number | null) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Full owned clip — Mux Player + signed token when available */
+function LibraryPlayer({ clip }: { clip: OwnedClip }) {
+  const supabase = createClient();
+  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
+  const [thumbToken, setThumbToken] = useState<string | null>(null);
+  const [usePublic, setUsePublic] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setErr('');
+      setToken(null);
+      setThumbToken(null);
+      setUsePublic(false);
+
+      // Older clips without Mux id — fall back to stored URL
+      if (!clip.mux_playback_id) {
+        setUsePublic(true);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setErr('Please log in again');
+          setLoading(false);
+          return;
+        }
+
+        const res = await fetch(
+          `/api/mux/playback-token?clipId=${encodeURIComponent(clip.id)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+
+        if (data.public || (!data.token && res.ok)) {
+          // Signing not configured — public playback id still works
+          setUsePublic(true);
+        } else if (!res.ok) {
+          setErr(data.error || 'Could not load video');
+        } else {
+          setToken(data.token);
+          setThumbToken(data.thumbnailToken || null);
+        }
+      } catch (e: any) {
+        if (!cancelled) setErr(e.message || 'Player error');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clip.id, clip.mux_playback_id]);
+
+  if (loading) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <Loader2 className="animate-spin text-pink-500" size={28} />
+      </div>
+    );
+  }
+
+  if (err) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-red-300 text-sm px-4 text-center">
+        {err}
+      </div>
+    );
+  }
+
+  // Legacy non-Mux clip
+  if (!clip.mux_playback_id) {
+    if (!clip.video_url) {
+      return (
+        <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm">
+          Video not available
+        </div>
+      );
+    }
+    return (
+      <video
+        src={clip.video_url}
+        controls
+        autoPlay
+        playsInline
+        className="w-full h-full"
+        poster={clip.thumbnail_url || undefined}
+      />
+    );
+  }
+
+  return (
+    <MuxPlayer
+      playbackId={clip.mux_playback_id}
+      tokens={
+        token
+          ? {
+              playback: token,
+              ...(thumbToken ? { thumbnail: thumbToken } : {}),
+            }
+          : undefined
+      }
+      streamType="on-demand"
+      autoPlay
+      playsInline
+      accentColor="#ec4899"
+      primaryColor="#ffffff"
+      secondaryColor="#18181b"
+      metadata={{
+        video_title: clip.title,
+      }}
+      poster={clip.thumbnail_url || undefined}
+      style={{ width: '100%', height: '100%', aspectRatio: '16/9' }}
+    />
+  );
 }
 
 export default function LibraryPage() {
@@ -95,7 +235,7 @@ export default function LibraryPage() {
       const { data: rows, error: clipErr } = await supabase
         .from('clips')
         .select(
-          'id, creator_id, title, description, price_gbp, category, video_url, thumbnail_url, duration_seconds'
+          'id, creator_id, title, description, price_gbp, category, video_url, mux_playback_id, thumbnail_url, duration_seconds'
         )
         .in('id', ids);
 
@@ -108,7 +248,7 @@ export default function LibraryPage() {
       const creatorIds = [
         ...new Set((rows || []).map((c: any) => c.creator_id).filter(Boolean)),
       ];
-      let profileMap: Record<string, any> = {};
+      const profileMap: Record<string, any> = {};
       if (creatorIds.length) {
         const { data: people } = await supabase
           .from('profiles')
@@ -237,6 +377,7 @@ export default function LibraryPage() {
                       >
                         <div className="relative aspect-video bg-zinc-800">
                           {clip.thumbnail_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={clip.thumbnail_url}
                               alt=""
@@ -265,6 +406,7 @@ export default function LibraryPage() {
                           <p className="font-semibold truncate">{clip.title}</p>
                           <div className="flex items-center gap-2 mt-1.5">
                             {clip.profiles?.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={clip.profiles.avatar_url}
                                 alt=""
@@ -336,14 +478,7 @@ export default function LibraryPage() {
                 </button>
               </div>
               <div className="bg-black aspect-video">
-                <video
-                  src={viewer.video_url}
-                  controls
-                  autoPlay
-                  playsInline
-                  className="w-full h-full"
-                  poster={viewer.thumbnail_url || undefined}
-                />
+                <LibraryPlayer key={viewer.id} clip={viewer} />
               </div>
               {viewer.description && (
                 <p className="px-4 py-3 text-sm text-zinc-400 border-t border-zinc-800">
