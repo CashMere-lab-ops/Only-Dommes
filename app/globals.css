@@ -92,3 +92,35 @@ body {
     padding-top: var(--mobile-top-offset, 0px);
   }
 }
+
+/* ===== Mux player — cleaner skip / controls on phone & tablet ===== */
+.wod-mux-player {
+  --media-control-background: transparent;
+  --media-control-hover-background: rgba(255, 255, 255, 0.12);
+  --media-range-bar-color: #ec4899;
+  --media-range-thumb-background: #fff;
+  --media-time-range-buffered-color: rgba(255, 255, 255, 0.25);
+  --media-font-family: system-ui, -apple-system, sans-serif;
+  --media-tooltip-display: none; /* less clutter */
+}
+
+/* Simpler round skip buttons */
+.wod-mux-player::part(seek-backward-button),
+.wod-mux-player::part(seek-forward-button) {
+  border-radius: 9999px;
+  opacity: 0.95;
+}
+
+/* Hide crowded secondary controls on narrow screens */
+@media (max-width: 768px) {
+  .wod-mux-player {
+    --media-button-size: 48px;
+  }
+
+  /* Optional: hide playback rate / pip if present — keeps bar simple */
+  .wod-mux-player::part(playback-rate-button),
+  .wod-mux-player::part(pip-button),
+  .wod-mux-player::part(captions-button) {
+    display: none;
+  }
+}

@@ -56,6 +56,8 @@ export async function POST(request: Request) {
       cors_origin: corsOrigin,
       new_asset_settings: {
         playback_policy: [useSigned ? 'signed' : 'public'],
+        // Allow 1080p (and higher if source supports) in the quality menu
+        max_resolution_tier: '1080p',
       },
       timeout: 3600,
     });

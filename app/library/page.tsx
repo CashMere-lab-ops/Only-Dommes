@@ -178,19 +178,23 @@ function LibraryPlayer({ clip }: { clip: OwnedClip }) {
       accentColor="#ec4899"
       primaryColor="#ffffff"
       secondaryColor="#18181b"
+      forwardSeekOffset={10}
+      backwardSeekOffset={10}
+      defaultHiddenCaptions
       metadata={{
         video_title: clip.title,
       }}
       poster={clip.thumbnail_url || undefined}
-      className="w-full h-full"
+      className="wod-mux-player w-full h-full"
       style={{
         width: '100%',
         height: '100%',
         minHeight: '100%',
         display: 'block',
         background: '#000',
-        ['--media-button-size' as any]: '44px',
-        ['--controls-backdrop-color' as any]: 'rgba(0,0,0,0.45)',
+        ['--media-button-size' as any]: '48px',
+        ['--media-range-track-height' as any]: '4px',
+        ['--controls-backdrop-color' as any]: 'rgba(0,0,0,0.5)',
       }}
     />
   );
@@ -541,4 +545,5 @@ export default function LibraryPage() {
     </AuthGuard>
   );
 }
+
 
