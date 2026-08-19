@@ -2,6 +2,27 @@ import Mux from '@mux/mux-node';
 
 let muxClient: Mux | null = null;
 
+/** Clean Vercel-pasted private keys (quotes, newlines, accidental PEM wrapper) */
+function cleanPrivateKey(raw?: string | null): string | undefined {
+  if (!raw) return undefined;
+  let k = String(raw).trim();
+  if (
+    (k.startsWith('"') && k.endsWith('"')) ||
+    (k.startsWith("'") && k.endsWith("'"))
+  ) {
+    k = k.slice(1, -1);
+  }
+  if (k.includes('BEGIN')) {
+    k = k
+      .replace(/-----BEGIN [^-]+-----/g, '')
+      .replace(/-----END [^-]+-----/g, '')
+      .replace(/\s+/g, '');
+  } else {
+    k = k.replace(/\s+/g, '');
+  }
+  return k || undefined;
+}
+
 export function getMux() {
   if (muxClient) return muxClient;
 
@@ -12,12 +33,12 @@ export function getMux() {
     throw new Error('MUX_TOKEN_ID and MUX_TOKEN_SECRET must be set');
   }
 
-  const jwtSigningKey = process.env.MUX_SIGNING_KEY_ID;
-  const jwtPrivateKey = process.env.MUX_PRIVATE_KEY;
+  const jwtSigningKey = process.env.MUX_SIGNING_KEY_ID?.trim();
+  const jwtPrivateKey = cleanPrivateKey(process.env.MUX_PRIVATE_KEY);
 
   muxClient = new Mux({
-    tokenId,
-    tokenSecret,
+    tokenId: tokenId.trim(),
+    tokenSecret: tokenSecret.trim(),
     ...(jwtSigningKey && jwtPrivateKey
       ? {
           jwtSigningKey,
@@ -29,15 +50,12 @@ export function getMux() {
   return muxClient;
 }
 
-/** Strip full stream URLs down to a bare Mux playback id */
 export function normalizePlaybackId(raw?: string | null): string | null {
   if (!raw) return null;
   const s = String(raw).trim();
   if (!s) return null;
-  // https://stream.mux.com/PLAYBACK_ID.m3u8?...
   const fromUrl = s.match(/stream\.mux\.com\/([A-Za-z0-9]+)/);
   if (fromUrl?.[1]) return fromUrl[1];
-  // already an id (no slashes / dots except rare)
   if (s.includes('://')) return null;
   return s.split('?')[0].replace(/\.m3u8$/i, '');
 }
@@ -54,7 +72,10 @@ export function muxThumbnailUrl(playbackId: string, time = 1) {
 }
 
 export function muxSigningConfigured() {
-  return !!(process.env.MUX_SIGNING_KEY_ID && process.env.MUX_PRIVATE_KEY);
+  return !!(
+    process.env.MUX_SIGNING_KEY_ID?.trim() &&
+    cleanPrivateKey(process.env.MUX_PRIVATE_KEY)
+  );
 }
 
 export async function signFullPlayback(playbackId: string) {
@@ -65,6 +86,7 @@ export async function signFullPlayback(playbackId: string) {
   });
 }
 
+/** 15s teaser only — window is inside the JWT claims */
 export async function signPreviewPlayback(playbackId: string) {
   const mux = getMux();
   return mux.jwt.signPlaybackId(playbackId, {
@@ -86,10 +108,6 @@ export async function signThumbnail(playbackId: string, time = 1) {
   } as any);
 }
 
-/**
- * Returns whether this playback id is "signed" or "public".
- * Defaults to public if unknown (safe for older clips).
- */
 export async function getPlaybackPolicy(
   playbackId: string,
   assetId?: string | null

@@ -11,9 +11,9 @@ import {
 export const dynamic = 'force-dynamic';
 
 /**
- * 15s preview for the clips store.
- * - public playback ids → no JWT, use extraSourceParams for 15s
- * - signed playback ids → JWT with asset_start/end in claims
+ * 15s preview for anyone browsing the store.
+ * Signed clips → JWT with asset_start_time=0, asset_end_time=15
+ * Public clips → no JWT + extraSourceParams for 15s
  */
 export async function GET(request: Request) {
   try {
@@ -38,46 +38,60 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
     }
 
-    const policy = await getPlaybackPolicy(
+    const publicResponse = {
+      ok: true,
       playbackId,
-      (clip as any).mux_asset_id
-    );
+      token: null as string | null,
+      thumbnailToken: null as string | null,
+      public: true,
+      extraSourceParams: {
+        asset_start_time: 0,
+        asset_end_time: 15,
+      },
+    };
 
-    // Public clip (most older uploads): no token
+    let policy: 'signed' | 'public' = 'public';
+    try {
+      policy = await getPlaybackPolicy(playbackId, (clip as any).mux_asset_id);
+    } catch {
+      policy = 'public';
+    }
+
+    // Older public clips
     if (policy === 'public' || !muxSigningConfigured()) {
+      return NextResponse.json(publicResponse);
+    }
+
+    // New signed clips — 15s only, inside the JWT
+    try {
+      const token = await signPreviewPlayback(playbackId);
+      let thumbnailToken: string | null = null;
+      try {
+        thumbnailToken = await signThumbnail(playbackId, 1);
+      } catch {
+        thumbnailToken = null;
+      }
       return NextResponse.json({
         ok: true,
         playbackId,
-        token: null,
-        thumbnailToken: null,
-        public: true,
-        extraSourceParams: {
-          asset_start_time: 0,
-          asset_end_time: 15,
-        },
+        token,
+        thumbnailToken,
+        public: false,
       });
+    } catch (signErr: any) {
+      console.error('preview sign failed', signErr?.message || signErr);
+      return NextResponse.json(
+        {
+          error:
+            'Preview signing failed — check MUX_PRIVATE_KEY / MUX_SIGNING_KEY_ID',
+        },
+        { status: 500 }
+      );
     }
-
-    // Signed clip: JWT required, clip window inside the token
-    const token = await signPreviewPlayback(playbackId);
-    let thumbnailToken: string | null = null;
-    try {
-      thumbnailToken = await signThumbnail(playbackId, 1);
-    } catch {
-      thumbnailToken = null;
-    }
-
-    return NextResponse.json({
-      ok: true,
-      playbackId,
-      token,
-      thumbnailToken,
-      public: false,
-    });
   } catch (e: any) {
     console.error('preview-token', e);
     return NextResponse.json(
-      { error: e?.message || 'Could not sign preview' },
+      { error: e?.message || 'Could not load preview' },
       { status: 500 }
     );
   }

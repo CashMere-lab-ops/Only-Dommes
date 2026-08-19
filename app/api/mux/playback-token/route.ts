@@ -11,8 +11,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 /**
- * Full-video token — only creator or buyer.
- * Public clips return { public: true } (no JWT).
+ * Full video — creator or buyer only.
+ * Signed clips need JWT; public clips play without.
  */
 export async function GET(request: Request) {
   try {
@@ -68,40 +68,54 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Purchase required' }, { status: 403 });
     }
 
-    const policy = await getPlaybackPolicy(
+    const publicResponse = {
+      ok: true,
       playbackId,
-      (clip as any).mux_asset_id
-    );
+      token: null as string | null,
+      thumbnailToken: null as string | null,
+      public: true,
+    };
+
+    let policy: 'signed' | 'public' = 'public';
+    try {
+      policy = await getPlaybackPolicy(playbackId, (clip as any).mux_asset_id);
+    } catch {
+      policy = 'public';
+    }
 
     if (policy === 'public' || !muxSigningConfigured()) {
+      return NextResponse.json(publicResponse);
+    }
+
+    try {
+      const playbackToken = await signFullPlayback(playbackId);
+      let thumbnailToken: string | null = null;
+      try {
+        thumbnailToken = await signThumbnail(playbackId, 1);
+      } catch {
+        thumbnailToken = null;
+      }
       return NextResponse.json({
         ok: true,
         playbackId,
-        token: null,
-        thumbnailToken: null,
-        public: true,
+        token: playbackToken,
+        thumbnailToken,
+        public: false,
       });
+    } catch (signErr: any) {
+      console.error('full sign failed', signErr?.message || signErr);
+      return NextResponse.json(
+        {
+          error:
+            'Playback signing failed — check MUX_PRIVATE_KEY / MUX_SIGNING_KEY_ID',
+        },
+        { status: 500 }
+      );
     }
-
-    const playbackToken = await signFullPlayback(playbackId);
-    let thumbnailToken: string | null = null;
-    try {
-      thumbnailToken = await signThumbnail(playbackId, 1);
-    } catch {
-      thumbnailToken = null;
-    }
-
-    return NextResponse.json({
-      ok: true,
-      playbackId,
-      token: playbackToken,
-      thumbnailToken,
-      public: false,
-    });
   } catch (e: any) {
     console.error('playback-token', e);
     return NextResponse.json(
-      { error: e?.message || 'Could not sign playback' },
+      { error: e?.message || 'Could not load video' },
       { status: 500 }
     );
   }

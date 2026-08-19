@@ -5,8 +5,9 @@ import { getMux, muxSigningConfigured } from '../../../../lib/mux';
 export const dynamic = 'force-dynamic';
 
 /**
- * Creates a Mux Direct Upload for authenticated creators.
- * Uses signed playback when MUX_SIGNING_* env is set (secure full video).
+ * Direct upload for creators.
+ * When MUX_SIGNING_* is set → signed playback (full video needs JWT).
+ * Preview still works via 15s signed preview tokens.
  */
 export async function POST(request: Request) {
   try {
