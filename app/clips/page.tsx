@@ -379,7 +379,17 @@ function ViewerPlayer({ clip, owns }: { clip: ClipRow; owns: boolean }) {
       primaryColor="#ffffff"
       secondaryColor="#18181b"
       metadata={{ video_title: clip.title }}
-      style={{ width: '100%', height: '100%', aspectRatio: '16/9' }}
+      className="w-full h-full"
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: '100%',
+        display: 'block',
+        background: '#000',
+        // bigger controls on touch devices
+        ['--media-button-size' as any]: '44px',
+        ['--controls-backdrop-color' as any]: 'rgba(0,0,0,0.45)',
+      }}
     />
   );
 }
@@ -541,6 +551,16 @@ export default function ClipsPage() {
       viewer.creator_id === userId ||
       Number(viewer.price_gbp) === 0);
 
+  // Lock page scroll while watching (mobile/tablet)
+  useEffect(() => {
+    if (!viewer) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [viewer]);
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -657,42 +677,93 @@ export default function ClipsPage() {
         </main>
 
         {viewer && (
-          <div className="fixed inset-0 z-[100] bg-black/80 flex items-end sm:items-center justify-center p-4">
-            <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-                <h3 className="font-semibold truncate pr-4">{viewer.title}</h3>
-                <button
-                  type="button"
-                  onClick={() => setViewer(null)}
-                  className="text-zinc-400 hover:text-white p-1"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="bg-black aspect-video relative">
-                <ViewerPlayer clip={viewer} owns={!!ownsViewer} />
-                {!ownsViewer && (
-                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent p-4 pt-10 pointer-events-none">
-                    <div className="pointer-events-auto">
-                      <p className="text-xs text-zinc-300 mb-2 flex items-center gap-1.5">
-                        <Lock size={12} /> 15s preview · unlock for full video
-                      </p>
-                      <button
-                        type="button"
-                        disabled={buyingId === viewer.id}
-                        onClick={() => buy(viewer)}
-                        className="w-full py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-semibold text-sm transition disabled:opacity-50"
-                      >
-                        {buyingId === viewer.id
-                          ? 'Unlocking…'
-                          : `Unlock · ${money(Number(viewer.price_gbp))}`}
-                      </button>
-                    </div>
-                  </div>
+          <div
+            className="fixed inset-0 z-[200] bg-black flex flex-col"
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Top bar — safe for notches */}
+            <div
+              className="flex-shrink-0 flex items-center gap-3 px-3 sm:px-4 border-b border-zinc-800/80 bg-zinc-950/95"
+              style={{
+                paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+                paddingBottom: '0.75rem',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setViewer(null)}
+                className="w-11 h-11 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-white active:bg-zinc-800 flex-shrink-0"
+                aria-label="Close"
+              >
+                <X size={22} />
+              </button>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-sm sm:text-base truncate">
+                  {viewer.title}
+                </h3>
+                {viewer.profiles?.username && (
+                  <Link
+                    href={`/${viewer.profiles.username}`}
+                    className="text-xs text-pink-400 truncate block"
+                  >
+                    @
+                    {viewer.profiles.display_name || viewer.profiles.username}
+                  </Link>
                 )}
               </div>
-              {viewer.description && (
-                <p className="px-4 py-3 text-sm text-zinc-400 border-t border-zinc-800">
+              {!ownsViewer && (
+                <span className="hidden sm:inline-flex text-[10px] uppercase tracking-wide text-zinc-400 bg-zinc-900 border border-zinc-700 px-2 py-1 rounded-full flex-shrink-0">
+                  Preview
+                </span>
+              )}
+            </div>
+
+            {/* Player — fills remaining height on phone/tablet */}
+            <div className="flex-1 min-h-0 relative bg-black flex items-center justify-center">
+              <div className="w-full h-full max-h-full sm:max-w-4xl sm:max-h-[min(80vh,720px)] sm:aspect-video">
+                <ViewerPlayer clip={viewer} owns={!!ownsViewer} />
+              </div>
+            </div>
+
+            {/* Unlock / info — above bottom nav + home indicator */}
+            <div
+              className="flex-shrink-0 bg-zinc-950 border-t border-zinc-800 px-4 pt-3"
+              style={{
+                paddingBottom:
+                  'max(1rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
+              }}
+            >
+              {!ownsViewer ? (
+                <div className="max-w-lg mx-auto">
+                  <p className="text-xs text-zinc-400 mb-2 flex items-center justify-center gap-1.5">
+                    <Lock size={12} /> 15s preview · unlock for full video
+                  </p>
+                  <button
+                    type="button"
+                    disabled={buyingId === viewer.id}
+                    onClick={() => buy(viewer)}
+                    className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 active:opacity-90 font-semibold text-base transition disabled:opacity-50"
+                  >
+                    {buyingId === viewer.id
+                      ? 'Unlocking…'
+                      : `Unlock · ${money(Number(viewer.price_gbp))}`}
+                  </button>
+                </div>
+              ) : (
+                <div className="max-w-lg mx-auto text-center">
+                  <p className="text-xs text-emerald-400/90 font-medium">
+                    Unlocked · yours to rewatch anytime
+                  </p>
+                  {viewer.description && (
+                    <p className="text-sm text-zinc-400 mt-2 line-clamp-3">
+                      {viewer.description}
+                    </p>
+                  )}
+                </div>
+              )}
+              {!ownsViewer && viewer.description && (
+                <p className="max-w-lg mx-auto text-xs text-zinc-500 mt-3 line-clamp-2 text-center">
                   {viewer.description}
                 </p>
               )}

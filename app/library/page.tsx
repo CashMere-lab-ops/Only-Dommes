@@ -182,7 +182,16 @@ function LibraryPlayer({ clip }: { clip: OwnedClip }) {
         video_title: clip.title,
       }}
       poster={clip.thumbnail_url || undefined}
-      style={{ width: '100%', height: '100%', aspectRatio: '16/9' }}
+      className="w-full h-full"
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: '100%',
+        display: 'block',
+        background: '#000',
+        ['--media-button-size' as any]: '44px',
+        ['--controls-backdrop-color' as any]: 'rgba(0,0,0,0.45)',
+      }}
     />
   );
 }
@@ -288,6 +297,15 @@ export default function LibraryPage() {
       return hay.includes(q);
     });
   }, [clips, search]);
+
+  useEffect(() => {
+    if (!viewer) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [viewer]);
 
   return (
     <AuthGuard>
@@ -454,37 +472,68 @@ export default function LibraryPage() {
         </main>
 
         {viewer && (
-          <div className="fixed inset-0 z-[100] bg-black/85 flex items-end sm:items-center justify-center p-4">
-            <div className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-                <div className="min-w-0 pr-4">
-                  <h3 className="font-semibold truncate">{viewer.title}</h3>
-                  {viewer.profiles?.username && (
-                    <Link
-                      href={`/${viewer.profiles.username}`}
-                      className="text-xs text-pink-400 hover:text-pink-300"
-                    >
-                      @
-                      {viewer.profiles.display_name || viewer.profiles.username}
-                    </Link>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setViewer(null)}
-                  className="text-zinc-400 hover:text-white p-1"
-                >
-                  <X size={20} />
-                </button>
+          <div
+            className="fixed inset-0 z-[200] bg-black flex flex-col"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="flex-shrink-0 flex items-center gap-3 px-3 sm:px-4 border-b border-zinc-800/80 bg-zinc-950/95"
+              style={{
+                paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+                paddingBottom: '0.75rem',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setViewer(null)}
+                className="w-11 h-11 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center text-white active:bg-zinc-800 flex-shrink-0"
+                aria-label="Close"
+              >
+                <X size={22} />
+              </button>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-sm sm:text-base truncate">
+                  {viewer.title}
+                </h3>
+                {viewer.profiles?.username && (
+                  <Link
+                    href={`/${viewer.profiles.username}`}
+                    className="text-xs text-pink-400 truncate block"
+                  >
+                    @
+                    {viewer.profiles.display_name || viewer.profiles.username}
+                  </Link>
+                )}
               </div>
-              <div className="bg-black aspect-video">
+              <span className="text-[10px] font-semibold bg-emerald-500/90 text-white px-2 py-1 rounded-full flex-shrink-0">
+                Owned
+              </span>
+            </div>
+
+            <div className="flex-1 min-h-0 relative bg-black flex items-center justify-center">
+              <div className="w-full h-full max-h-full sm:max-w-4xl sm:max-h-[min(80vh,720px)] sm:aspect-video">
                 <LibraryPlayer key={viewer.id} clip={viewer} />
               </div>
-              {viewer.description && (
-                <p className="px-4 py-3 text-sm text-zinc-400 border-t border-zinc-800">
-                  {viewer.description}
+            </div>
+
+            <div
+              className="flex-shrink-0 bg-zinc-950 border-t border-zinc-800 px-4 pt-3"
+              style={{
+                paddingBottom:
+                  'max(1rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
+              }}
+            >
+              <div className="max-w-lg mx-auto text-center">
+                <p className="text-xs text-emerald-400/90 font-medium">
+                  Unlocked · yours to rewatch anytime
                 </p>
-              )}
+                {viewer.description && (
+                  <p className="text-sm text-zinc-400 mt-2 line-clamp-3">
+                    {viewer.description}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -492,3 +541,4 @@ export default function LibraryPage() {
     </AuthGuard>
   );
 }
+
