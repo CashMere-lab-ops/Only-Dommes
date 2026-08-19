@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
  * 1. Debit buyer, credit creator (clip_sent / clip_received)
  * 2. Insert clip_purchases
  * 3. Increment sales_count
+ * 4. Notify creator (clip sold + amount)
  */
 export async function POST(request: Request) {
   try {
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
 
     const { data: clip, error: clipErr } = await admin
       .from('clips')
-      .select('id, creator_id, title, price_gbp, is_published')
+      .select('id, creator_id, title, price_gbp, is_published, sales_count')
       .eq('id', clipId)
       .single();
 
@@ -55,7 +56,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Already purchased?
     const { data: existing } = await admin
       .from('clip_purchases')
       .select('id')
@@ -76,7 +76,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid price' }, { status: 400 });
     }
 
-    // Free clip
+    const { data: sender } = await admin
+      .from('profiles')
+      .select('balance_gbp, display_name, username')
+      .eq('id', user.id)
+      .single();
+
+    if (!sender) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    }
+
+    const buyerName =
+      sender.display_name ||
+      (sender.username ? `@${sender.username}` : 'Someone');
+
+    // Free clip — still notify creator
     if (price === 0) {
       await admin.from('clip_purchases').insert({
         clip_id: clipId,
@@ -86,19 +100,22 @@ export async function POST(request: Request) {
       });
       await admin
         .from('clips')
-        .update({ sales_count: (clip as any).sales_count + 1 })
+        .update({
+          sales_count: Number(clip.sales_count || 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', clipId);
+
+      await admin.from('notifications').insert({
+        user_id: clip.creator_id,
+        actor_id: user.id,
+        type: 'unlock',
+        title: 'Clip unlocked',
+        body: `${buyerName} unlocked your free clip “${clip.title}”`,
+        link: '/earnings',
+      });
+
       return NextResponse.json({ ok: true, amount: 0, free: true });
-    }
-
-    const { data: sender } = await admin
-      .from('profiles')
-      .select('balance_gbp, display_name, username')
-      .eq('id', user.id)
-      .single();
-
-    if (!sender) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }
 
     const bal = Number(sender.balance_gbp || 0);
@@ -131,23 +148,41 @@ export async function POST(request: Request) {
     const newRecipientBal =
       Math.round((Number(recipient.balance_gbp || 0) + price) * 100) / 100;
 
-    await admin
+    // Wallet: debit buyer, credit creator
+    const { error: debitErr } = await admin
       .from('profiles')
       .update({ balance_gbp: newSenderBal })
       .eq('id', user.id);
-    await admin
+    if (debitErr) {
+      return NextResponse.json(
+        { error: debitErr.message || 'Could not debit wallet' },
+        { status: 500 }
+      );
+    }
+
+    const { error: creditErr } = await admin
       .from('profiles')
       .update({ balance_gbp: newRecipientBal })
       .eq('id', clip.creator_id);
+    if (creditErr) {
+      // best-effort rollback buyer
+      await admin
+        .from('profiles')
+        .update({ balance_gbp: bal })
+        .eq('id', user.id);
+      return NextResponse.json(
+        { error: creditErr.message || 'Could not credit creator' },
+        { status: 500 }
+      );
+    }
 
     const desc = `Clip: ${clip.title}`;
-    await admin.from('wallet_transactions').insert([
+    const ledgerRows = [
       {
         user_id: user.id,
         type: 'clip_sent',
         amount_gbp: -price,
         balance_after: newSenderBal,
-        counterparty_id: clip.creator_id,
         reference_type: 'clip',
         reference_id: clipId,
         description: desc,
@@ -157,52 +192,79 @@ export async function POST(request: Request) {
         type: 'clip_received',
         amount_gbp: price,
         balance_after: newRecipientBal,
-        counterparty_id: user.id,
         reference_type: 'clip',
         reference_id: clipId,
         description: desc,
       },
-    ]);
+    ];
 
-    await admin.from('clip_purchases').insert({
+    // Prefer with counterparty if column exists; fall back without
+    const { error: ledgerErr } = await admin.from('wallet_transactions').insert(
+      ledgerRows.map((r) => ({
+        ...r,
+        counterparty_id:
+          r.user_id === user.id ? clip.creator_id : user.id,
+      }))
+    );
+
+    if (ledgerErr) {
+      // Retry without counterparty_id (older schema)
+      const { error: ledgerErr2 } = await admin
+        .from('wallet_transactions')
+        .insert(ledgerRows);
+      if (ledgerErr2) {
+        console.error('wallet_transactions insert', ledgerErr2);
+      }
+    }
+
+    const { error: purchaseErr } = await admin.from('clip_purchases').insert({
       clip_id: clipId,
       buyer_id: user.id,
       creator_id: clip.creator_id,
       amount_gbp: price,
     });
+    if (purchaseErr) {
+      return NextResponse.json(
+        { error: purchaseErr.message || 'Purchase record failed' },
+        { status: 500 }
+      );
+    }
 
-    // Increment sales (best-effort)
-    const { data: fullClip } = await admin
-      .from('clips')
-      .select('sales_count')
-      .eq('id', clipId)
-      .single();
     await admin
       .from('clips')
       .update({
-        sales_count: Number(fullClip?.sales_count || 0) + 1,
+        sales_count: Number(clip.sales_count || 0) + 1,
         updated_at: new Date().toISOString(),
       })
       .eq('id', clipId);
 
-    // Notification to creator
-    try {
+    // Notify creator — use actor_id (matches notifications schema)
+    const notifBody = `${buyerName} bought “${clip.title}” · £${price.toFixed(2)}`;
+    const { error: notifErr } = await admin.from('notifications').insert({
+      user_id: clip.creator_id,
+      actor_id: user.id,
+      type: 'unlock',
+      title: 'Clip sold 💰',
+      body: notifBody,
+      link: '/earnings',
+    });
+    if (notifErr) {
+      console.error('clip sale notification', notifErr);
+      // Try minimal fields
       await admin.from('notifications').insert({
         user_id: clip.creator_id,
-        type: 'clip_purchase',
+        actor_id: user.id,
+        type: 'tip',
         title: 'Clip sold',
-        body: `${sender.display_name || sender.username || 'Someone'} bought “${clip.title}” · £${price.toFixed(2)}`,
-        link: '/earnings',
-        from_user_id: user.id,
+        body: notifBody,
       });
-    } catch {
-      /* optional */
     }
 
     return NextResponse.json({
       ok: true,
       amount: price,
       balance: newSenderBal,
+      creator_balance: newRecipientBal,
     });
   } catch (e: any) {
     console.error('clip purchase', e);
