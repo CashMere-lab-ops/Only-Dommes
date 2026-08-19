@@ -13,7 +13,10 @@ import {
   Mic,
   MicOff,
   PhoneOff,
+  DollarSign,
+  X,
 } from 'lucide-react';
+import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
   Room,
   RoomEvent,
@@ -57,6 +60,14 @@ export default function LiveWatchPage() {
   const [camOn, setCamOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
   const [viewerCount, setViewerCount] = useState(0);
+  const [showTip, setShowTip] = useState(false);
+  const [tipAmount, setTipAmount] = useState(5);
+  const [customTip, setCustomTip] = useState('');
+  const [tipping, setTipping] = useState(false);
+  const [tipError, setTipError] = useState('');
+  const [tipFlash, setTipFlash] = useState<string | null>(null);
+
+  const TIP_PRESETS = [5, 10, 20, 50];
 
   const roomRef = useRef<Room | null>(null);
   const localTracksRef = useRef<LocalTrack[]>([]);
@@ -301,6 +312,58 @@ export default function LiveWatchPage() {
     setMicOn(next);
   };
 
+  const sendTip = async (amount: number) => {
+    if (!stream || isOwner) return;
+    setTipping(true);
+    setTipError('');
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please log in again');
+
+      const res = await fetch('/api/live/tip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ stream_id: stream.id, amount }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'INSUFFICIENT_BALANCE') {
+          const go = confirm(
+            `Not enough balance (need £${Number(data.needed || amount).toFixed(2)}). Open wallet?`
+          );
+          if (go) window.location.href = '/wallet';
+          return;
+        }
+        throw new Error(data.error || 'Tip failed');
+      }
+      if (typeof data.balance === 'number') {
+        notifyBalanceUpdated(data.balance);
+      }
+      setStream((s) =>
+        s
+          ? {
+              ...s,
+              tip_raised_gbp: data.tip_raised_gbp,
+              tip_goal_gbp: data.tip_goal_gbp ?? s.tip_goal_gbp,
+            }
+          : s
+      );
+      setTipFlash(`You tipped £${Number(data.amount).toFixed(2)}`);
+      setTimeout(() => setTipFlash(null), 3000);
+      setShowTip(false);
+      setCustomTip('');
+    } catch (e: any) {
+      setTipError(e.message || 'Tip failed');
+    } finally {
+      setTipping(false);
+    }
+  };
+
   const endLive = async () => {
     if (!confirm('End this live stream? It will not be saved.')) return;
     setEnding(true);
@@ -469,24 +532,38 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Tip goal strip */}
-            {!ended && goal > 0 && (
+            {/* Tip goal strip — always show if goal set; else show raised if any */}
+            {!ended && (goal > 0 || raised > 0) && (
               <div className="absolute top-16 sm:top-20 left-3 right-3 z-20 pointer-events-none">
                 <div className="bg-black/50 backdrop-blur rounded-xl px-3 py-2 border border-white/10 max-w-md">
                   <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-zinc-300">Tip goal</span>
+                    <span className="text-zinc-300">
+                      {goal > 0 ? 'Tip goal' : 'Tips this live'}
+                    </span>
                     <span className="font-medium">
-                      £{raised.toFixed(0)} / £{goal.toFixed(0)}
+                      {goal > 0
+                        ? `£${raised.toFixed(0)} / £${goal.toFixed(0)}`
+                        : `£${raised.toFixed(2)}`}
                     </span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-pink-600 to-rose-500 rounded-full"
-                      style={{
-                        width: `${Math.min(100, (raised / goal) * 100)}%`,
-                      }}
-                    />
-                  </div>
+                  {goal > 0 && (
+                    <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-pink-600 to-rose-500 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(100, (raised / goal) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {tipFlash && (
+              <div className="absolute top-1/3 inset-x-0 z-30 flex justify-center pointer-events-none px-4">
+                <div className="bg-pink-600/95 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl animate-pulse">
+                  {tipFlash}
                 </div>
               </div>
             )}
@@ -539,6 +616,29 @@ export default function LiveWatchPage() {
                 </div>
               </div>
             )}
+
+            {/* Viewer tip button */}
+            {!isOwner && !ended && liveStatus === 'live' && (
+              <div
+                className="absolute bottom-0 inset-x-0 z-20 flex justify-center px-4 pointer-events-none"
+                style={{
+                  paddingBottom:
+                    'max(1rem, calc(env(safe-area-inset-bottom) + 0.75rem))',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTipError('');
+                    setShowTip(true);
+                  }}
+                  className="pointer-events-auto min-h-[48px] px-8 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-base shadow-lg shadow-pink-900/40 flex items-center gap-2 active:scale-95 transition"
+                >
+                  <DollarSign size={20} />
+                  Tip
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Desktop-only side note under video on large screens */}
@@ -548,13 +648,104 @@ export default function LiveWatchPage() {
                 <p className="font-semibold">{stream?.title}</p>
                 <p className="text-sm text-zinc-400">{name}</p>
               </div>
-              <p className="text-xs text-zinc-500">
-                Tips & live chat coming next
-              </p>
+              <p className="text-xs text-zinc-500">Live chat coming next</p>
             </div>
           </div>
         </main>
+
+        {/* Tip sheet */}
+        {showTip && (
+          <div className="fixed inset-0 z-[220] bg-black/70 flex items-end sm:items-center justify-center">
+            <div
+              className="w-full sm:max-w-md bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl overflow-hidden"
+              style={{
+                paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+              }}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <DollarSign className="text-pink-500" size={20} /> Tip {name}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => !tipping && setShowTip(false)}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="px-5 py-5 space-y-4">
+                <div className="grid grid-cols-4 gap-2">
+                  {TIP_PRESETS.map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      disabled={tipping}
+                      onClick={() => {
+                        setTipAmount(a);
+                        setCustomTip('');
+                      }}
+                      className={`py-3 rounded-xl text-sm font-semibold border transition ${
+                        tipAmount === a && !customTip
+                          ? 'bg-pink-600 border-pink-500 text-white'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-200'
+                      }`}
+                    >
+                      £{a}
+                    </button>
+                  ))}
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 mb-1 block">
+                    Custom amount
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
+                      £
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={customTip}
+                      onChange={(e) => {
+                        setCustomTip(e.target.value);
+                        const n = Number(e.target.value);
+                        if (n >= 1) setTipAmount(n);
+                      }}
+                      placeholder="Other"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+                {tipError && (
+                  <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                    {tipError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={tipping || tipAmount < 1}
+                  onClick={() => sendTip(tipAmount)}
+                  className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {tipping ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" /> Sending…
+                    </>
+                  ) : (
+                    <>Send £{Number(tipAmount).toFixed(2)}</>
+                  )}
+                </button>
+                <p className="text-center text-xs text-zinc-500">
+                  Paid from your wallet balance
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AuthGuard>
   );
 }
+
