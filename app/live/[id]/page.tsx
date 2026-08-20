@@ -429,21 +429,18 @@ export default function LiveWatchPage() {
         .eq('id', id)
         .single();
       if (data) {
-        setStream((s) => (s ? { ...s, ...data } : s));
-        setPrivateEndsAt(data.private_ends_at || null);
-        if (data.private_active && userId) {
-          const allowed =
-            data.creator_id === userId || data.private_user_id === userId;
-          // stream may not have creator_id in poll - use stream state
-          setPrivateLockedOut((prev) => {
-            const s = stream;
-            const isC = s && s.creator_id === userId;
+        setStream((s) => {
+          const next = s ? { ...s, ...data } : s;
+          if (data.private_active && userId) {
+            const isC = !!(next && next.creator_id === userId);
             const isF = data.private_user_id === userId;
-            return !!(data.private_active && !isC && !isF);
-          });
-        } else if (!data.private_active) {
-          setPrivateLockedOut(false);
-        }
+            setPrivateLockedOut(!!(data.private_active && !isC && !isF));
+          } else if (!data.private_active) {
+            setPrivateLockedOut(false);
+          }
+          return next;
+        });
+        setPrivateEndsAt(data.private_ends_at || null);
         if (data.status === 'ended') {
           setLiveStatus('ended');
           cleanupRoom();
