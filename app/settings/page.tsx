@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, User, Lock, Bell, Camera, Save, Eye, EyeOff,
-  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone
+  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone, Radio
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -54,6 +54,11 @@ export default function SettingsPage() {
   const [voiceMaxMinutes, setVoiceMaxMinutes] = useState('30');
   const [voiceAway, setVoiceAway] = useState(false);
 
+  // Live private
+  const [livePrivateEnabled, setLivePrivateEnabled] = useState(true);
+  const [livePrivateRate, setLivePrivateRate] = useState('8.00');
+  const [livePrivateMinMinutes, setLivePrivateMinMinutes] = useState('5');
+
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
   const [emailLives, setEmailLives] = useState(true);
@@ -97,6 +102,19 @@ export default function SettingsPage() {
         setVoiceDndEnd(data.voice_dnd_end || '08:00');
         setVoiceMaxMinutes(String(data.voice_max_minutes ?? 30));
         setVoiceAway(!!data.voice_away);
+        setLivePrivateEnabled(data.live_private_enabled !== false);
+        setLivePrivateRate(
+          String(
+            data.live_private_rate_per_minute ??
+              data.voice_rate_per_minute ??
+              8
+          )
+        );
+        setLivePrivateMinMinutes(
+          String(
+            data.live_private_min_minutes ?? data.voice_min_minutes ?? 5
+          )
+        );
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
@@ -181,6 +199,17 @@ export default function SettingsPage() {
         if (maxMins > 120) maxMins = 120;
         updates.voice_max_minutes = maxMins;
         updates.voice_away = voiceAway;
+
+        const lpRate = parseFloat(livePrivateRate);
+        let lpMin = parseInt(livePrivateMinMinutes, 10);
+        if (Number.isNaN(lpMin) || lpMin < 1) lpMin = 1;
+        if (lpMin > 30) lpMin = 30;
+        updates.live_private_enabled = livePrivateEnabled;
+        updates.live_private_rate_per_minute =
+          Number.isNaN(lpRate) || lpRate < 0
+            ? 0
+            : Math.round(lpRate * 100) / 100;
+        updates.live_private_min_minutes = lpMin;
       }
       const { error: updateError } = await supabase
         .from('profiles')

@@ -123,6 +123,7 @@ export default function LiveWatchPage() {
   const [privateLockedOut, setPrivateLockedOut] = useState(false);
   const [privateEndsAt, setPrivateEndsAt] = useState<string | null>(null);
   const [privateCountdown, setPrivateCountdown] = useState('');
+  const [privateEnabled, setPrivateEnabled] = useState(true);
 
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
@@ -230,16 +231,32 @@ export default function LiveWatchPage() {
     setCreator(profile);
     setLoading(false);
 
-    // Private rate from creator voice settings
+    // Private rate from creator live-private settings (fallback voice)
     const { data: creatorRates } = await supabase
       .from('profiles')
-      .select('voice_rate_per_minute, voice_min_minutes')
+      .select(
+        'live_private_enabled, live_private_rate_per_minute, live_private_min_minutes, voice_rate_per_minute, voice_min_minutes'
+      )
       .eq('id', data.creator_id)
       .single();
     if (creatorRates) {
-      setPrivateRate(Number(creatorRates.voice_rate_per_minute ?? 5));
-      setPrivateMin(Math.max(1, Number(creatorRates.voice_min_minutes ?? 1)));
-      setPrivateMinutes(Math.max(5, Number(creatorRates.voice_min_minutes ?? 1)));
+      setPrivateEnabled(creatorRates.live_private_enabled !== false);
+      const rate = Number(
+        creatorRates.live_private_rate_per_minute ??
+          creatorRates.voice_rate_per_minute ??
+          8
+      );
+      const minM = Math.max(
+        1,
+        Number(
+          creatorRates.live_private_min_minutes ??
+            creatorRates.voice_min_minutes ??
+            5
+        )
+      );
+      setPrivateRate(rate);
+      setPrivateMin(minM);
+      setPrivateMinutes(Math.max(minM, 5));
     }
 
     if (data.private_active) {
@@ -1233,7 +1250,7 @@ export default function LiveWatchPage() {
                     </button>
                   </div>
 
-                  {!isOwner && !stream?.private_active && (
+                  {!isOwner && !stream?.private_active && privateEnabled && (
                     <>
                       <button
                         type="button"

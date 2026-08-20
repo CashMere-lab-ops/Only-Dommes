@@ -82,13 +82,31 @@ export async function POST(request: Request) {
     const { data: creator } = await admin
       .from('profiles')
       .select(
-        'voice_rate_per_minute, voice_min_minutes, display_name, username, balance_gbp'
+        'live_private_enabled, live_private_rate_per_minute, live_private_min_minutes, voice_rate_per_minute, voice_min_minutes, display_name, username, balance_gbp'
       )
       .eq('id', stream.creator_id)
       .single();
 
-    const rate = Number(creator?.voice_rate_per_minute ?? 5);
-    const minMins = Math.max(1, Number(creator?.voice_min_minutes ?? 1));
+    // Prefer dedicated live-private settings; fall back to voice rates
+    const privateEnabled = creator?.live_private_enabled !== false;
+    if (!privateEnabled) {
+      return NextResponse.json(
+        { error: 'This creator is not accepting private requests right now' },
+        { status: 400 }
+      );
+    }
+
+    const rate = Number(
+      creator?.live_private_rate_per_minute ??
+        creator?.voice_rate_per_minute ??
+        8
+    );
+    const minMins = Math.max(
+      1,
+      Number(
+        creator?.live_private_min_minutes ?? creator?.voice_min_minutes ?? 5
+      )
+    );
     if (minutes < minMins) {
       return NextResponse.json(
         { error: `Minimum private is ${minMins} minutes` },
@@ -166,3 +184,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
