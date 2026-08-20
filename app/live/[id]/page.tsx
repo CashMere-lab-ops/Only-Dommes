@@ -83,6 +83,33 @@ type ChatMsg = {
 
 const TIP_PRESETS = [5, 10, 20, 50];
 
+
+function playPrivateChime() {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    // Soft two-tone alert
+    [[523.25, 0], [659.25, 0.12], [783.99, 0.24]].forEach(([freq, delay]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq as number;
+      g.gain.setValueAtTime(0.0001, now + (delay as number));
+      g.gain.exponentialRampToValueAtTime(0.08, now + (delay as number) + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + (delay as number) + 0.28);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(now + (delay as number));
+      o.stop(now + (delay as number) + 0.3);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 800);
+  } catch {
+    /* ignore autoplay blocks */
+  }
+}
+
 export default function LiveWatchPage() {
   const params = useParams();
   const router = useRouter();
@@ -124,6 +151,8 @@ export default function LiveWatchPage() {
   const [privateEndsAt, setPrivateEndsAt] = useState<string | null>(null);
   const [privateCountdown, setPrivateCountdown] = useState('');
   const [privateEnabled, setPrivateEnabled] = useState(true);
+  const [privateReqLeft, setPrivateReqLeft] = useState<Record<string, number>>({});
+  const privateTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
@@ -300,12 +329,30 @@ export default function LiveWatchPage() {
           .select('id, username, display_name, avatar_url')
           .in('id', ids);
         const pmap = new Map((people || []).map((p: any) => [p.id, p]));
-        setIncomingPrivates(
-          list.map((r: any) => ({
-            ...r,
-            profile: pmap.get(r.requester_id) || null,
-          }))
-        );
+        const enriched = list.map((r: any) => ({
+          ...r,
+          profile: pmap.get(r.requester_id) || null,
+        }));
+        setIncomingPrivates(enriched);
+        enriched.forEach((r: any) => {
+          if (privateTimers.current[r.id]) return;
+          const created = r.created_at ? new Date(r.created_at).getTime() : Date.now();
+          const elapsed = Math.floor((Date.now() - created) / 1000);
+          const left = Math.max(1, 60 - elapsed);
+          setPrivateReqLeft((m) => ({ ...m, [r.id]: left }));
+          privateTimers.current[r.id] = setInterval(() => {
+            setPrivateReqLeft((m) => {
+              const nleft = (m[r.id] ?? left) - 1;
+              if (nleft <= 0) {
+                clearInterval(privateTimers.current[r.id]);
+                delete privateTimers.current[r.id];
+                void respondPrivate(r.id, 'decline');
+                return { ...m, [r.id]: 0 };
+              }
+              return { ...m, [r.id]: nleft };
+            });
+          }, 1000);
+        });
       } else {
         setIncomingPrivates([]);
       }
@@ -555,11 +602,38 @@ export default function LiveWatchPage() {
               .single();
             setIncomingPrivates((prev) => {
               if (prev.some((p) => p.id === row.id)) return prev;
+              playPrivateChime();
+              // 60s auto-decline countdown
+              setPrivateReqLeft((m) => ({ ...m, [row.id]: 60 }));
+              if (privateTimers.current[row.id]) {
+                clearInterval(privateTimers.current[row.id]);
+              }
+              privateTimers.current[row.id] = setInterval(() => {
+                setPrivateReqLeft((m) => {
+                  const left = (m[row.id] ?? 60) - 1;
+                  if (left <= 0) {
+                    clearInterval(privateTimers.current[row.id]);
+                    delete privateTimers.current[row.id];
+                    void respondPrivate(row.id, 'decline');
+                    return { ...m, [row.id]: 0 };
+                  }
+                  return { ...m, [row.id]: left };
+                });
+              }, 1000);
               return [...prev, { ...row, profile }];
             });
           }
           if (row.status !== 'pending') {
             setIncomingPrivates((prev) => prev.filter((p) => p.id !== row.id));
+            if (privateTimers.current[row.id]) {
+              clearInterval(privateTimers.current[row.id]);
+              delete privateTimers.current[row.id];
+            }
+            setPrivateReqLeft((m) => {
+              const n = { ...m };
+              delete n[row.id];
+              return n;
+            });
             if (userId && row.requester_id === userId) {
               setMyPendingPrivate(null);
             }
@@ -587,6 +661,8 @@ export default function LiveWatchPage() {
       .subscribe();
     return () => {
       void supabase.removeChannel(ch);
+      Object.values(privateTimers.current).forEach(clearInterval);
+      privateTimers.current = {};
     };
   }, [id, supabase, isOwner, userId]);
 
@@ -1425,8 +1501,25 @@ export default function LiveWatchPage() {
         )}
 
         {/* Incoming private requests (creator) */}
+        
+        {/* Fan waiting for private accept */}
+        {!isOwner && myPendingPrivate && !stream?.private_active && (
+          <div className="fixed inset-x-0 top-14 sm:top-16 z-[205] flex justify-center px-3 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-md bg-zinc-900/95 border border-zinc-700 rounded-2xl px-4 py-3 shadow-xl flex items-center gap-3">
+              <Loader2 className="animate-spin text-pink-500 flex-shrink-0" size={18} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white">Private requested</p>
+                <p className="text-xs text-zinc-400">
+                  Waiting for creator · {myPendingPrivate.minutes} min · £
+                  {Number(myPendingPrivate.amount_gbp).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {isOwner && incomingPrivates.length > 0 && !stream?.private_active && (
-          <div className="fixed inset-x-0 top-16 z-[210] flex justify-center px-3 pointer-events-none">
+          <div className="fixed inset-x-0 top-14 sm:top-16 z-[210] flex justify-center px-3 pointer-events-none">
             <div className="pointer-events-auto w-full max-w-md space-y-2">
               {incomingPrivates.map((req) => {
                 const n =
@@ -1434,36 +1527,69 @@ export default function LiveWatchPage() {
                   (req.profile?.username
                     ? `@${req.profile.username}`
                     : 'Fan');
+                const left = privateReqLeft[req.id];
                 return (
                   <div
                     key={req.id}
-                    className="bg-zinc-900 border border-pink-500/40 rounded-2xl p-4 shadow-xl"
+                    className="bg-gradient-to-br from-zinc-900 via-zinc-900 to-pink-950/40 border border-pink-500/50 rounded-2xl p-4 shadow-2xl shadow-pink-900/30 animate-in fade-in slide-in-from-top-2"
                   >
-                    <p className="text-sm font-semibold flex items-center gap-2">
-                      <Lock size={14} className="text-pink-400" />
-                      Private request
-                    </p>
-                    <p className="text-sm text-zinc-300 mt-1">
-                      <span className="text-white font-medium">{n}</span>
-                      {' · '}
-                      {req.minutes} min · £{Number(req.amount_gbp).toFixed(2)}
-                    </p>
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {req.profile?.avatar_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={req.profile.avatar_url}
+                            alt=""
+                            className="w-11 h-11 rounded-full object-cover border-2 border-pink-500/40"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-full bg-pink-600/30 flex items-center justify-center text-sm font-bold text-pink-200">
+                            {(n || '?')[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold uppercase tracking-wide text-pink-400 flex items-center gap-1.5">
+                            <Lock size={12} />
+                            Private request
+                          </p>
+                          <p className="text-sm font-semibold text-white truncate mt-0.5">
+                            {n}
+                          </p>
+                          <p className="text-xs text-zinc-300 mt-0.5">
+                            {req.minutes} min ·{' '}
+                            <span className="text-pink-300 font-semibold">
+                              £{Number(req.amount_gbp).toFixed(2)}
+                            </span>
+                            {' · '}
+                            £{Number(req.rate_per_minute).toFixed(2)}/min
+                          </p>
+                        </div>
+                      </div>
+                      {typeof left === 'number' && left > 0 && (
+                        <div className="flex-shrink-0 text-center">
+                          <p className="text-[10px] text-zinc-500 uppercase">Expires</p>
+                          <p className="text-sm font-mono font-bold text-pink-300">
+                            {left}s
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2 mt-3.5">
                       <button
                         type="button"
                         disabled={privateBusy}
-                        onClick={() => respondPrivate(req.id, 'decline')}
-                        className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-sm font-medium"
+                        onClick={() => void respondPrivate(req.id, 'decline')}
+                        className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition"
                       >
                         Decline
                       </button>
                       <button
                         type="button"
                         disabled={privateBusy}
-                        onClick={() => respondPrivate(req.id, 'accept')}
-                        className="flex-1 py-2.5 rounded-xl bg-pink-600 text-sm font-semibold"
+                        onClick={() => void respondPrivate(req.id, 'accept')}
+                        className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold shadow-lg shadow-pink-900/40"
                       >
-                        Accept
+                        Accept · £{Number(req.amount_gbp).toFixed(2)}
                       </button>
                     </div>
                   </div>
