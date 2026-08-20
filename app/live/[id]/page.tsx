@@ -18,6 +18,7 @@ import {
   Send,
   Lock,
   Unlock,
+  Crown,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
@@ -45,6 +46,10 @@ type StreamRow = {
   private_user_id?: string | null;
   private_ends_at?: string | null;
   private_request_id?: string | null;
+  showcase_user_id?: string | null;
+  showcase_amount_gbp?: number;
+  showcase_name?: string | null;
+  showcase_avatar_url?: string | null;
 };
 
 type PrivateReq = {
@@ -424,7 +429,7 @@ export default function LiveWatchPage() {
       const { data } = await supabase
         .from('live_streams')
         .select(
-          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, private_active, private_user_id, private_ends_at, private_request_id'
+          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, private_active, private_user_id, private_ends_at, private_request_id, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url'
         )
         .eq('id', id)
         .single();
@@ -834,10 +839,20 @@ export default function LiveWatchPage() {
               ...s,
               tip_raised_gbp: data.tip_raised_gbp,
               tip_goal_gbp: data.tip_goal_gbp ?? s.tip_goal_gbp,
+              showcase_user_id:
+                data.showcase?.user_id ?? s.showcase_user_id,
+              showcase_amount_gbp:
+                data.showcase?.amount_gbp ?? s.showcase_amount_gbp,
+              showcase_name: data.showcase?.name ?? s.showcase_name,
+              showcase_avatar_url:
+                data.showcase?.avatar_url ?? s.showcase_avatar_url,
             }
           : s
       );
-      setTipFlash(`You tipped £${Number(data.amount).toFixed(2)}`);
+      const flash = data.is_showcase
+        ? `You tipped £${Number(data.amount).toFixed(2)} · Top tipper!`
+        : `You tipped £${Number(data.amount).toFixed(2)}`;
+      setTipFlash(flash);
       setTimeout(() => setTipFlash(null), 3000);
       setShowTip(false);
       setCustomTip('');
@@ -1063,6 +1078,44 @@ export default function LiveWatchPage() {
               </div>
             )}
 
+            {/* Showcased highest tipper */}
+            {!ended &&
+              stream?.showcase_user_id &&
+              Number(stream.showcase_amount_gbp || 0) > 0 && (
+                <div className="absolute top-16 sm:top-20 right-3 z-20 pointer-events-none max-w-[46%]">
+                  <div className="bg-gradient-to-br from-pink-600/90 to-rose-700/90 backdrop-blur border border-pink-400/30 rounded-2xl px-3 py-2.5 shadow-lg pointer-events-auto">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Crown size={12} className="text-yellow-300" />
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-pink-100">
+                        Top tipper
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {stream.showcase_avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={stream.showcase_avatar_url}
+                          alt=""
+                          className="w-8 h-8 rounded-full object-cover border border-white/30"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-pink-800 flex items-center justify-center text-xs font-bold">
+                          {(stream.showcase_name || '?')[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate text-white">
+                          {stream.showcase_name || 'Fan'}
+                        </p>
+                        <p className="text-xs text-pink-100/90 font-medium">
+                          £{Number(stream.showcase_amount_gbp).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             {tipFlash && (
               <div className="absolute top-1/3 inset-x-0 z-30 flex justify-center pointer-events-none px-4">
                 <div className="bg-pink-600/95 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl">
@@ -1092,7 +1145,7 @@ export default function LiveWatchPage() {
 
             {/* Private active badge */}
             {!ended && stream?.private_active && (isOwner || isPrivateFan) && (
-              <div className="absolute top-16 sm:top-20 right-3 z-25 pointer-events-none">
+              <div className="absolute top-[7.5rem] sm:top-36 right-3 z-25 pointer-events-none">
                 <div className="bg-pink-600/90 backdrop-blur text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow">
                   <Lock size={12} />
                   PRIVATE
