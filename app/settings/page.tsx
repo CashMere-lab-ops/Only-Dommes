@@ -799,6 +799,86 @@ export default function SettingsPage() {
               </button>
             </div>
 
+
+            {/* Live private */}
+            {isCreator && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Radio size={18} className="text-pink-500" /> Live private
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  Let fans request a paid 1:1 during your public live. Public stream
+                  pauses for everyone else while private runs.
+                </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Enable private requests</p>
+                    <p className="text-sm text-zinc-400">
+                      Fans see a Private button on your lives
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={livePrivateEnabled}
+                      onChange={() => setLivePrivateEnabled(!livePrivateEnabled)}
+                    />
+                    <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                  </label>
+                </div>
+                {livePrivateEnabled && (
+                  <div className="space-y-4 pt-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm text-zinc-400 mb-1.5 block">
+                          Price per minute (£)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                            £
+                          </span>
+                          <input
+                            type="number"
+                            min="0.5"
+                            step="0.5"
+                            value={livePrivateRate}
+                            onChange={(e) => setLivePrivateRate(e.target.value)}
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-3 outline-none focus:border-pink-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-sm text-zinc-400 mb-1.5 block">
+                          Minimum minutes
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="30"
+                          value={livePrivateMinMinutes}
+                          onChange={(e) => setLivePrivateMinMinutes(e.target.value)}
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-3 outline-none focus:border-pink-500"
+                        />
+                        <p className="text-xs text-zinc-500 mt-1">Between 1 and 30</p>
+                      </div>
+                    </div>
+                    <div className="bg-zinc-800/80 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-300">
+                      Fans will see:{' '}
+                      <span className="text-pink-400 font-medium">
+                        £{parseFloat(livePrivateRate || '0').toFixed(2)}/min
+                      </span>
+                      {' · '}
+                      minimum{' '}
+                      <span className="text-pink-400 font-medium">
+                        {livePrivateMinMinutes || 5} min
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Notifications */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
               <h2 className="text-lg font-semibold flex items-center gap-2">
