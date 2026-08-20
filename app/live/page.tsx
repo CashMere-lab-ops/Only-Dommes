@@ -125,16 +125,23 @@ export default function LiveIndexPage() {
 
       if (thumbFile) {
         const blob = await compressThumb(thumbFile);
-        const path = `${userId}/live-thumb-${Date.now()}.jpg`;
-        const { error: upErr } = await supabase.storage
-          .from('avatars')
-          .upload(path, blob, {
-            upsert: true,
-            contentType: 'image/jpeg',
-          });
-        if (upErr) throw new Error(upErr.message || 'Thumbnail upload failed');
-        const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
-        thumbnailUrl = `${pub.publicUrl}?t=${Date.now()}`;
+        const form = new FormData();
+        form.append(
+          'file',
+          new File([blob], 'live-thumb.jpg', { type: 'image/jpeg' })
+        );
+        const upRes = await fetch('/api/live/upload-thumb', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: form,
+        });
+        const upData = await upRes.json().catch(() => ({}));
+        if (!upRes.ok) {
+          throw new Error(upData.error || 'Thumbnail upload failed');
+        }
+        thumbnailUrl = upData.url;
       } else if (thumbPreview && !thumbPreview.startsWith('blob:')) {
         // existing avatar URL used as soft default
         thumbnailUrl = thumbPreview;
@@ -451,5 +458,3 @@ export default function LiveIndexPage() {
     </AuthGuard>
   );
 }
-
-
