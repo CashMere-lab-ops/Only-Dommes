@@ -16,6 +16,8 @@ import {
   DollarSign,
   X,
   Send,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
@@ -39,6 +41,26 @@ type StreamRow = {
   tip_goal_gbp?: number;
   tip_raised_gbp?: number;
   viewer_count?: number;
+  private_active?: boolean;
+  private_user_id?: string | null;
+  private_ends_at?: string | null;
+  private_request_id?: string | null;
+};
+
+type PrivateReq = {
+  id: string;
+  stream_id: string;
+  creator_id: string;
+  requester_id: string;
+  minutes: number;
+  rate_per_minute: number;
+  amount_gbp: number;
+  status: string;
+  profile?: {
+    username?: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
 };
 
 type ChatMsg = {
@@ -83,6 +105,20 @@ export default function LiveWatchPage() {
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
 
+  // Private
+  const [showPrivate, setShowPrivate] = useState(false);
+  const [privateMinutes, setPrivateMinutes] = useState(5);
+  const [privateRate, setPrivateRate] = useState(5);
+  const [privateMin, setPrivateMin] = useState(1);
+  const [requestingPrivate, setRequestingPrivate] = useState(false);
+  const [privateError, setPrivateError] = useState('');
+  const [myPendingPrivate, setMyPendingPrivate] = useState<PrivateReq | null>(null);
+  const [incomingPrivates, setIncomingPrivates] = useState<PrivateReq[]>([]);
+  const [privateBusy, setPrivateBusy] = useState(false);
+  const [privateLockedOut, setPrivateLockedOut] = useState(false);
+  const [privateEndsAt, setPrivateEndsAt] = useState<string | null>(null);
+  const [privateCountdown, setPrivateCountdown] = useState('');
+
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatText, setChatText] = useState('');
@@ -96,6 +132,12 @@ export default function LiveWatchPage() {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const isOwner = !!(userId && stream && stream.creator_id === userId);
+  const isPrivateFan = !!(
+    userId &&
+    stream?.private_active &&
+    stream.private_user_id === userId
+  );
+  const inPrivate = !!(stream?.private_active && (isOwner || isPrivateFan));
 
   const cleanupRoom = useCallback(async () => {
     try {
@@ -183,7 +225,70 @@ export default function LiveWatchPage() {
     setCreator(profile);
     setLoading(false);
 
+    // Private rate from creator voice settings
+    const { data: creatorRates } = await supabase
+      .from('profiles')
+      .select('voice_rate_per_minute, voice_min_minutes')
+      .eq('id', data.creator_id)
+      .single();
+    if (creatorRates) {
+      setPrivateRate(Number(creatorRates.voice_rate_per_minute ?? 5));
+      setPrivateMin(Math.max(1, Number(creatorRates.voice_min_minutes ?? 1)));
+      setPrivateMinutes(Math.max(5, Number(creatorRates.voice_min_minutes ?? 1)));
+    }
+
+    if (data.private_active) {
+      setPrivateEndsAt(data.private_ends_at || null);
+      if (
+        user?.id &&
+        data.creator_id !== user.id &&
+        data.private_user_id !== user.id
+      ) {
+        setPrivateLockedOut(true);
+      }
+    }
+
     await loadChat(data.id);
+
+    // My pending request
+    if (user?.id && user.id !== data.creator_id) {
+      const { data: mine } = await supabase
+        .from('live_private_requests')
+        .select('*')
+        .eq('stream_id', data.id)
+        .eq('requester_id', user.id)
+        .eq('status', 'pending')
+        .maybeSingle();
+      setMyPendingPrivate(mine || null);
+    }
+
+    // Creator: load pending incoming
+    if (user?.id && user.id === data.creator_id) {
+      const { data: incoming } = await supabase
+        .from('live_private_requests')
+        .select('*')
+        .eq('stream_id', data.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true });
+      const list = incoming || [];
+      if (list.length) {
+        const ids = list.map((r: any) => r.requester_id);
+        const { data: people } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', ids);
+        const pmap = new Map((people || []).map((p: any) => [p.id, p]));
+        setIncomingPrivates(
+          list.map((r: any) => ({
+            ...r,
+            profile: pmap.get(r.requester_id) || null,
+          }))
+        );
+      } else {
+        setIncomingPrivates([]);
+      }
+    }
+
     return { stream: data, userId: user?.id || null };
   };
 
@@ -206,7 +311,18 @@ export default function LiveWatchPage() {
         body: JSON.stringify({ streamId: streamRow.id }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Could not join live');
+      if (!res.ok) {
+        if (data.code === 'PRIVATE_SESSION') {
+          setPrivateLockedOut(true);
+          setLiveStatus('idle');
+          setConnecting(false);
+          return;
+        }
+        throw new Error(data.error || 'Could not join live');
+      }
+      if (data.private_active) {
+        setPrivateEndsAt(data.private_ends_at || null);
+      }
 
       await cleanupRoom();
 
@@ -307,11 +423,27 @@ export default function LiveWatchPage() {
     const poll = setInterval(async () => {
       const { data } = await supabase
         .from('live_streams')
-        .select('status, viewer_count, tip_raised_gbp, tip_goal_gbp, title')
+        .select(
+          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, private_active, private_user_id, private_ends_at, private_request_id'
+        )
         .eq('id', id)
         .single();
       if (data) {
         setStream((s) => (s ? { ...s, ...data } : s));
+        setPrivateEndsAt(data.private_ends_at || null);
+        if (data.private_active && userId) {
+          const allowed =
+            data.creator_id === userId || data.private_user_id === userId;
+          // stream may not have creator_id in poll - use stream state
+          setPrivateLockedOut((prev) => {
+            const s = stream;
+            const isC = s && s.creator_id === userId;
+            const isF = data.private_user_id === userId;
+            return !!(data.private_active && !isC && !isF);
+          });
+        } else if (!data.private_active) {
+          setPrivateLockedOut(false);
+        }
         if (data.status === 'ended') {
           setLiveStatus('ended');
           cleanupRoom();
@@ -379,6 +511,104 @@ export default function LiveWatchPage() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  // Realtime private requests + stream private flag
+  useEffect(() => {
+    if (!id) return;
+    const ch = supabase
+      .channel(`live-private-${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'live_private_requests',
+          filter: `stream_id=eq.${id}`,
+        },
+        async (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+          if (row.status === 'pending' && isOwner) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('username, display_name, avatar_url')
+              .eq('id', row.requester_id)
+              .single();
+            setIncomingPrivates((prev) => {
+              if (prev.some((p) => p.id === row.id)) return prev;
+              return [...prev, { ...row, profile }];
+            });
+          }
+          if (row.status !== 'pending') {
+            setIncomingPrivates((prev) => prev.filter((p) => p.id !== row.id));
+            if (userId && row.requester_id === userId) {
+              setMyPendingPrivate(null);
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'live_streams',
+          filter: `id=eq.${id}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+          setStream((s) => (s ? { ...s, ...row } : s));
+          setPrivateEndsAt(row.private_ends_at || null);
+          if (!row.private_active) {
+            setPrivateLockedOut(false);
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [id, supabase, isOwner, userId]);
+
+  // Countdown timer for private
+  useEffect(() => {
+    if (!privateEndsAt || !stream?.private_active) {
+      setPrivateCountdown('');
+      return;
+    }
+    const tick = () => {
+      const ms = new Date(privateEndsAt).getTime() - Date.now();
+      if (ms <= 0) {
+        setPrivateCountdown('0:00');
+        // auto end
+        void (async () => {
+          try {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            await fetch('/api/live/private/end', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session?.access_token}`,
+              },
+              body: JSON.stringify({ stream_id: id }),
+            });
+          } catch {
+            /* ignore */
+          }
+        })();
+        return;
+      }
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      setPrivateCountdown(`${m}:${s.toString().padStart(2, '0')}`);
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [privateEndsAt, stream?.private_active, id, supabase]);
 
   useEffect(() => {
     if (!isOwner || liveStatus !== 'live') return;
@@ -454,6 +684,118 @@ export default function LiveWatchPage() {
       alert(e.message || 'Could not send');
     } finally {
       setSendingChat(false);
+    }
+  };
+
+
+  const requestPrivate = async () => {
+    if (!stream || isOwner) return;
+    setRequestingPrivate(true);
+    setPrivateError('');
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please log in again');
+      const res = await fetch('/api/live/private/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          stream_id: stream.id,
+          minutes: privateMinutes,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'INSUFFICIENT_BALANCE') {
+          const go = confirm(
+            `Need £${Number(data.needed).toFixed(2)} in wallet. Top up?`
+          );
+          if (go) window.location.href = '/wallet';
+          return;
+        }
+        throw new Error(data.error || 'Request failed');
+      }
+      setMyPendingPrivate(data.request);
+      setShowPrivate(false);
+    } catch (e: any) {
+      setPrivateError(e.message || 'Failed');
+    } finally {
+      setRequestingPrivate(false);
+    }
+  };
+
+  const respondPrivate = async (requestId: string, action: 'accept' | 'decline') => {
+    setPrivateBusy(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch('/api/live/private/respond', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ request_id: requestId, action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setIncomingPrivates((prev) => prev.filter((p) => p.id !== requestId));
+      if (action === 'accept' && data.private_ends_at) {
+        setPrivateEndsAt(data.private_ends_at);
+        setStream((s) =>
+          s
+            ? {
+                ...s,
+                private_active: true,
+                private_ends_at: data.private_ends_at,
+              }
+            : s
+        );
+      }
+    } catch (e: any) {
+      alert(e.message || 'Failed');
+    } finally {
+      setPrivateBusy(false);
+    }
+  };
+
+  const endPrivate = async () => {
+    if (!confirm('End private session and return to public live?')) return;
+    setPrivateBusy(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch('/api/live/private/end', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ stream_id: id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setStream((s) =>
+        s
+          ? {
+              ...s,
+              private_active: false,
+              private_user_id: null,
+              private_ends_at: null,
+            }
+          : s
+      );
+      setPrivateEndsAt(null);
+    } catch (e: any) {
+      alert(e.message || 'Failed');
+    } finally {
+      setPrivateBusy(false);
     }
   };
 
@@ -732,6 +1074,38 @@ export default function LiveWatchPage() {
               </div>
             )}
 
+            
+            {/* Private locked out for other viewers */}
+            {privateLockedOut && !ended && (
+              <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/90 px-6 text-center">
+                <Lock className="text-pink-500 mb-3" size={40} />
+                <p className="text-lg font-semibold text-white">Private session</p>
+                <p className="text-sm text-zinc-400 mt-2 max-w-sm">
+                  The creator is in a paid private with another fan. Public live is paused.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push('/live')}
+                  className="mt-6 px-5 py-2.5 rounded-xl bg-zinc-800 text-sm font-medium"
+                >
+                  Back to Live
+                </button>
+              </div>
+            )}
+
+            {/* Private active badge */}
+            {!ended && stream?.private_active && (isOwner || isPrivateFan) && (
+              <div className="absolute top-16 sm:top-20 right-3 z-25 pointer-events-none">
+                <div className="bg-pink-600/90 backdrop-blur text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow">
+                  <Lock size={12} />
+                  PRIVATE
+                  {privateCountdown && (
+                    <span className="font-mono ml-1">{privateCountdown}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Floating chat (LoyalFans / IG Live style) */}
             {!ended && (
               <div
@@ -809,17 +1183,44 @@ export default function LiveWatchPage() {
                     </button>
                   </div>
 
-                  {!isOwner && (
+                  {!isOwner && !stream?.private_active && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTipError('');
+                          setShowTip(true);
+                        }}
+                        className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40"
+                        title="Tip"
+                      >
+                        <DollarSign size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrivateError('');
+                          setShowPrivate(true);
+                        }}
+                        disabled={!!myPendingPrivate}
+                        className="h-12 px-3 rounded-full bg-zinc-900/90 border border-pink-500/50 text-pink-300 text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+                        title="Request private"
+                      >
+                        <Lock size={14} />
+                        {myPendingPrivate ? 'Pending' : 'Private'}
+                      </button>
+                    </>
+                  )}
+
+                  {(isOwner || isPrivateFan) && stream?.private_active && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setTipError('');
-                        setShowTip(true);
-                      }}
-                      className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40"
-                      title="Tip"
+                      onClick={() => void endPrivate()}
+                      disabled={privateBusy}
+                      className="h-12 px-3 rounded-full bg-pink-700 text-xs font-semibold flex items-center gap-1.5 flex-shrink-0"
                     >
-                      <DollarSign size={20} />
+                      <Unlock size={14} />
+                      End private
                     </button>
                   )}
 
@@ -955,6 +1356,144 @@ export default function LiveWatchPage() {
             </div>
           </div>
         )}
+
+        {/* Incoming private requests (creator) */}
+        {isOwner && incomingPrivates.length > 0 && !stream?.private_active && (
+          <div className="fixed inset-x-0 top-16 z-[210] flex justify-center px-3 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-md space-y-2">
+              {incomingPrivates.map((req) => {
+                const n =
+                  req.profile?.display_name ||
+                  (req.profile?.username
+                    ? `@${req.profile.username}`
+                    : 'Fan');
+                return (
+                  <div
+                    key={req.id}
+                    className="bg-zinc-900 border border-pink-500/40 rounded-2xl p-4 shadow-xl"
+                  >
+                    <p className="text-sm font-semibold flex items-center gap-2">
+                      <Lock size={14} className="text-pink-400" />
+                      Private request
+                    </p>
+                    <p className="text-sm text-zinc-300 mt-1">
+                      <span className="text-white font-medium">{n}</span>
+                      {' · '}
+                      {req.minutes} min · £{Number(req.amount_gbp).toFixed(2)}
+                    </p>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        type="button"
+                        disabled={privateBusy}
+                        onClick={() => respondPrivate(req.id, 'decline')}
+                        className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-sm font-medium"
+                      >
+                        Decline
+                      </button>
+                      <button
+                        type="button"
+                        disabled={privateBusy}
+                        onClick={() => respondPrivate(req.id, 'accept')}
+                        className="flex-1 py-2.5 rounded-xl bg-pink-600 text-sm font-semibold"
+                      >
+                        Accept
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Request private sheet */}
+        {showPrivate && (
+          <div className="fixed inset-0 z-[220] bg-black/70 flex items-end sm:items-center justify-center">
+            <div
+              className="w-full sm:max-w-md bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl overflow-hidden"
+              style={{
+                paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+              }}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Lock className="text-pink-500" size={20} /> Request private
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => !requestingPrivate && setShowPrivate(false)}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="px-5 py-5 space-y-5">
+                <p className="text-sm text-zinc-400">
+                  Public live pauses for everyone else. Only you and the creator
+                  stay connected.
+                </p>
+                <div>
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-zinc-400">Minutes</span>
+                    <span className="font-semibold text-white">
+                      {privateMinutes} min
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={privateMin}
+                    max={60}
+                    step={1}
+                    value={privateMinutes}
+                    onChange={(e) => setPrivateMinutes(Number(e.target.value))}
+                    className="w-full accent-pink-500"
+                  />
+                  <div className="flex justify-between text-[11px] text-zinc-500 mt-1">
+                    <span>{privateMin} min</span>
+                    <span>60 min</span>
+                  </div>
+                </div>
+                <div className="bg-zinc-800/80 rounded-2xl p-4 flex justify-between items-center">
+                  <div>
+                    <p className="text-xs text-zinc-500">Rate</p>
+                    <p className="font-medium">
+                      £{privateRate.toFixed(2)}/min
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-zinc-500">Total</p>
+                    <p className="text-xl font-bold text-pink-400">
+                      £{(privateRate * privateMinutes).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                {privateError && (
+                  <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                    {privateError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={requestingPrivate}
+                  onClick={() => void requestPrivate()}
+                  className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {requestingPrivate ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" /> Sending…
+                    </>
+                  ) : (
+                    <>Request · £{(privateRate * privateMinutes).toFixed(2)}</>
+                  )}
+                </button>
+                <p className="text-center text-xs text-zinc-500">
+                  Charged from wallet only if the creator accepts
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </AuthGuard>
   );

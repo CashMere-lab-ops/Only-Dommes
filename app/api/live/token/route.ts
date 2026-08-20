@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * LiveKit token for a live stream room.
- * Creator → can publish camera/mic
- * Viewer → subscribe only
+ * Creator → publish; viewers → subscribe
+ * Private session → only creator + paid fan
  */
 export async function POST(request: Request) {
   try {
@@ -51,7 +51,21 @@ export async function POST(request: Request) {
     }
 
     const isCreator = stream.creator_id === user.id;
-    // Viewers can join when ready or active
+    const isPrivateFan =
+      !!stream.private_active && stream.private_user_id === user.id;
+
+    // Private session: lock out everyone else
+    if (stream.private_active && !isCreator && !isPrivateFan) {
+      return NextResponse.json(
+        {
+          error: 'Private session in progress',
+          code: 'PRIVATE_SESSION',
+          private_active: true,
+        },
+        { status: 403 }
+      );
+    }
+
     if (
       !isCreator &&
       !['idle_ready', 'active', 'disconnected'].includes(stream.status)
@@ -73,7 +87,6 @@ export async function POST(request: Request) {
 
     const roomName = stream.livekit_room || `live-${stream.id}`;
 
-    // Load display name for LiveKit participant
     const { data: profile } = await admin
       .from('profiles')
       .select('display_name, username')
@@ -99,7 +112,6 @@ export async function POST(request: Request) {
 
     const token = await at.toJwt();
 
-    // Creator opening room → mark active
     if (isCreator && stream.status !== 'active') {
       await admin
         .from('live_streams')
@@ -117,6 +129,8 @@ export async function POST(request: Request) {
       roomName,
       isCreator,
       streamId: stream.id,
+      private_active: !!stream.private_active,
+      private_ends_at: stream.private_ends_at || null,
     });
   } catch (err: any) {
     console.error('live token error', err);
