@@ -72,10 +72,10 @@ export default function Home() {
               href={`/live/${featured.id}`}
               className="block relative rounded-2xl overflow-hidden mb-10 h-56 sm:h-72 md:h-96 bg-zinc-900 border border-zinc-800 group"
             >
-              {featured.thumbnail_url ? (
+              {(featured.thumbnail_url || featured.creator?.avatar_url) ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={featured.thumbnail_url}
+                  src={featured.thumbnail_url || featured.creator?.avatar_url || ""}
                   alt=""
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition duration-500"
                 />
@@ -178,10 +178,10 @@ export default function Home() {
                     className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-pink-500/40 transition group active:scale-[0.99]"
                   >
                     <div className="aspect-video bg-zinc-800 relative">
-                      {s.thumbnail_url ? (
+                      {(s.thumbnail_url || s.creator?.avatar_url) ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={s.thumbnail_url}
+                          src={s.thumbnail_url || s.creator?.avatar_url || ""}
                           alt=""
                           className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300"
                         />

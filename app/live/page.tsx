@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Radio, Loader2, Users, Video, X } from 'lucide-react';
+import { Radio, Loader2, Users, Video, X, ImagePlus } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
@@ -23,9 +23,31 @@ type LiveCard = {
   } | null;
 };
 
+async function compressThumb(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const maxW = 1280;
+  const scale = Math.min(1, maxW / bitmap.width);
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('Could not process image'))),
+      'image/jpeg',
+      0.82
+    );
+  });
+}
+
 export default function LiveIndexPage() {
   const router = useRouter();
   const supabase = createClient();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [streams, setStreams] = useState<LiveCard[]>([]);
   const [error, setError] = useState('');
@@ -34,6 +56,9 @@ export default function LiveIndexPage() {
   const [showSetup, setShowSetup] = useState(false);
   const [liveTitle, setLiveTitle] = useState('');
   const [tipGoal, setTipGoal] = useState('');
+  const [thumbFile, setThumbFile] = useState<File | null>(null);
+  const [thumbPreview, setThumbPreview] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -41,17 +66,44 @@ export default function LiveIndexPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
       const { data } = await supabase
         .from('profiles')
-        .select('account_type, display_name, username')
+        .select('account_type, display_name, username, avatar_url')
         .eq('id', user.id)
         .single();
       setIsCreator(data?.account_type === 'creator');
       if (data?.display_name || data?.username) {
         setLiveTitle(`${data.display_name || data.username} is live`);
       }
+      // Soft default preview from avatar
+      if (data?.avatar_url && !thumbPreview) {
+        setThumbPreview(data.avatar_url);
+      }
     })();
   }, []);
+
+  const onPickThumb = (file: File | null) => {
+    if (thumbPreview && thumbPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(thumbPreview);
+    }
+    if (!file) {
+      setThumbFile(null);
+      setThumbPreview(null);
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('Thumbnail must be an image');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Thumbnail max 8MB');
+      return;
+    }
+    setError('');
+    setThumbFile(file);
+    setThumbPreview(URL.createObjectURL(file));
+  };
 
   const goLive = async () => {
     const title = liveTitle.trim() || 'Live now';
@@ -65,7 +117,29 @@ export default function LiveIndexPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('Please log in again');
+      if (!session?.access_token || !userId) {
+        throw new Error('Please log in again');
+      }
+
+      let thumbnailUrl: string | null = null;
+
+      if (thumbFile) {
+        const blob = await compressThumb(thumbFile);
+        const path = `${userId}/live-thumb-${Date.now()}.jpg`;
+        const { error: upErr } = await supabase.storage
+          .from('avatars')
+          .upload(path, blob, {
+            upsert: true,
+            contentType: 'image/jpeg',
+          });
+        if (upErr) throw new Error(upErr.message || 'Thumbnail upload failed');
+        const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+        thumbnailUrl = `${pub.publicUrl}?t=${Date.now()}`;
+      } else if (thumbPreview && !thumbPreview.startsWith('blob:')) {
+        // existing avatar URL used as soft default
+        thumbnailUrl = thumbPreview;
+      }
+
       const res = await fetch('/api/live/create', {
         method: 'POST',
         headers: {
@@ -75,6 +149,7 @@ export default function LiveIndexPage() {
         body: JSON.stringify({
           title,
           tip_goal_gbp: tipGoal ? Number(tipGoal) : 0,
+          thumbnail_url: thumbnailUrl,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -172,6 +247,8 @@ export default function LiveIndexPage() {
                     (s.creator?.username
                       ? `@${s.creator.username}`
                       : 'Creator');
+                  const cover =
+                    s.thumbnail_url || s.creator?.avatar_url || null;
                   return (
                     <Link
                       key={s.id}
@@ -179,12 +256,12 @@ export default function LiveIndexPage() {
                       className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-pink-500/40 transition group active:scale-[0.99]"
                     >
                       <div className="aspect-video bg-zinc-800 relative">
-                        {s.thumbnail_url ? (
+                        {cover ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={s.thumbnail_url}
+                            src={cover}
                             alt=""
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300"
                           />
                         ) : (
                           <div className="w-full h-full bg-gradient-to-br from-zinc-800 via-zinc-900 to-pink-950/30 flex items-center justify-center">
@@ -249,7 +326,62 @@ export default function LiveIndexPage() {
                   <X size={20} />
                 </button>
               </div>
-              <div className="px-5 py-5 space-y-4">
+              <div className="px-5 py-5 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* Thumbnail */}
+                <div>
+                  <label className="text-sm text-zinc-400 mb-1.5 block">
+                    Cover image
+                  </label>
+                  <p className="text-[11px] text-zinc-500 mb-2">
+                    Shown on the homepage and Live page. Use a clear photo of
+                    you / your setup.
+                  </p>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) =>
+                      onPickThumb(e.target.files?.[0] || null)
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="w-full aspect-video rounded-2xl border border-dashed border-zinc-600 bg-zinc-800/60 overflow-hidden relative group"
+                  >
+                    {thumbPreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={thumbPreview}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 gap-2">
+                        <ImagePlus size={28} />
+                        <span className="text-sm font-medium">
+                          Add cover photo
+                        </span>
+                      </div>
+                    )}
+                    {thumbPreview && (
+                      <span className="absolute bottom-2 right-2 text-[11px] bg-black/70 px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition">
+                        Change
+                      </span>
+                    )}
+                  </button>
+                  {thumbFile && (
+                    <button
+                      type="button"
+                      onClick={() => onPickThumb(null)}
+                      className="mt-2 text-xs text-zinc-400 hover:text-white"
+                    >
+                      Remove photo
+                    </button>
+                  )}
+                </div>
+
                 <div>
                   <label className="text-sm text-zinc-400 mb-1.5 block">
                     Stream title
@@ -260,7 +392,6 @@ export default function LiveIndexPage() {
                     placeholder="What are you streaming?"
                     maxLength={80}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500"
-                    autoFocus
                   />
                   <p className="text-[11px] text-zinc-500 mt-1 text-right">
                     {liveTitle.length}/80
@@ -285,7 +416,7 @@ export default function LiveIndexPage() {
                     />
                   </div>
                   <p className="text-[11px] text-zinc-500 mt-1">
-                    Fans will see a progress bar. Tips come in the next step.
+                    Fans will see a progress bar on your live.
                   </p>
                 </div>
                 {error && (
@@ -320,4 +451,5 @@ export default function LiveIndexPage() {
     </AuthGuard>
   );
 }
+
 

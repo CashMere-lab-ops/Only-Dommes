@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
     const { data: profile } = await admin
       .from('profiles')
-      .select('account_type, display_name, username')
+      .select('account_type, display_name, username, avatar_url')
       .eq('id', user.id)
       .single();
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Resume existing open stream
+    // Resume existing open stream (still allow new thumbnail/title on resume)
     const { data: existing } = await admin
       .from('live_streams')
       .select('*')
@@ -51,15 +51,6 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle();
 
-    if (existing) {
-      return NextResponse.json({
-        ok: true,
-        resumed: true,
-        stream: existing,
-        watchPath: `/live/${existing.id}`,
-      });
-    }
-
     const body = await request.json().catch(() => ({}));
     const title =
       typeof body.title === 'string' && body.title.trim()
@@ -67,8 +58,37 @@ export async function POST(request: Request) {
         : `${profile.display_name || profile.username || 'Creator'} is live`;
 
     const tipGoal = Math.max(0, Number(body.tip_goal_gbp) || 0);
+    let thumbnailUrl =
+      typeof body.thumbnail_url === 'string' && body.thumbnail_url.trim()
+        ? body.thumbnail_url.trim().slice(0, 500)
+        : null;
 
-    // Create row first to get id, then set room name
+    // Fallback: use profile avatar so cards never look empty
+    if (!thumbnailUrl && profile?.avatar_url) {
+      thumbnailUrl = profile.avatar_url;
+    }
+
+    if (existing) {
+      const patch: Record<string, any> = {
+        title,
+        tip_goal_gbp: tipGoal,
+        updated_at: new Date().toISOString(),
+      };
+      if (thumbnailUrl) patch.thumbnail_url = thumbnailUrl;
+      await admin.from('live_streams').update(patch).eq('id', existing.id);
+      const { data: updated } = await admin
+        .from('live_streams')
+        .select('*')
+        .eq('id', existing.id)
+        .single();
+      return NextResponse.json({
+        ok: true,
+        resumed: true,
+        stream: updated || { ...existing, ...patch },
+        watchPath: `/live/${existing.id}`,
+      });
+    }
+
     const { data: row, error: insErr } = await admin
       .from('live_streams')
       .insert({
@@ -78,6 +98,7 @@ export async function POST(request: Request) {
         tip_goal_gbp: tipGoal,
         tip_raised_gbp: 0,
         viewer_count: 0,
+        thumbnail_url: thumbnailUrl,
       })
       .select('*')
       .single();
