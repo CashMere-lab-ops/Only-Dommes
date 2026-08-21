@@ -255,7 +255,10 @@ export default function LiveWatchPage() {
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatText, setChatText] = useState('');
   const [myModeration, setMyModeration] = useState<'mute' | 'ban' | null>(null);
-  const [chatModMenuId, setChatModMenuId] = useState<string | null>(null);
+  const [modTarget, setModTarget] = useState<{
+    userId: string;
+    name: string;
+  } | null>(null);
   const [modBusy, setModBusy] = useState(false);
   const [sendingChat, setSendingChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -1372,7 +1375,7 @@ export default function LiveWatchPage() {
   ) => {
     if (!stream || !isOwner || modBusy) return;
     setModBusy(true);
-    setChatModMenuId(null);
+    setModTarget(null);
     try {
       const {
         data: { session },
@@ -2688,54 +2691,19 @@ export default function LiveWatchPage() {
                           !isCreatorMsg(m) &&
                           m.user_id &&
                           !String(m.content || '').startsWith('__') && (
-                            <div className="relative flex-shrink-0">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setChatModMenuId(
-                                    chatModMenuId === m.id ? null : m.id
-                                  )
-                                }
-                                className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition"
-                                aria-label="Moderate"
-                              >
-                                <MoreHorizontal size={16} />
-                              </button>
-                              {chatModMenuId === m.id && (
-                                <div className="absolute left-0 bottom-8 z-50 w-40 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl py-1 overflow-hidden">
-                                  <button
-                                    type="button"
-                                    disabled={modBusy}
-                                    onClick={() =>
-                                      void moderateUser(m.user_id, 'mute')
-                                    }
-                                    className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
-                                  >
-                                    Mute chat
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={modBusy}
-                                    onClick={() =>
-                                      void moderateUser(m.user_id, 'ban')
-                                    }
-                                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-zinc-800"
-                                  >
-                                    Ban from live
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={modBusy}
-                                    onClick={() =>
-                                      void moderateUser(m.user_id, 'clear')
-                                    }
-                                    className="w-full text-left px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
-                                  >
-                                    Clear restriction
-                                  </button>
-                                </div>
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setModTarget({
+                                  userId: m.user_id,
+                                  name: displayName(m),
+                                })
+                              }
+                              className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition flex-shrink-0"
+                              aria-label="Moderate"
+                            >
+                              <MoreHorizontal size={16} />
+                            </button>
                           )}
                       </div>
                     );
@@ -2971,6 +2939,64 @@ export default function LiveWatchPage() {
             )}
           </div>
         </main>
+
+        
+        {/* Host moderate viewer sheet */}
+        {modTarget && isOwner && (
+          <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/70"
+              aria-label="Close"
+              onClick={() => setModTarget(null)}
+            />
+            <div className="relative w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl mb-0 sm:mb-0">
+              <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-4 sm:hidden" />
+              <p className="text-xs uppercase tracking-wide text-zinc-500 mb-1">
+                Moderate viewer
+              </p>
+              <p className="text-lg font-semibold text-white truncate mb-1">
+                {modTarget.name}
+              </p>
+              <p className="text-sm text-zinc-400 mb-5">
+                Applies to this live only. Ban stops them rejoining this stream.
+              </p>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={modBusy}
+                  onClick={() => void moderateUser(modTarget.userId, 'mute')}
+                  className="w-full py-3.5 rounded-2xl bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-white font-semibold transition disabled:opacity-50"
+                >
+                  Mute chat
+                </button>
+                <button
+                  type="button"
+                  disabled={modBusy}
+                  onClick={() => void moderateUser(modTarget.userId, 'ban')}
+                  className="w-full py-3.5 rounded-2xl bg-red-600/90 hover:bg-red-600 text-white font-semibold transition disabled:opacity-50"
+                >
+                  Ban from this live
+                </button>
+                <button
+                  type="button"
+                  disabled={modBusy}
+                  onClick={() => void moderateUser(modTarget.userId, 'clear')}
+                  className="w-full py-3.5 rounded-2xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 font-medium transition disabled:opacity-50"
+                >
+                  Clear restriction
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModTarget(null)}
+                  className="w-full py-3 text-sm text-zinc-500 hover:text-zinc-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tip sheet */}
         {showTip && (
