@@ -2188,7 +2188,7 @@ export default function LiveWatchPage() {
             {/* Chat — fixed height, swipe/scroll to older messages */}
             {!ended && (
               <div
-                className="absolute left-0 right-0 z-20 pointer-events-none px-3"
+                className="absolute left-0 right-0 z-20 pointer-events-none px-3 lg:px-6 lg:left-0 lg:right-auto lg:w-full lg:max-w-xl"
                 style={{
                   bottom:
                     'max(4.25rem, calc(env(safe-area-inset-bottom) + 3.5rem))',
@@ -2196,7 +2196,7 @@ export default function LiveWatchPage() {
               >
                 <div
                   ref={chatBoxRef}
-                  className="max-w-md max-h-[28vh] sm:max-h-[32vh] overflow-y-auto overscroll-contain pointer-events-auto mask-fade-chat pr-1 space-y-1.5"
+                  className="max-w-md lg:max-w-xl max-h-[28vh] sm:max-h-[32vh] lg:max-h-[40vh] overflow-y-auto overscroll-contain pointer-events-auto mask-fade-chat pr-1 space-y-1.5 lg:space-y-2"
                   style={{
                     WebkitOverflowScrolling: 'touch',
                     scrollbarWidth: 'thin',
@@ -2206,14 +2206,20 @@ export default function LiveWatchPage() {
                     const system = parseSystemLine(m.content);
                     if (system) {
                       return (
-                        <div key={m.id} className="flex justify-center py-0.5">
+                        <div
+                          key={m.id}
+                          className="flex justify-center lg:justify-start py-0.5 lg:py-1"
+                        >
                           <p
-                            className={`text-xs font-medium px-3 py-1 rounded-full border backdrop-blur-md shadow-sm ${
+                            className={`text-xs lg:text-[13px] font-medium px-3 lg:px-3.5 py-1 lg:py-1.5 rounded-full border backdrop-blur-md shadow-sm lg:shadow-md tracking-wide ${
                               system.type === 'join'
-                                ? 'text-white bg-zinc-800/90 border-zinc-600/80'
-                                : 'text-zinc-200 bg-zinc-900/90 border-zinc-700/80'
+                                ? 'text-white bg-zinc-800/95 border-zinc-500/70 lg:bg-zinc-800/80 lg:border-white/15'
+                                : 'text-zinc-200 bg-zinc-900/95 border-zinc-700/80 lg:bg-zinc-900/75 lg:border-white/10'
                             }`}
                           >
+                            <span className="text-zinc-400 lg:text-zinc-500 font-normal mr-1">
+                              ·
+                            </span>
                             {system.type === 'join'
                               ? `${system.label} joined`
                               : `${system.label} left`}
@@ -2224,8 +2230,8 @@ export default function LiveWatchPage() {
                     const tip = parseTipMessage(m.content);
                     if (tip) {
                       return (
-                        <div key={m.id} className="flex items-start gap-2">
-                          <div className="max-w-[92%] rounded-2xl px-3 py-2 bg-gradient-to-r from-pink-600/90 to-rose-600/85 border border-pink-300/30 shadow-lg shadow-pink-900/30 backdrop-blur-md">
+                        <div key={m.id} className="flex items-start gap-2 lg:max-w-[90%]">
+                          <div className="max-w-[92%] lg:max-w-full rounded-2xl px-3 py-2 bg-gradient-to-r from-pink-600/90 to-rose-600/85 border border-pink-300/30 shadow-lg shadow-pink-900/30 backdrop-blur-md">
                             <div className="flex items-center gap-2">
                               <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
                                 <DollarSign size={14} className="text-white" />
