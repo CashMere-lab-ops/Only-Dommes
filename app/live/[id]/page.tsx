@@ -646,7 +646,21 @@ export default function LiveWatchPage() {
     };
   }, [id, supabase]);
 
+  const chatNearBottom = useRef(true);
+
   useEffect(() => {
+    const box = chatBoxRef.current;
+    if (!box) return;
+    const onScroll = () => {
+      const dist = box.scrollHeight - box.scrollTop - box.clientHeight;
+      chatNearBottom.current = dist < 80;
+    };
+    box.addEventListener('scroll', onScroll, { passive: true });
+    return () => box.removeEventListener('scroll', onScroll);
+  }, [liveStatus]);
+
+  useEffect(() => {
+    if (!chatNearBottom.current) return;
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
@@ -1221,13 +1235,18 @@ export default function LiveWatchPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-black text-white flex">
+      <div className="bg-black text-white flex lg:min-h-screen">
         <div className="hidden lg:block">
           <Sidebar />
         </div>
 
-        <main className="flex-1 flex flex-col h-[100dvh] max-h-[100dvh] overflow-hidden relative">
-          <div className="flex-1 min-h-0 relative bg-black">
+        {/* Mobile: fixed full viewport so no black gap under browser chrome */}
+        <main
+          className="flex-1 flex flex-col relative bg-black
+            fixed inset-0 z-[45] lg:static lg:z-auto
+            h-[100dvh] max-h-[100dvh] w-full overflow-hidden"
+        >
+          <div className="absolute inset-0 bg-black">
             {ended ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center px-6 overflow-y-auto py-10">
                 <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
@@ -1347,7 +1366,7 @@ export default function LiveWatchPage() {
                   autoPlay
                   playsInline
                   muted={isOwner}
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-cover bg-black"
                 />
                 {isOwner && (
                   <video
@@ -1387,7 +1406,7 @@ export default function LiveWatchPage() {
               <div
                 className="absolute top-0 inset-x-0 z-20 flex items-start justify-between gap-3 px-3 pointer-events-none"
                 style={{
-                  paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+                  paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
                 }}
               >
                 <div className="flex items-center gap-2 pointer-events-auto min-w-0">
@@ -1621,24 +1640,26 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Floating chat (LoyalFans / IG Live style) */}
+            {/* Chat — fixed height, swipe/scroll to older messages */}
             {!ended && (
               <div
-                ref={chatBoxRef}
                 className="absolute left-0 right-0 z-20 pointer-events-none px-3"
                 style={{
                   bottom:
-                    'max(4.75rem, calc(env(safe-area-inset-bottom) + 4rem))',
-                  maxHeight: '32vh',
+                    'max(4.25rem, calc(env(safe-area-inset-bottom) + 3.5rem))',
                 }}
               >
-                <div className="max-w-md space-y-1.5 overflow-y-auto pointer-events-auto mask-fade-chat pr-2">
-                  {chatMessages.slice(-25).map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex items-start gap-2 animate-in fade-in"
-                    >
-                      <div className="bg-black/50 backdrop-blur-md rounded-2xl px-2.5 py-1.5 max-w-[90%] border border-white/5 shadow-sm">
+                <div
+                  ref={chatBoxRef}
+                  className="max-w-md max-h-[28vh] sm:max-h-[32vh] overflow-y-auto overscroll-contain pointer-events-auto mask-fade-chat pr-1 space-y-1.5"
+                  style={{
+                    WebkitOverflowScrolling: 'touch',
+                    scrollbarWidth: 'thin',
+                  }}
+                >
+                  {chatMessages.slice(-40).map((m) => (
+                    <div key={m.id} className="flex items-start gap-2">
+                      <div className="bg-black/55 backdrop-blur-md rounded-2xl px-2.5 py-1.5 max-w-[92%] border border-white/5 shadow-sm">
                         <span
                           className={`text-xs font-semibold mr-1.5 ${
                             isCreatorMsg(m)
@@ -1667,14 +1688,14 @@ export default function LiveWatchPage() {
             {/* Bottom: chat input + tip / creator controls */}
             {!ended && liveStatus === 'live' && (
               <div
-                className="absolute bottom-0 inset-x-0 z-20 px-3 pointer-events-none"
+                className="absolute bottom-0 inset-x-0 z-30 px-3 pointer-events-none"
                 style={{
                   paddingBottom:
-                    'max(0.75rem, calc(env(safe-area-inset-bottom) + 0.5rem))',
+                    'max(0.5rem, env(safe-area-inset-bottom))',
                 }}
               >
                 <div className="pointer-events-auto flex items-center gap-2 max-w-2xl mx-auto">
-                  <div className="flex-1 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/15 rounded-full pl-3 sm:pl-4 pr-1 py-1 sm:py-1.5 min-w-0">
+                  <div className="flex-1 flex items-center gap-1.5 bg-black/70 backdrop-blur-md border border-white/15 rounded-full pl-3 sm:pl-4 pr-1 py-1 min-w-0">
                     <input
                       value={chatText}
                       onChange={(e) => setChatText(e.target.value.slice(0, 300))}
@@ -1685,8 +1706,12 @@ export default function LiveWatchPage() {
                         }
                       }}
                       placeholder="Say something…"
-                      className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-zinc-400"
+                      className="flex-1 min-w-0 bg-transparent text-base sm:text-sm outline-none placeholder:text-zinc-400"
+                      style={{ fontSize: '16px' }}
                       maxLength={300}
+                      enterKeyHint="send"
+                      autoComplete="off"
+                      autoCorrect="on"
                     />
                     <button
                       type="button"
