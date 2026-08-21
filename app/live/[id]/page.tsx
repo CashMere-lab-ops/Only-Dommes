@@ -58,6 +58,8 @@ type StreamRow = {
   private_end_by_fan?: boolean;
   show_join_messages?: boolean;
   slow_mode_seconds?: number;
+  chat_block_links?: boolean;
+  chat_require?: 'anyone' | 'followers' | 'subscribers';
   showcase_user_id?: string | null;
   showcase_amount_gbp?: number;
   showcase_name?: string | null;
@@ -246,6 +248,10 @@ export default function LiveWatchPage() {
   const [showJoinMessages, setShowJoinMessages] = useState(true);
   const showJoinsRef = useRef(true);
   const [slowModeSeconds, setSlowModeSeconds] = useState(0);
+  const [chatBlockLinks, setChatBlockLinks] = useState(false);
+  const [chatRequire, setChatRequire] = useState<
+    'anyone' | 'followers' | 'subscribers'
+  >('anyone');
   const slowModeRef = useRef(0);
   const [slowModeLeft, setSlowModeLeft] = useState(0);
   const lastChatSentAt = useRef(0);
@@ -371,6 +377,11 @@ export default function LiveWatchPage() {
     setShowJoinMessages(joinsOn);
     showJoinsRef.current = joinsOn;
     setSlowModeSeconds(Number(data.slow_mode_seconds || 0));
+    setChatBlockLinks(!!data.chat_block_links);
+    const req = data.chat_require;
+    if (req === 'followers' || req === 'subscribers' || req === 'anyone') {
+      setChatRequire(req);
+    }
     try {
       const { data: cProf } = await supabase
         .from('profiles')
@@ -668,6 +679,24 @@ export default function LiveWatchPage() {
           }
           if (msg?.type === 'reaction' && msg.emoji) {
             spawnReactionRef.current(String(msg.emoji));
+          }
+          if (msg?.type === 'chat_filters') {
+            if (typeof msg.block_links === 'boolean') {
+              setChatBlockLinks(msg.block_links);
+              setStream((s) =>
+                s ? { ...s, chat_block_links: msg.block_links } : s
+              );
+            }
+            if (
+              msg.require === 'anyone' ||
+              msg.require === 'followers' ||
+              msg.require === 'subscribers'
+            ) {
+              setChatRequire(msg.require);
+              setStream((s) =>
+                s ? { ...s, chat_require: msg.require } : s
+              );
+            }
           }
           if (msg?.type === 'moderation' && msg.user_id) {
             const me = userIdRef.current;
@@ -2103,6 +2132,74 @@ export default function LiveWatchPage() {
     }
   };
 
+  const toggleChatBlockLinks = async () => {
+    if (!isOwner || !stream) return;
+    const next = !chatBlockLinks;
+    setChatBlockLinks(next);
+    setStream((s) => (s ? { ...s, chat_block_links: next } : s));
+    try {
+      const room = roomRef.current;
+      if (room?.localParticipant) {
+        const data = new TextEncoder().encode(
+          JSON.stringify({ type: 'chat_filters', block_links: next, require: chatRequire })
+        );
+        await room.localParticipant.publishData(data, { reliable: true });
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      await supabase
+        .from('live_streams')
+        .update({
+          chat_block_links: next,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', stream.id);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const cycleChatRequire = async () => {
+    if (!isOwner || !stream) return;
+    const order: Array<'anyone' | 'followers' | 'subscribers'> = [
+      'anyone',
+      'followers',
+      'subscribers',
+    ];
+    const i = order.indexOf(chatRequire);
+    const next = order[(i + 1) % order.length];
+    setChatRequire(next);
+    setStream((s) => (s ? { ...s, chat_require: next } : s));
+    try {
+      const room = roomRef.current;
+      if (room?.localParticipant) {
+        const data = new TextEncoder().encode(
+          JSON.stringify({
+            type: 'chat_filters',
+            block_links: chatBlockLinks,
+            require: next,
+          })
+        );
+        await room.localParticipant.publishData(data, { reliable: true });
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      await supabase
+        .from('live_streams')
+        .update({
+          chat_require: next,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', stream.id);
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
     <AuthGuard>
       <div className="bg-black text-white flex lg:min-h-screen">
@@ -2985,6 +3082,40 @@ export default function LiveWatchPage() {
                       {slowModeSeconds > 0
                         ? `Slow ${slowModeSeconds}s`
                         : 'Slow off'}
+                    </button>
+                  )}
+
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => void toggleChatBlockLinks()}
+                      className={`h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
+                        chatBlockLinks
+                          ? 'bg-pink-600/90 border-pink-400/40 text-white'
+                          : 'bg-zinc-900/80 border-zinc-700 text-zinc-500'
+                      }`}
+                      title="Block links in chat"
+                    >
+                      {chatBlockLinks ? 'No links' : 'Links ok'}
+                    </button>
+                  )}
+
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => void cycleChatRequire()}
+                      className={`h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
+                        chatRequire !== 'anyone'
+                          ? 'bg-pink-600/90 border-pink-400/40 text-white'
+                          : 'bg-zinc-900/80 border-zinc-700 text-zinc-500'
+                      }`}
+                      title="Who can chat"
+                    >
+                      {chatRequire === 'anyone'
+                        ? 'Chat: all'
+                        : chatRequire === 'followers'
+                          ? 'Chat: fans'
+                          : 'Chat: subs'}
                     </button>
                   )}
 
