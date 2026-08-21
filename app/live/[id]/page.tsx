@@ -615,6 +615,7 @@ export default function LiveWatchPage() {
 
       bumpViewers(Math.max(0, room.numParticipants - 1));
       setLiveStatus('live');
+      setLiveStartedAt((prev) => prev || Date.now());
       setStream((s) => (s ? { ...s, status: 'active' } : s));
     } catch (e: any) {
       console.error(e);
@@ -639,6 +640,13 @@ export default function LiveWatchPage() {
       setLiveStatus('ended');
       setStream((s) => (s ? { ...s, status: 'ended' } : s));
 
+      const localElapsed = () => {
+        if (liveStartedAt) {
+          return Math.max(0, Math.floor((Date.now() - liveStartedAt) / 1000));
+        }
+        return 0;
+      };
+
       try {
         await cleanupRoom();
       } catch {
@@ -654,15 +662,20 @@ export default function LiveWatchPage() {
               : { ...data.stream, status: 'ended' }
           );
         }
-        const summary =
+        const base =
           data.summary ||
-          (data.status === 'ended' || data.stream
+          data.preview_summary ||
+          (data.stream
             ? {
                 title: data.stream?.title,
-                duration_seconds: data.duration_seconds || 0,
+                duration_seconds: Number(data.duration_seconds || 0),
                 tip_raised_gbp: Number(data.stream?.tip_raised_gbp || 0),
                 tip_goal_gbp: Number(data.stream?.tip_goal_gbp || 0),
-                peak_viewers: Number(data.stream?.viewer_count || 0),
+                peak_viewers: Number(
+                  data.stream?.peak_viewers ||
+                    data.stream?.viewer_count ||
+                    0
+                ),
                 tipper_count: data.tipper_count || 0,
                 showcase_name: data.stream?.showcase_name,
                 showcase_amount_gbp: data.stream?.showcase_amount_gbp,
@@ -671,16 +684,45 @@ export default function LiveWatchPage() {
                 is_host: !!data.is_host,
               }
             : null);
-        if (summary) {
-          setMyTipTotal(Number(summary.my_tip_gbp || 0));
-          setEndSummary((prev: any) => {
-            if (prev?.is_host) return prev;
-            return summary;
-          });
-        }
+        if (!base) return;
+
+        const apiDur = Number(
+          base.duration_seconds || data.duration_seconds || 0
+        );
+        const duration_seconds = Math.max(apiDur, localElapsed());
+
+        const summary = { ...base, duration_seconds };
+        setMyTipTotal(Number(summary.my_tip_gbp || 0));
+        setEndSummary((prev: any) => {
+          if (prev?.is_host) {
+            // Host keeps own summary but still upgrade duration if higher
+            return {
+              ...prev,
+              duration_seconds: Math.max(
+                Number(prev.duration_seconds || 0),
+                duration_seconds
+              ),
+            };
+          }
+          if (!prev) return summary;
+          return {
+            ...summary,
+            duration_seconds: Math.max(
+              Number(prev.duration_seconds || 0),
+              duration_seconds
+            ),
+            tip_raised_gbp: Math.max(
+              Number(prev.tip_raised_gbp || 0),
+              Number(summary.tip_raised_gbp || 0)
+            ),
+            peak_viewers: Math.max(
+              Number(prev.peak_viewers || 0),
+              Number(summary.peak_viewers || 0)
+            ),
+          };
+        });
       };
 
-      // Fetch summary (with short retries — host may still be writing ended status)
       const fetchStatus = async () => {
         const {
           data: { session },
@@ -695,27 +737,48 @@ export default function LiveWatchPage() {
       };
 
       try {
+        // Seed with local elapsed so viewers never flash 0:00
+        setEndSummary((prev: any) => {
+          if (prev?.is_host) return prev;
+          if (prev && Number(prev.duration_seconds || 0) > 0) return prev;
+          return {
+            title: stream?.title,
+            duration_seconds: localElapsed(),
+            tip_raised_gbp: Number(stream?.tip_raised_gbp || 0),
+            tip_goal_gbp: Number(stream?.tip_goal_gbp || 0),
+            peak_viewers: peakViewers,
+            tipper_count: 0,
+            showcase_name: stream?.showcase_name,
+            showcase_amount_gbp: stream?.showcase_amount_gbp,
+            showcase_avatar_url: stream?.showcase_avatar_url,
+            my_tip_gbp: myTipTotal,
+            is_host: false,
+          };
+        });
+
         let data = await fetchStatus();
         applyStatus(data);
-        // Retry a few times if summary not ready yet
-        if (!data?.summary && !data?.stream) {
-          for (let i = 0; i < 3; i++) {
-            await new Promise((r) => setTimeout(r, 800));
-            data = await fetchStatus();
-            applyStatus(data);
-            if (data?.summary || data?.status === 'ended') break;
-          }
+
+        // Retry until stored duration is available (host write may lag)
+        for (let i = 0; i < 5; i++) {
+          const dur = Number(
+            data?.summary?.duration_seconds ||
+              data?.duration_seconds ||
+              data?.stream?.duration_seconds ||
+              0
+          );
+          if (data?.status === 'ended' && dur > 0) break;
+          await new Promise((r) => setTimeout(r, 600));
+          data = await fetchStatus();
+          applyStatus(data);
         }
       } catch (e) {
         console.error('finalize end', e);
-        // Still show a minimal end card from local stream state
         setEndSummary((prev: any) => {
-          if (prev) return prev;
+          if (prev && Number(prev.duration_seconds || 0) > 0) return prev;
           return {
             title: stream?.title,
-            duration_seconds: liveStartedAt
-              ? Math.floor((Date.now() - liveStartedAt) / 1000)
-              : 0,
+            duration_seconds: localElapsed(),
             tip_raised_gbp: Number(stream?.tip_raised_gbp || 0),
             tip_goal_gbp: Number(stream?.tip_goal_gbp || 0),
             peak_viewers: peakViewers,
@@ -730,7 +793,7 @@ export default function LiveWatchPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cleanupRoom, id, supabase]
+    [cleanupRoom, id, supabase, liveStartedAt]
   );
 
   finalizeRef.current = finalizeStreamEnded;

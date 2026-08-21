@@ -54,6 +54,8 @@ export async function POST(request: Request) {
       Math.floor((Date.now() - started) / 1000)
     );
 
+    const peak = Number(body.peak_viewers || stream.viewer_count || 0);
+
     await admin
       .from('live_streams')
       .update({
@@ -61,6 +63,9 @@ export async function POST(request: Request) {
         ended_at: endedAt,
         updated_at: endedAt,
         viewer_count: 0,
+        // Persist so every viewer reads the same stats
+        duration_seconds: durationSeconds,
+        peak_viewers: peak,
         private_active: false,
         private_user_id: null,
         private_request_id: null,
@@ -87,7 +92,7 @@ export async function POST(request: Request) {
         duration_seconds: durationSeconds,
         tip_raised_gbp: Number(stream.tip_raised_gbp || 0),
         tip_goal_gbp: Number(stream.tip_goal_gbp || 0),
-        peak_viewers: Number(body.peak_viewers || stream.viewer_count || 0),
+        peak_viewers: peak,
         tipper_count: tipperCount,
         showcase_name: stream.showcase_name || null,
         showcase_amount_gbp: Number(stream.showcase_amount_gbp || 0),
