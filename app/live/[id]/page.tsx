@@ -1241,16 +1241,16 @@ export default function LiveWatchPage() {
 
   const spawnReaction = (emoji: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    // Cluster bottom-right (phone + desktop)
-    const left = 15 + Math.random() * 70; // within right panel
-    const drift = `${-8 - Math.random() * 28}px`;
+    // Spread slightly inside the right-side spawn panel
+    const left = 8 + Math.random() * 55;
+    const drift = `${-10 - Math.random() * 36}px`;
     setFloatingReacts((prev) => [
-      ...prev.slice(-18),
+      ...prev.slice(-16),
       { id, emoji, left, drift },
     ]);
     window.setTimeout(() => {
       setFloatingReacts((prev) => prev.filter((r) => r.id !== id));
-    }, 2500);
+    }, 2700);
   };
   spawnReactionRef.current = spawnReaction;
 
@@ -1810,45 +1810,58 @@ export default function LiveWatchPage() {
         </div>
   
         <style dangerouslySetInnerHTML={{ __html: `
+/* TikTok-style live reactions — big, rise ~half screen */
 @keyframes wod-float-react {
   0% {
-    transform: translate3d(0, 0, 0) scale(0.5);
+    transform: translate3d(0, 8px, 0) scale(0.35);
     opacity: 0;
   }
-  8% {
+  10% {
     opacity: 1;
-    transform: translate3d(0, -8px, 0) scale(1.15);
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  70% {
+    opacity: 1;
   }
   100% {
-    transform: translate3d(var(--drift, -12px), -48vh, 0) scale(1);
+    transform: translate3d(var(--drift, -18px), -50vh, 0) scale(1.15);
     opacity: 0;
   }
 }
 .wod-float-react {
-  animation: wod-float-react 2.4s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation: wod-float-react 2.6s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
   pointer-events: none;
   position: absolute;
-  bottom: 0;
-  font-size: 1.85rem;
+  bottom: 4px;
+  font-size: 2.75rem; /* phone — large */
   line-height: 1;
   will-change: transform, opacity;
-  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.55));
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.55));
+  user-select: none;
+}
+@media (min-width: 640px) {
+  .wod-float-react {
+    font-size: 3.25rem;
+  }
 }
 @media (min-width: 1024px) {
   .wod-float-react {
-    font-size: 2.1rem;
+    font-size: 4rem; /* desktop — very large */
   }
   @keyframes wod-float-react {
     0% {
-      transform: translate3d(0, 0, 0) scale(0.5);
+      transform: translate3d(0, 12px, 0) scale(0.3);
       opacity: 0;
     }
-    8% {
+    12% {
       opacity: 1;
-      transform: translate3d(0, -10px, 0) scale(1.2);
+      transform: translate3d(0, 0, 0) scale(1.08);
+    }
+    65% {
+      opacity: 1;
     }
     100% {
-      transform: translate3d(var(--drift, -16px), -42vh, 0) scale(1);
+      transform: translate3d(var(--drift, -24px), -48vh, 0) scale(1.2);
       opacity: 0;
     }
   }
@@ -2411,10 +2424,14 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Shared emoji reactions — rise from bottom-right */}
+            {/* Shared emoji reactions — TikTok-style rise from bottom-right */}
             {!ended && floatingReacts.length > 0 && (
               <div
-                className="absolute right-0 bottom-28 sm:bottom-32 top-[35%] z-25 pointer-events-none overflow-hidden w-[48%] sm:w-[42%] lg:w-[36%]"
+                className="absolute z-25 pointer-events-none overflow-hidden
+                  right-12 bottom-28 w-[42%]
+                  sm:right-4 sm:bottom-36 sm:w-[38%]
+                  lg:right-6 lg:bottom-40 lg:w-[32%] lg:max-w-[280px]
+                  top-[40%]"
               >
                 {floatingReacts.map((r) => (
                   <span
@@ -2422,9 +2439,7 @@ export default function LiveWatchPage() {
                     className="wod-float-react"
                     style={{
                       left: `${r.left}%`,
-                      // remap left % into this right-side panel
-                      // left was 62-90 of full screen → map into panel
-                      ['--drift' as any]: r.drift || '-12px',
+                      ['--drift' as any]: r.drift || '-16px',
                     }}
                   >
                     {r.emoji}
