@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     const { data: stream } = await admin
       .from('live_streams')
       .select(
-        'id, creator_id, title, status, tip_raised_gbp, tip_goal_gbp, viewer_count, peak_viewers, duration_seconds, started_at, ended_at, created_at, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url'
+        'id, creator_id, title, status, tip_raised_gbp, tip_goal_gbp, viewer_count, peak_viewers, duration_seconds, started_at, ended_at, created_at, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url, show_join_messages'
       )
       .eq('id', streamId)
       .single();
@@ -120,3 +120,4 @@ export async function GET(request: Request) {
     );
   }
 }
+

@@ -560,43 +560,11 @@ export default function LiveWatchPage() {
         track.detach().forEach((el) => el.remove());
       });
 
-      room.on(RoomEvent.ParticipantConnected, (participant) => {
+      room.on(RoomEvent.ParticipantConnected, () => {
         bumpViewers(Math.max(0, room.numParticipants - 1));
-        if (
-          asCreator &&
-          showJoinsRef.current &&
-          participant.identity &&
-          participant.identity !== streamRow.creator_id
-        ) {
-          const label =
-            participant.name ||
-            participant.identity.slice(0, 8) ||
-            'Someone';
-          void supabase.from('live_chat_messages').insert({
-            stream_id: streamRow.id,
-            user_id: streamRow.creator_id,
-            content: `__JOIN__:${label}`.slice(0, 300),
-          });
-        }
       });
-      room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+      room.on(RoomEvent.ParticipantDisconnected, () => {
         bumpViewers(Math.max(0, room.numParticipants - 1));
-        if (
-          asCreator &&
-          showJoinsRef.current &&
-          participant?.identity &&
-          participant.identity !== streamRow.creator_id
-        ) {
-          const label =
-            participant.name ||
-            participant.identity.slice(0, 8) ||
-            'Someone';
-          void supabase.from('live_chat_messages').insert({
-            stream_id: streamRow.id,
-            user_id: streamRow.creator_id,
-            content: `__LEAVE__:${label}`.slice(0, 300),
-          });
-        }
         if (!asCreator && room.remoteParticipants.size === 0) {
           setTimeout(() => {
             void finalizeRef.current();
@@ -650,6 +618,11 @@ export default function LiveWatchPage() {
             }
           });
         });
+
+        // Viewer announces join with their display name
+        if (showJoinsRef.current) {
+          void announceJoinLeave(streamRow.id, 'join');
+        }
       }
 
       bumpViewers(Math.max(0, room.numParticipants - 1));
@@ -861,6 +834,10 @@ export default function LiveWatchPage() {
         const data = await res.json().catch(() => ({}));
         if (data.stream) {
           setStream((s) => (s ? { ...s, ...data.stream } : s));
+          if (typeof data.stream.show_join_messages === 'boolean') {
+            setShowJoinMessages(data.stream.show_join_messages);
+            showJoinsRef.current = data.stream.show_join_messages;
+          }
         }
         if (data.status === 'ended' || data.stream?.status === 'ended') {
           void finalizeRef.current(data.stream);
@@ -896,6 +873,40 @@ export default function LiveWatchPage() {
       cancelled = true;
       clearInterval(poll);
       void supabase.removeChannel(statusCh);
+      // Viewer leaving page → "left" line (if joins enabled)
+      if (showJoinsRef.current && id) {
+        void (async () => {
+          try {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (!user) return;
+            // Skip if this user is the creator of the stream
+            const { data: s } = await supabase
+              .from('live_streams')
+              .select('creator_id, show_join_messages')
+              .eq('id', id)
+              .maybeSingle();
+            if (!s || s.creator_id === user.id) return;
+            if (s.show_join_messages === false) return;
+            let label = 'Someone';
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('display_name, username')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (prof?.display_name) label = prof.display_name;
+            else if (prof?.username) label = `@${prof.username}`;
+            await supabase.from('live_chat_messages').insert({
+              stream_id: id,
+              user_id: user.id,
+              content: `__LEAVE__:${label}`.slice(0, 300),
+            });
+          } catch {
+            /* ignore */
+          }
+        })();
+      }
       cleanupRoom();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1144,6 +1155,61 @@ export default function LiveWatchPage() {
     const next = !micOn;
     await room.localParticipant.setMicrophoneEnabled(next);
     setMicOn(next);
+  };
+
+  const announceJoinLeave = async (
+    streamId: string,
+    kind: 'join' | 'leave'
+  ) => {
+    try {
+      if (!showJoinsRef.current) return;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      // Prefer latest profile name
+      let label = 'Someone';
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (prof?.display_name) label = prof.display_name;
+      else if (prof?.username) label = `@${prof.username}`;
+      else if (myProfile?.display_name) label = myProfile.display_name;
+      else if (myProfile?.username) label = `@${myProfile.username}`;
+
+      const content =
+        kind === 'join' ? `__JOIN__:${label}` : `__LEAVE__:${label}`;
+      const { data: row } = await supabase
+        .from('live_chat_messages')
+        .insert({
+          stream_id: streamId,
+          user_id: user.id,
+          content: content.slice(0, 300),
+        })
+        .select('id, stream_id, user_id, content, created_at')
+        .single();
+
+      // Optimistic so the sender also sees it if realtime is slow
+      if (row) {
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === row.id)) return prev;
+          return [
+            ...prev,
+            {
+              ...row,
+              profile: {
+                display_name: prof?.display_name,
+                username: prof?.username,
+              },
+            },
+          ];
+        });
+      }
+    } catch (e) {
+      console.error('join/leave announce', e);
+    }
   };
 
   const sendChat = async () => {
