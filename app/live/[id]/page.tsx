@@ -193,6 +193,10 @@ export default function LiveWatchPage() {
   const [stream, setStream] = useState<StreamRow | null>(null);
   const [creator, setCreator] = useState<any>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
   const [myProfile, setMyProfile] = useState<any>(null);
   const [error, setError] = useState('');
   const [ending, setEnding] = useState(false);
@@ -664,6 +668,25 @@ export default function LiveWatchPage() {
           }
           if (msg?.type === 'reaction' && msg.emoji) {
             spawnReactionRef.current(String(msg.emoji));
+          }
+          if (msg?.type === 'moderation' && msg.user_id) {
+            const me = userIdRef.current;
+            if (me && String(msg.user_id) === me) {
+              const act = msg.action;
+              if (act === 'mute') {
+                setMyModeration('mute');
+              } else if (act === 'ban') {
+                setMyModeration('ban');
+                try {
+                  room.disconnect();
+                } catch {
+                  /* ignore */
+                }
+                alert('You were banned from this live');
+              } else if (act === 'clear') {
+                setMyModeration(null);
+              }
+            }
           }
         } catch {
           /* ignore bad payloads */
@@ -1394,6 +1417,21 @@ export default function LiveWatchPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed');
+      try {
+        const room = roomRef.current;
+        if (room?.localParticipant) {
+          const payload = new TextEncoder().encode(
+            JSON.stringify({
+              type: 'moderation',
+              user_id: targetUserId,
+              action,
+            })
+          );
+          await room.localParticipant.publishData(payload, { reliable: true });
+        }
+      } catch {
+        /* ignore */
+      }
       if (action === 'ban') {
         alert('User banned from this live');
       } else if (action === 'mute') {
@@ -1442,29 +1480,43 @@ export default function LiveWatchPage() {
 
     setSendingChat(true);
     try {
-      const { data, error: insErr } = await supabase
-        .from('live_chat_messages')
-        .insert({
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch('/api/live/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
           stream_id: stream.id,
-          user_id: userId,
           content: text,
-        })
-        .select('*')
-        .single();
-
-      if (insErr) throw new Error(insErr.message);
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'MUTED') {
+          setMyModeration('mute');
+        }
+        if (data.code === 'BANNED') {
+          setMyModeration('ban');
+        }
+        throw new Error(data.error || 'Could not send');
+      }
       setChatText('');
       if (!isOwner) {
         lastChatSentAt.current = Date.now();
         setSlowModeLeft(slow);
       }
-      if (data) {
+      const row = data.message;
+      if (row) {
         setChatMessages((prev) => {
-          if (prev.some((m) => m.id === data.id)) return prev;
+          if (prev.some((m) => m.id === row.id)) return prev;
           return [
             ...prev,
             {
-              ...data,
+              ...row,
               profile: myProfile,
             },
           ].slice(-50);
@@ -1476,6 +1528,44 @@ export default function LiveWatchPage() {
       setSendingChat(false);
     }
   };
+
+  // Refresh mute/ban state while in live (backup if LiveKit data missed)
+  useEffect(() => {
+    if (!id || !userId || isOwner) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const { data: mod } = await supabase
+          .from('live_stream_moderation')
+          .select('action')
+          .eq('stream_id', id)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (mod?.action === 'mute' || mod?.action === 'ban') {
+          setMyModeration(mod.action);
+          if (mod.action === 'ban') {
+            try {
+              roomRef.current?.disconnect();
+            } catch {
+              /* ignore */
+            }
+          }
+        } else {
+          setMyModeration(null);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void tick();
+    const iv = setInterval(tick, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [id, userId, isOwner, supabase]);
+
 
 
   useEffect(() => {

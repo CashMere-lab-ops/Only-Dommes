@@ -69,29 +69,54 @@ export async function POST(request: Request) {
     }
 
     if (action === 'clear') {
-      await admin
+      const { error } = await admin
         .from('live_stream_moderation')
         .delete()
         .eq('stream_id', streamId)
         .eq('user_id', targetUserId);
+      if (error) {
+        return NextResponse.json(
+          {
+            error:
+              error.message +
+              (error.message.includes('does not exist')
+                ? ' — run the live_moderation SQL in Supabase first'
+                : ''),
+          },
+          { status: 500 }
+        );
+      }
       return NextResponse.json({ ok: true, action: 'clear' });
     }
 
-    const { error } = await admin.from('live_stream_moderation').upsert(
-      {
-        stream_id: streamId,
-        user_id: targetUserId,
-        action,
-        created_by: user.id,
-      },
-      { onConflict: 'stream_id,user_id' }
-    );
+    // Delete then insert (avoids onConflict edge cases)
+    await admin
+      .from('live_stream_moderation')
+      .delete()
+      .eq('stream_id', streamId)
+      .eq('user_id', targetUserId);
+
+    const { error } = await admin.from('live_stream_moderation').insert({
+      stream_id: streamId,
+      user_id: targetUserId,
+      action,
+      created_by: user.id,
+    });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json(
+        {
+          error:
+            error.message +
+            (error.message.includes('does not exist')
+              ? ' — run the live_moderation SQL in Supabase first'
+              : ''),
+        },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ ok: true, action });
+    return NextResponse.json({ ok: true, action, user_id: targetUserId });
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message || 'Moderation failed' },
@@ -99,3 +124,4 @@ export async function POST(request: Request) {
     );
   }
 }
+
