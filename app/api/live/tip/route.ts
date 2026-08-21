@@ -36,11 +36,8 @@ export async function POST(request: Request) {
     if (!streamId) {
       return NextResponse.json({ error: 'stream_id required' }, { status: 400 });
     }
-    if (!Number.isFinite(amount) || amount < 1) {
-      return NextResponse.json(
-        { error: 'Minimum tip is £1' },
-        { status: 400 }
-      );
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json({ error: 'Invalid tip amount' }, { status: 400 });
     }
     if (amount > 5000) {
       return NextResponse.json({ error: 'Tip too large' }, { status: 400 });
@@ -97,12 +94,29 @@ export async function POST(request: Request) {
 
     const { data: creator } = await admin
       .from('profiles')
-      .select('balance_gbp, display_name, username')
+      .select('balance_gbp, display_name, username, min_tip_gbp')
       .eq('id', stream.creator_id)
       .single();
 
     if (!creator) {
       return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
+    }
+
+    const platformMin = 2;
+    const creatorMin = Number(creator.min_tip_gbp);
+    const minTip =
+      Number.isFinite(creatorMin) && creatorMin > platformMin
+        ? creatorMin
+        : platformMin;
+    if (rounded < minTip) {
+      return NextResponse.json(
+        {
+          error: `Minimum tip is £${minTip.toFixed(2)}`,
+          code: 'TIP_TOO_LOW',
+          min_tip_gbp: minTip,
+        },
+        { status: 400 }
+      );
     }
 
     const newSenderBal = Math.round((senderBal - rounded) * 100) / 100;
@@ -235,3 +249,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

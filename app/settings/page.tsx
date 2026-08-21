@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [subscriptionsEnabled, setSubscriptionsEnabled] = useState(false);
+  const [minTipGbp, setMinTipGbp] = useState('2');
   const [subscriptionPrice, setSubscriptionPrice] = useState('9.99');
   const [messagePrice, setMessagePrice] = useState('0');
 
@@ -87,6 +88,7 @@ export default function SettingsPage() {
         setTempXUsername(data.x_username || '');
         setSubscriptionsEnabled(!!data.subscriptions_enabled);
         setSubscriptionPrice(String(data.subscription_price ?? 9.99));
+        setMinTipGbp(String(data.min_tip_gbp ?? 2));
         setMessagePrice(String(data.message_price ?? 0));
         setAutoReplyEnabled(!!data.auto_reply_enabled);
         setAutoReplyMessage(data.auto_reply_message || '');
@@ -175,6 +177,10 @@ export default function SettingsPage() {
       if (profile.account_type === 'creator') {
         updates.subscriptions_enabled = subscriptionsEnabled;
         updates.subscription_price = parseFloat(subscriptionPrice) || 0;
+        const mt = parseFloat(minTipGbp);
+        updates.min_tip_gbp = Number.isFinite(mt)
+          ? Math.min(500, Math.max(2, Math.round(mt * 100) / 100))
+          : 2;
         updates.message_price = parseFloat(messagePrice) || 0;
         updates.auto_reply_enabled = autoReplyEnabled;
         updates.auto_reply_message = autoReplyMessage.trim();
@@ -485,7 +491,49 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Voice calls */}
+            
+            {/* Minimum tip (creators) */}
+            {profile?.account_type === 'creator' && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <DollarSign size={18} className="text-pink-500" />
+                  <h2 className="font-semibold">Minimum tip</h2>
+                </div>
+                <p className="text-sm text-zinc-400">
+                  Platform floor is £2. You can set higher so fans must tip at least this amount (live, chat, posts).
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-500">£</span>
+                  <input
+                    type="number"
+                    min={2}
+                    max={500}
+                    step={1}
+                    value={minTipGbp}
+                    onChange={(e) => setMinTipGbp(e.target.value)}
+                    className="w-28 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 outline-none focus:border-pink-500"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[2, 5, 10, 20].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMinTipGbp(String(v))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                        Number(minTipGbp) === v
+                          ? 'bg-pink-600 border-pink-500 text-white'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-300'
+                      }`}
+                    >
+                      £{v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+{/* Voice calls */}
             {isCreator && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2">

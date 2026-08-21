@@ -123,12 +123,29 @@ export async function POST(request: Request) {
 
     const { data: recipient, error: rErr } = await admin
       .from('profiles')
-      .select('balance_gbp')
+      .select('balance_gbp, min_tip_gbp')
       .eq('id', toUserId)
       .single();
 
     if (rErr || !recipient) {
       return NextResponse.json({ error: 'Recipient not found' }, { status: 404 });
+    }
+
+    if (spendType === 'tip') {
+      const platformMin = 2;
+      const cMin = Number(recipient.min_tip_gbp);
+      const minTip =
+        Number.isFinite(cMin) && cMin > platformMin ? cMin : platformMin;
+      if (rounded < minTip) {
+        return NextResponse.json(
+          {
+            error: `Minimum tip is £${minTip.toFixed(2)}`,
+            code: 'TIP_TOO_LOW',
+            min_tip_gbp: minTip,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const recipientBal = Number(recipient.balance_gbp || 0);
@@ -223,4 +240,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
 

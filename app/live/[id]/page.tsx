@@ -211,6 +211,7 @@ export default function LiveWatchPage() {
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipAmount, setTipAmount] = useState(5);
+  const [creatorMinTip, setCreatorMinTip] = useState(2);
   const [customTip, setCustomTip] = useState('');
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
@@ -360,6 +361,19 @@ export default function LiveWatchPage() {
     setShowJoinMessages(joinsOn);
     showJoinsRef.current = joinsOn;
     setSlowModeSeconds(Number(data.slow_mode_seconds || 0));
+    try {
+      const { data: cProf } = await supabase
+        .from('profiles')
+        .select('min_tip_gbp')
+        .eq('id', data.creator_id)
+        .maybeSingle();
+      const mt = Number(cProf?.min_tip_gbp);
+      const minT = Number.isFinite(mt) && mt > 2 ? mt : 2;
+      setCreatorMinTip(minT);
+      setTipAmount((prev) => (prev < minT ? minT : prev));
+    } catch {
+      setCreatorMinTip(2);
+    }
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -1653,6 +1667,11 @@ export default function LiveWatchPage() {
 
   const sendTip = async (amount: number) => {
     if (!stream || isOwner) return;
+    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+    if (!Number.isFinite(amount) || amount < minT) {
+      setTipError(`Minimum tip is £${minT.toFixed(2)}`);
+      return;
+    }
     setTipping(true);
     setTipError('');
     try {
@@ -2873,6 +2892,9 @@ export default function LiveWatchPage() {
                     </button>
                   ))}
                 </div>
+                <p className="text-xs text-zinc-500 -mt-1">
+                  Minimum tip £{(creatorMinTip > 2 ? creatorMinTip : 2).toFixed(2)}
+                </p>
                 <div>
                   <label className="text-xs text-zinc-500 mb-1 block">
                     Custom amount
@@ -2883,13 +2905,14 @@ export default function LiveWatchPage() {
                     </span>
                     <input
                       type="number"
-                      min={1}
+                      min={creatorMinTip > 2 ? creatorMinTip : 2}
                       step={1}
                       value={customTip}
                       onChange={(e) => {
                         setCustomTip(e.target.value);
                         const n = Number(e.target.value);
-                        if (n >= 1) setTipAmount(n);
+                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                        if (n >= minT) setTipAmount(n);
                       }}
                       placeholder="Other"
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
@@ -2903,7 +2926,10 @@ export default function LiveWatchPage() {
                 )}
                 <button
                   type="button"
-                  disabled={tipping || tipAmount < 1}
+                  disabled={
+                    tipping ||
+                    tipAmount < (creatorMinTip > 2 ? creatorMinTip : 2)
+                  }
                   onClick={() => sendTip(tipAmount)}
                   className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
                 >
