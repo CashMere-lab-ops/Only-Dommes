@@ -557,34 +557,17 @@ export default function LiveWatchPage() {
       });
       room.on(RoomEvent.ParticipantDisconnected, () => {
         bumpViewers(Math.max(0, room.numParticipants - 1));
-        // Host left room → check if live ended
+        // Host was the only remote participant → live is over for viewers
         if (!asCreator && room.remoteParticipants.size === 0) {
           setTimeout(() => {
-            void (async () => {
-              const { data } = await supabase
-                .from('live_streams')
-                .select('status')
-                .eq('id', streamRow.id)
-                .single();
-              if (data?.status === 'ended') {
-                void finalizeRef.current();
-              }
-            })();
-          }, 500);
+            void finalizeRef.current();
+          }, 300);
         }
       });
       room.on(RoomEvent.Disconnected, () => {
+        // Room closed / host ended → show end screen for viewers immediately
         if (!asCreator) {
-          void (async () => {
-            const { data } = await supabase
-              .from('live_streams')
-              .select('status')
-              .eq('id', streamRow.id)
-              .single();
-            if (data?.status === 'ended') {
-              void finalizeRef.current();
-            }
-          })();
+          void finalizeRef.current();
         }
       });
 
@@ -652,14 +635,53 @@ export default function LiveWatchPage() {
     async (_partial?: Partial<StreamRow>) => {
       if (endFinalized.current) return;
       endFinalized.current = true;
+      // Flip UI immediately so viewers never stay on a black LIVE screen
       setLiveStatus('ended');
+      setStream((s) => (s ? { ...s, status: 'ended' } : s));
+
       try {
         await cleanupRoom();
       } catch {
         /* ignore */
       }
 
-      try {
+      const applyStatus = (data: any) => {
+        if (!data) return;
+        if (data.stream) {
+          setStream((s) =>
+            s
+              ? { ...s, ...data.stream, status: 'ended' }
+              : { ...data.stream, status: 'ended' }
+          );
+        }
+        const summary =
+          data.summary ||
+          (data.status === 'ended' || data.stream
+            ? {
+                title: data.stream?.title,
+                duration_seconds: data.duration_seconds || 0,
+                tip_raised_gbp: Number(data.stream?.tip_raised_gbp || 0),
+                tip_goal_gbp: Number(data.stream?.tip_goal_gbp || 0),
+                peak_viewers: Number(data.stream?.viewer_count || 0),
+                tipper_count: data.tipper_count || 0,
+                showcase_name: data.stream?.showcase_name,
+                showcase_amount_gbp: data.stream?.showcase_amount_gbp,
+                showcase_avatar_url: data.stream?.showcase_avatar_url,
+                my_tip_gbp: data.my_tip_gbp || 0,
+                is_host: !!data.is_host,
+              }
+            : null);
+        if (summary) {
+          setMyTipTotal(Number(summary.my_tip_gbp || 0));
+          setEndSummary((prev: any) => {
+            if (prev?.is_host) return prev;
+            return summary;
+          });
+        }
+      };
+
+      // Fetch summary (with short retries — host may still be writing ended status)
+      const fetchStatus = async () => {
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -667,41 +689,47 @@ export default function LiveWatchPage() {
           headers: session?.access_token
             ? { Authorization: `Bearer ${session.access_token}` }
             : {},
+          cache: 'no-store',
         });
-        const data = await res.json().catch(() => ({}));
-        if (data.stream) {
-          setStream((s) =>
-            s ? { ...s, ...data.stream, status: 'ended' } : data.stream
-          );
-        }
-        if (data.summary) {
-          setMyTipTotal(Number(data.summary.my_tip_gbp || 0));
-          setEndSummary((prev: any) => {
-            // Keep host summary from /api/live/end if already set
-            if (prev?.is_host) return prev;
-            return data.summary;
-          });
-        } else if (data.status === 'ended') {
-          setEndSummary((prev: any) =>
-            prev || {
-              title: data.stream?.title,
-              duration_seconds: data.duration_seconds || 0,
-              tip_raised_gbp: Number(data.stream?.tip_raised_gbp || 0),
-              tip_goal_gbp: Number(data.stream?.tip_goal_gbp || 0),
-              peak_viewers: Number(data.stream?.viewer_count || 0),
-              tipper_count: data.tipper_count || 0,
-              showcase_name: data.stream?.showcase_name,
-              showcase_amount_gbp: data.stream?.showcase_amount_gbp,
-              showcase_avatar_url: data.stream?.showcase_avatar_url,
-              my_tip_gbp: data.my_tip_gbp || 0,
-              is_host: !!data.is_host,
-            }
-          );
+        return res.json().catch(() => ({}));
+      };
+
+      try {
+        let data = await fetchStatus();
+        applyStatus(data);
+        // Retry a few times if summary not ready yet
+        if (!data?.summary && !data?.stream) {
+          for (let i = 0; i < 3; i++) {
+            await new Promise((r) => setTimeout(r, 800));
+            data = await fetchStatus();
+            applyStatus(data);
+            if (data?.summary || data?.status === 'ended') break;
+          }
         }
       } catch (e) {
         console.error('finalize end', e);
+        // Still show a minimal end card from local stream state
+        setEndSummary((prev: any) => {
+          if (prev) return prev;
+          return {
+            title: stream?.title,
+            duration_seconds: liveStartedAt
+              ? Math.floor((Date.now() - liveStartedAt) / 1000)
+              : 0,
+            tip_raised_gbp: Number(stream?.tip_raised_gbp || 0),
+            tip_goal_gbp: Number(stream?.tip_goal_gbp || 0),
+            peak_viewers: peakViewers,
+            tipper_count: 0,
+            showcase_name: stream?.showcase_name,
+            showcase_amount_gbp: stream?.showcase_amount_gbp,
+            showcase_avatar_url: stream?.showcase_avatar_url,
+            my_tip_gbp: myTipTotal,
+            is_host: false,
+          };
+        });
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [cleanupRoom, id, supabase]
   );
 
@@ -719,24 +747,26 @@ export default function LiveWatchPage() {
 
     const poll = setInterval(async () => {
       try {
+        if (endFinalized.current) return;
         const {
           data: { session },
         } = await supabase.auth.getSession();
         if (!session?.access_token) return;
         const res = await fetch(`/api/live/status?id=${id}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
         });
         const data = await res.json().catch(() => ({}));
         if (data.stream) {
           setStream((s) => (s ? { ...s, ...data.stream } : s));
         }
-        if (data.status === 'ended') {
+        if (data.status === 'ended' || data.stream?.status === 'ended') {
           void finalizeRef.current(data.stream);
         }
       } catch {
         /* ignore poll errors */
       }
-    }, 2000);
+    }, 1500);
 
     // Realtime: instant end for viewers
     const statusCh = supabase
@@ -1317,7 +1347,7 @@ export default function LiveWatchPage() {
         data: { session },
       } = await supabase.auth.getSession();
       const peak = Math.max(peakViewers, viewerCount);
-      await cleanupRoom();
+      // Mark ended in DB FIRST so viewer polls / status API see it before room drops
       const res = await fetch('/api/live/end', {
         method: 'POST',
         headers: {
@@ -1333,6 +1363,11 @@ export default function LiveWatchPage() {
       if (!res.ok) throw new Error(data.error || 'Could not end');
       endFinalized.current = true;
       setLiveStatus('ended');
+      try {
+        await cleanupRoom();
+      } catch {
+        /* ignore */
+      }
       setEndSummary({
         ...(data.summary || {
           title: stream?.title,
