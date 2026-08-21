@@ -2873,24 +2873,37 @@ export default function LiveWatchPage() {
               </div>
               <div className="px-5 py-5 space-y-4">
                 <div className="grid grid-cols-4 gap-2">
-                  {TIP_PRESETS.map((a) => (
-                    <button
-                      key={a}
-                      type="button"
-                      disabled={tipping}
-                      onClick={() => {
-                        setTipAmount(a);
-                        setCustomTip('');
-                      }}
-                      className={`py-3 rounded-xl text-sm font-semibold border transition ${
-                        tipAmount === a && !customTip
-                          ? 'bg-pink-600 border-pink-500 text-white'
-                          : 'bg-zinc-800 border-zinc-700 text-zinc-200'
-                      }`}
-                    >
-                      £{a}
-                    </button>
-                  ))}
+                  {TIP_PRESETS.map((a) => {
+                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                    const tooLow = a < minT;
+                    return (
+                      <button
+                        key={a}
+                        type="button"
+                        disabled={tipping || tooLow}
+                        onClick={() => {
+                          if (tooLow) return;
+                          setTipAmount(a);
+                          setCustomTip('');
+                          setTipError('');
+                        }}
+                        className={`py-3 rounded-xl text-sm font-semibold border transition ${
+                          tooLow
+                            ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed'
+                            : tipAmount === a && !customTip
+                              ? 'bg-pink-600 border-pink-500 text-white'
+                              : 'bg-zinc-800 border-zinc-700 text-zinc-200'
+                        }`}
+                        title={
+                          tooLow
+                            ? `Below this creator's minimum (£${minT})`
+                            : undefined
+                        }
+                      >
+                        £{a}
+                      </button>
+                    );
+                  })}
                 </div>
                 <p className="text-xs text-zinc-500 -mt-1">
                   Minimum tip £{(creatorMinTip > 2 ? creatorMinTip : 2).toFixed(2)}
@@ -2909,10 +2922,12 @@ export default function LiveWatchPage() {
                       step={1}
                       value={customTip}
                       onChange={(e) => {
-                        setCustomTip(e.target.value);
-                        const n = Number(e.target.value);
-                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
-                        if (n >= minT) setTipAmount(n);
+                        const v = e.target.value;
+                        setCustomTip(v);
+                        setTipError('');
+                        const n = Number(v);
+                        // Do NOT auto-bump to minimum — keep exact typed amount
+                        if (v !== '' && Number.isFinite(n)) setTipAmount(n);
                       }}
                       placeholder="Other"
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
@@ -2926,11 +2941,25 @@ export default function LiveWatchPage() {
                 )}
                 <button
                   type="button"
-                  disabled={
-                    tipping ||
-                    tipAmount < (creatorMinTip > 2 ? creatorMinTip : 2)
-                  }
-                  onClick={() => sendTip(tipAmount)}
+                  disabled={(() => {
+                    if (tipping) return true;
+                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                    const amt =
+                      customTip !== '' ? Number(customTip) : Number(tipAmount);
+                    return !Number.isFinite(amt) || amt < minT;
+                  })()}
+                  onClick={() => {
+                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                    const amt =
+                      customTip !== '' ? Number(customTip) : Number(tipAmount);
+                    if (!Number.isFinite(amt) || amt < minT) {
+                      setTipError(
+                        `Minimum tip is £${minT.toFixed(2)} — enter at least that amount`
+                      );
+                      return;
+                    }
+                    void sendTip(amt);
+                  }}
                   className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {tipping ? (
@@ -2938,7 +2967,12 @@ export default function LiveWatchPage() {
                       <Loader2 size={18} className="animate-spin" /> Sending…
                     </>
                   ) : (
-                    <>Send £{Number(tipAmount).toFixed(2)}</>
+                    <>
+                      Send £
+                      {(
+                        customTip !== '' ? Number(customTip) : Number(tipAmount)
+                      ).toFixed(2)}
+                    </>
                   )}
                 </button>
                 <p className="text-center text-xs text-zinc-500">
