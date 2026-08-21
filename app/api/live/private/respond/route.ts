@@ -192,6 +192,8 @@ export async function POST(request: Request) {
         private_user_id: req.requester_id,
         private_request_id: requestId,
         private_ends_at: endsAt,
+        private_end_by_creator: false,
+        private_end_by_fan: false,
         updated_at: new Date().toISOString(),
       })
       .eq('id', req.stream_id);
@@ -223,3 +225,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

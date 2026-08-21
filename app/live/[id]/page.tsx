@@ -54,6 +54,8 @@ type StreamRow = {
   private_user_id?: string | null;
   private_ends_at?: string | null;
   private_request_id?: string | null;
+  private_end_by_creator?: boolean;
+  private_end_by_fan?: boolean;
   showcase_user_id?: string | null;
   showcase_amount_gbp?: number;
   showcase_name?: string | null;
@@ -1039,7 +1041,7 @@ export default function LiveWatchPage() {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${session?.access_token}`,
               },
-              body: JSON.stringify({ stream_id: id }),
+              body: JSON.stringify({ stream_id: id, force_timer: true }),
             });
           } catch {
             /* ignore */
@@ -1223,7 +1225,29 @@ export default function LiveWatchPage() {
   };
 
   const endPrivate = async () => {
-    if (!confirm('End private session and return to public live?')) return;
+    // Early end needs BOTH sides — first click only sends a request
+    const iAmCreator = isOwner;
+    const alreadyMe = iAmCreator
+      ? !!stream?.private_end_by_creator
+      : !!stream?.private_end_by_fan;
+    const otherReady = iAmCreator
+      ? !!stream?.private_end_by_fan
+      : !!stream?.private_end_by_creator;
+
+    if (alreadyMe && !otherReady) {
+      alert('Waiting for the other person to also request end.');
+      return;
+    }
+
+    if (!otherReady) {
+      const ok = confirm(
+        'Request to end this private early?\n\n' +
+          'It only ends when BOTH of you request it. ' +
+          'Otherwise it runs until the timer finishes.'
+      );
+      if (!ok) return;
+    }
+
     setPrivateBusy(true);
     try {
       const {
@@ -1239,17 +1263,33 @@ export default function LiveWatchPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed');
-      setStream((s) =>
-        s
-          ? {
-              ...s,
-              private_active: false,
-              private_user_id: null,
-              private_ends_at: null,
-            }
-          : s
-      );
-      setPrivateEndsAt(null);
+
+      if (data.ended || data.public_again) {
+        setStream((s) =>
+          s
+            ? {
+                ...s,
+                private_active: false,
+                private_user_id: null,
+                private_ends_at: null,
+                private_end_by_creator: false,
+                private_end_by_fan: false,
+              }
+            : s
+        );
+        setPrivateEndsAt(null);
+        setPrivateLockedOut(false);
+      } else if (data.waiting) {
+        setStream((s) =>
+          s
+            ? {
+                ...s,
+                private_end_by_creator: !!data.private_end_by_creator,
+                private_end_by_fan: !!data.private_end_by_fan,
+              }
+            : s
+        );
+      }
     } catch (e: any) {
       alert(e.message || 'Failed');
     } finally {
@@ -1917,32 +1957,58 @@ export default function LiveWatchPage() {
             
             {/* Private locked out for other viewers */}
             {privateLockedOut && !ended && (
-              <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/90 px-6 text-center">
-                <Lock className="text-pink-500 mb-3" size={40} />
-                <p className="text-lg font-semibold text-white">Private session</p>
-                <p className="text-sm text-zinc-400 mt-2 max-w-sm">
-                  The creator is in a paid private with another fan. Public live is paused.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => router.push('/live')}
-                  className="mt-6 px-5 py-2.5 rounded-xl bg-zinc-800 text-sm font-medium"
-                >
-                  Back to Live
-                </button>
+              <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/95 px-6 text-center">
+                <div className="w-full max-w-sm bg-zinc-900/90 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
+                  <Lock className="text-pink-500 mx-auto mb-3" size={36} />
+                  <p className="text-lg font-semibold text-white leading-snug">
+                    {name} is in a private
+                  </p>
+                  <p className="text-sm text-zinc-400 mt-2">
+                    Public live is paused for a paid 1:1 session.
+                  </p>
+                  {privateCountdown && (
+                    <div className="mt-5 bg-zinc-800/80 rounded-2xl py-3 px-4">
+                      <p className="text-[10px] uppercase tracking-wide text-zinc-500">
+                        Time left
+                      </p>
+                      <p className="text-2xl font-bold tabular-nums text-pink-400 mt-0.5">
+                        {privateCountdown}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => router.push('/live')}
+                    className="mt-5 w-full py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition"
+                  >
+                    Back to Live
+                  </button>
+                </div>
               </div>
             )}
 
             {/* Private active badge */}
             {!ended && stream?.private_active && (isOwner || isPrivateFan) && (
-              <div className="absolute top-[7.5rem] sm:top-36 right-3 z-25 pointer-events-none">
-                <div className="bg-pink-600/90 backdrop-blur text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow">
+              <div className="absolute top-[7.5rem] sm:top-36 right-3 z-25 pointer-events-none max-w-[70%]">
+                <div className="bg-pink-600/90 backdrop-blur text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow flex-wrap">
                   <Lock size={12} />
                   PRIVATE
                   {privateCountdown && (
                     <span className="font-mono ml-1">{privateCountdown}</span>
                   )}
                 </div>
+                {(stream.private_end_by_creator || stream.private_end_by_fan) &&
+                  !(stream.private_end_by_creator && stream.private_end_by_fan) && (
+                    <p className="mt-1.5 text-[10px] text-zinc-200 bg-black/60 rounded-full px-2.5 py-1 text-right">
+                      {isOwner
+                        ? stream.private_end_by_creator
+                          ? 'Waiting for fan to confirm end'
+                          : 'Fan requested to end'
+                        : stream.private_end_by_fan
+                          ? 'Waiting for creator to confirm end'
+                          : 'Creator requested to end'}
+                    </p>
+                  )}
               </div>
             )}
 
@@ -2069,10 +2135,26 @@ export default function LiveWatchPage() {
                       type="button"
                       onClick={() => void endPrivate()}
                       disabled={privateBusy}
-                      className="h-12 px-3 rounded-full bg-pink-700 text-xs font-semibold flex items-center gap-1.5 flex-shrink-0"
+                      className={`h-12 px-3 rounded-full text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 ${
+                        (isOwner
+                          ? stream.private_end_by_creator
+                          : stream.private_end_by_fan)
+                          ? 'bg-zinc-700 text-zinc-200'
+                          : 'bg-pink-700 text-white'
+                      }`}
                     >
                       <Unlock size={14} />
-                      End private
+                      {(() => {
+                        const me = isOwner
+                          ? !!stream.private_end_by_creator
+                          : !!stream.private_end_by_fan;
+                        const them = isOwner
+                          ? !!stream.private_end_by_fan
+                          : !!stream.private_end_by_creator;
+                        if (me && !them) return 'Waiting…';
+                        if (!me && them) return 'Confirm end';
+                        return 'Request end';
+                      })()}
                     </button>
                   )}
 
