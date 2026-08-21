@@ -19,11 +19,11 @@ import {
   Lock,
   Unlock,
   Crown,
-  Heart,
   Share2,
   Check,
   UserPlus,
   Sparkles,
+  MoreHorizontal,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
@@ -196,11 +196,10 @@ export default function LiveWatchPage() {
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
-  const [heartBursts, setHeartBursts] = useState<{ id: number; x: number }[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const heartId = useRef(0);
+  const [showMore, setShowMore] = useState(false);
   const prevRaised = useRef(0);
 
   // Private
@@ -1032,15 +1031,6 @@ export default function LiveWatchPage() {
     }
   };
 
-  const sendHearts = () => {
-    const idn = ++heartId.current;
-    const x = 12 + Math.random() * 40;
-    setHeartBursts((prev) => [...prev.slice(-12), { id: idn, x }]);
-    setTimeout(() => {
-      setHeartBursts((prev) => prev.filter((h) => h.id !== idn));
-    }, 1800);
-  };
-
   const sendTip = async (amount: number) => {
     if (!stream || isOwner) return;
     setTipping(true);
@@ -1188,15 +1178,7 @@ export default function LiveWatchPage() {
         </div>
   
         <style dangerouslySetInnerHTML={{ __html: `
-          @keyframes float-heart {
-            0% { transform: translateY(0) scale(0.6); opacity: 0; }
-            15% { opacity: 1; transform: translateY(-12px) scale(1); }
-            100% { transform: translateY(-160px) scale(1.15); opacity: 0; }
-          }
-          .animate-float-heart {
-            animation: float-heart 1.7s ease-out forwards;
-          }
-          .mask-fade-chat {
+.mask-fade-chat {
             mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
             -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
           }
@@ -1416,79 +1398,122 @@ export default function LiveWatchPage() {
                   >
                     <ArrowLeft size={18} />
                   </button>
-                  <div className="min-w-0 bg-black/40 backdrop-blur rounded-2xl px-3 py-1.5 border border-white/10">
-                    <p className="text-sm font-semibold truncate max-w-[50vw] sm:max-w-xs">
+                  <div className="min-w-0 bg-black/45 backdrop-blur-md rounded-xl sm:rounded-2xl px-2.5 py-1 sm:px-3 sm:py-1.5 border border-white/10">
+                    <p className="text-xs sm:text-sm font-semibold truncate max-w-[36vw] sm:max-w-xs leading-tight">
+                      {name}
+                    </p>
+                    <p className="text-[10px] sm:text-[11px] text-zinc-300 truncate max-w-[36vw] sm:max-w-xs leading-tight">
                       {stream?.title}
                     </p>
-                    <Link
-                      href={creator?.username ? `/${creator.username}` : '#'}
-                      className="text-[11px] text-pink-300 truncate block"
-                    >
-                      {name}
-                    </Link>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 pointer-events-auto flex-shrink-0">
-                  {!isOwner && userId && (
-                    <button
-                      type="button"
-                      onClick={() => void toggleFollow()}
-                      disabled={followBusy}
-                      className={`h-8 px-2.5 rounded-full text-[11px] font-semibold border backdrop-blur flex items-center gap-1 transition ${
-                        isFollowing
-                          ? 'bg-black/50 border-white/15 text-zinc-200'
-                          : 'bg-pink-600/90 border-pink-400/40 text-white'
-                      }`}
-                    >
-                      {isFollowing ? (
-                        'Following'
-                      ) : (
-                        <>
-                          <UserPlus size={12} /> Follow
-                        </>
-                      )}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void shareLive()}
-                    className="h-8 w-8 rounded-full bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center"
-                    title="Share"
-                  >
-                    {linkCopied ? (
-                      <Check size={14} className="text-green-400" />
-                    ) : (
-                      <Share2 size={14} />
-                    )}
-                  </button>
                   <span className="bg-red-600 text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow">
                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                     LIVE
                   </span>
-                  <span className="bg-black/50 backdrop-blur text-xs px-2.5 py-1 rounded-full flex items-center gap-1 border border-white/10 tabular-nums">
+                  <span className="bg-black/50 backdrop-blur text-[11px] sm:text-xs px-2 py-1 rounded-full flex items-center gap-1 border border-white/10 tabular-nums">
                     <Users size={12} />
                     {viewerCount || stream?.viewer_count || 0}
                   </span>
+                  {/* Desktop: follow + share inline */}
+                  <div className="hidden sm:flex items-center gap-1.5">
+                    {!isOwner && userId && (
+                      <button
+                        type="button"
+                        onClick={() => void toggleFollow()}
+                        disabled={followBusy}
+                        className={`h-8 px-2.5 rounded-full text-[11px] font-semibold border backdrop-blur flex items-center gap-1 transition ${
+                          isFollowing
+                            ? 'bg-black/50 border-white/15 text-zinc-200'
+                            : 'bg-pink-600/90 border-pink-400/40 text-white'
+                        }`}
+                      >
+                        {isFollowing ? 'Following' : (
+                          <>
+                            <UserPlus size={12} /> Follow
+                          </>
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void shareLive()}
+                      className="h-8 w-8 rounded-full bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center"
+                      title="Share"
+                    >
+                      {linkCopied ? (
+                        <Check size={14} className="text-green-400" />
+                      ) : (
+                        <Share2 size={14} />
+                      )}
+                    </button>
+                  </div>
+                  {/* Mobile: overflow menu */}
+                  <div className="relative sm:hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowMore((v) => !v)}
+                      className="h-8 w-8 rounded-full bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center"
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    {showMore && (
+                      <div className="absolute right-0 top-9 w-40 bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-xl shadow-xl overflow-hidden z-40">
+                        {!isOwner && userId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowMore(false);
+                              void toggleFollow();
+                            }}
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2"
+                          >
+                            <UserPlus size={14} className="text-pink-400" />
+                            {isFollowing ? 'Unfollow' : 'Follow'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowMore(false);
+                            void shareLive();
+                          }}
+                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2"
+                        >
+                          <Share2 size={14} className="text-pink-400" />
+                          {linkCopied ? 'Copied!' : 'Share'}
+                        </button>
+                        <Link
+                          href={creator?.username ? `/${creator.username}` : '/live'}
+                          onClick={() => setShowMore(false)}
+                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 block"
+                        >
+                          View profile
+                        </Link>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Tip goal */}
+            {/* Tip goal — left, never full-width on mobile */}
             {!ended && (goal > 0 || raised > 0) && (
-              <div className="absolute top-16 sm:top-20 left-3 right-3 z-20 pointer-events-none">
-                <div className="bg-black/50 backdrop-blur rounded-xl px-3 py-2 border border-white/10 max-w-md">
-                  <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-zinc-300">
-                      {goal > 0 ? 'Tip goal' : 'Tips this live'}
+              <div className="absolute top-[3.75rem] sm:top-20 left-3 z-20 pointer-events-none max-w-[48%] sm:max-w-[220px]">
+                <div className="bg-black/55 backdrop-blur-md rounded-xl px-2.5 py-1.5 sm:px-3 sm:py-2 border border-white/10">
+                  <div className="flex justify-between gap-2 text-[10px] sm:text-[11px] mb-1">
+                    <span className="text-zinc-300 truncate">
+                      {goal > 0 ? 'Tip goal' : 'Tips'}
                     </span>
-                    <span className="font-medium">
+                    <span className="font-semibold tabular-nums flex-shrink-0">
                       {goal > 0
-                        ? `£${raised.toFixed(0)} / £${goal.toFixed(0)}`
+                        ? `£${raised.toFixed(0)}/£${goal.toFixed(0)}`
                         : `£${raised.toFixed(2)}`}
                     </span>
                   </div>
                   {goal > 0 && (
-                    <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                    <div className="h-1 sm:h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-pink-600 to-rose-500 rounded-full transition-all duration-500"
                         style={{
@@ -1501,36 +1526,36 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Showcased highest tipper */}
+            {/* Top tipper — compact on mobile */}
             {!ended &&
               stream?.showcase_user_id &&
               Number(stream.showcase_amount_gbp || 0) > 0 && (
-                <div className="absolute top-16 sm:top-20 right-3 z-20 pointer-events-none max-w-[46%]">
-                  <div className="bg-gradient-to-br from-pink-600/90 to-rose-700/90 backdrop-blur border border-pink-400/30 rounded-2xl px-3 py-2.5 shadow-lg pointer-events-auto">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Crown size={12} className="text-yellow-300" />
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-pink-100">
+                <div className="absolute top-[3.75rem] sm:top-20 right-3 z-20 pointer-events-none max-w-[46%] sm:max-w-[180px]">
+                  <div className="bg-gradient-to-br from-pink-600/95 to-rose-700/95 backdrop-blur border border-pink-400/30 rounded-xl sm:rounded-2xl px-2 py-1.5 sm:px-3 sm:py-2.5 shadow-lg">
+                    <div className="flex items-center gap-1 mb-0.5 sm:mb-1.5">
+                      <Crown size={10} className="text-yellow-300 flex-shrink-0" />
+                      <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-pink-100">
                         Top tipper
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
                       {stream.showcase_avatar_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={stream.showcase_avatar_url}
                           alt=""
-                          className="w-8 h-8 rounded-full object-cover border border-white/30"
+                          className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover border border-white/30 flex-shrink-0"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-pink-800 flex items-center justify-center text-xs font-bold">
+                        <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-pink-800 flex items-center justify-center text-[10px] sm:text-xs font-bold flex-shrink-0">
                           {(stream.showcase_name || '?')[0]?.toUpperCase()}
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate text-white">
+                        <p className="text-xs sm:text-sm font-semibold truncate text-white leading-tight">
                           {stream.showcase_name || 'Fan'}
                         </p>
-                        <p className="text-xs text-pink-100/90 font-medium">
+                        <p className="text-[10px] sm:text-xs text-pink-100/90 font-medium tabular-nums">
                           £{Number(stream.showcase_amount_gbp).toFixed(2)}
                         </p>
                       </div>
@@ -1563,23 +1588,6 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Floating hearts */}
-            {!ended && (
-              <div className="absolute bottom-24 right-4 z-25 pointer-events-none w-16 h-48 overflow-visible">
-                {heartBursts.map((h) => (
-                  <span
-                    key={h.id}
-                    className="absolute bottom-0 text-pink-400 animate-float-heart"
-                    style={{
-                      left: `${h.x}%`,
-                      fontSize: `${16 + (h.id % 3) * 4}px`,
-                    }}
-                  >
-                    ♥
-                  </span>
-                ))}
-              </div>
-            )}
 
             
             {/* Private locked out for other viewers */}
@@ -1620,8 +1628,8 @@ export default function LiveWatchPage() {
                 className="absolute left-0 right-0 z-20 pointer-events-none px-3"
                 style={{
                   bottom:
-                    'max(5.5rem, calc(env(safe-area-inset-bottom) + 4.5rem))',
-                  maxHeight: '38vh',
+                    'max(4.75rem, calc(env(safe-area-inset-bottom) + 4rem))',
+                  maxHeight: '32vh',
                 }}
               >
                 <div className="max-w-md space-y-1.5 overflow-y-auto pointer-events-auto mask-fade-chat pr-2">
@@ -1666,7 +1674,7 @@ export default function LiveWatchPage() {
                 }}
               >
                 <div className="pointer-events-auto flex items-center gap-2 max-w-2xl mx-auto">
-                  <div className="flex-1 flex items-center gap-1.5 bg-black/55 backdrop-blur border border-white/15 rounded-full pl-4 pr-1.5 py-1.5 min-w-0">
+                  <div className="flex-1 flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/15 rounded-full pl-3 sm:pl-4 pr-1 py-1 sm:py-1.5 min-w-0">
                     <input
                       value={chatText}
                       onChange={(e) => setChatText(e.target.value.slice(0, 300))}
@@ -1684,7 +1692,7 @@ export default function LiveWatchPage() {
                       type="button"
                       onClick={() => void sendChat()}
                       disabled={sendingChat || !chatText.trim()}
-                      className="w-10 h-10 rounded-full bg-pink-600 hover:bg-pink-500 disabled:opacity-40 flex items-center justify-center flex-shrink-0 transition"
+                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-pink-600 hover:bg-pink-500 disabled:opacity-40 flex items-center justify-center flex-shrink-0 transition"
                     >
                       {sendingChat ? (
                         <Loader2 size={16} className="animate-spin" />
@@ -1694,15 +1702,6 @@ export default function LiveWatchPage() {
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={sendHearts}
-                    className="w-11 h-11 rounded-full bg-black/55 backdrop-blur border border-white/15 flex items-center justify-center flex-shrink-0 text-pink-400 hover:text-pink-300 hover:border-pink-400/40 transition active:scale-90"
-                    title="Send love"
-                  >
-                    <Heart size={18} fill="currentColor" />
-                  </button>
-
                   {!isOwner && !stream?.private_active && privateEnabled && (
                     <>
                       <button
@@ -1711,7 +1710,7 @@ export default function LiveWatchPage() {
                           setTipError('');
                           setShowTip(true);
                         }}
-                        className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
+                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
                         title="Tip"
                       >
                         <DollarSign size={20} />
@@ -1723,11 +1722,13 @@ export default function LiveWatchPage() {
                           setShowPrivate(true);
                         }}
                         disabled={!!myPendingPrivate}
-                        className="h-12 px-3 rounded-full bg-zinc-900/90 border border-pink-500/50 text-pink-300 text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+                        className="h-11 w-11 sm:h-12 sm:w-auto sm:px-3 rounded-full bg-zinc-900/90 border border-pink-500/50 text-pink-300 text-xs font-semibold flex items-center justify-center gap-1.5 flex-shrink-0 disabled:opacity-50"
                         title="Request private"
                       >
-                        <Lock size={14} />
-                        {myPendingPrivate ? 'Pending' : 'Private'}
+                        <Lock size={16} className="sm:w-3.5 sm:h-3.5" />
+                        <span className="hidden sm:inline">
+                          {myPendingPrivate ? 'Pending' : 'Private'}
+                        </span>
                       </button>
                     </>
                   )}
