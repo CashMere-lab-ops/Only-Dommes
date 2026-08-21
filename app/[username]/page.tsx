@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle, Package, ShoppingBag, Film, Lock, Play
+  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle, Package, ShoppingBag, Film, Lock, Play, Radio
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
@@ -31,6 +31,7 @@ export default function PublicProfilePage() {
   const [subscribersCount, setSubscribersCount] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subLoading, setSubLoading] = useState(false);
+  const [liveStream, setLiveStream] = useState<any>(null);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -61,6 +62,22 @@ export default function PublicProfilePage() {
       }
 
       setProfile(profileData);
+
+      // Active live for this creator
+      if (profileData.account_type === 'creator') {
+        const { data: live } = await supabase
+          .from('live_streams')
+          .select('id, title, status, thumbnail_url, viewer_count, private_active')
+          .eq('creator_id', profileData.id)
+          .in('status', ['active', 'idle_ready', 'disconnected'])
+          .eq('private_active', false)
+          .order('started_at', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        setLiveStream(live || null);
+      } else {
+        setLiveStream(null);
+      }
 
       const { data: postsData } = await supabase
         .from('posts')
@@ -360,17 +377,63 @@ export default function PublicProfilePage() {
         </div>
 
         <div className="max-w-3xl mx-auto px-4 lg:px-8 py-8">
-          <div className="flex flex-col sm:flex-row gap-6 mb-8">
-            <div className="flex flex-col items-center gap-3 flex-shrink-0">
-              <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden">
-                {profile.avatar_url ? (
+          {liveStream && (
+            <Link
+              href={`/live/${liveStream.id}`}
+              className="mb-6 flex items-center gap-3 bg-gradient-to-r from-red-600/20 to-pink-600/10 border border-red-500/40 rounded-2xl p-3.5 hover:border-red-400/60 transition group"
+            >
+              <div className="w-14 h-14 rounded-xl overflow-hidden bg-zinc-800 flex-shrink-0 relative">
+                {(liveStream.thumbnail_url || profile.avatar_url) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={profile.avatar_url}
-                    alt={displayName}
+                    src={liveStream.thumbnail_url || profile.avatar_url}
+                    alt=""
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  initial
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Radio size={22} className="text-zinc-500" />
+                  </div>
+                )}
+                <span className="absolute top-1 left-1 bg-red-600 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                  LIVE
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white group-hover:text-pink-200 transition truncate">
+                  {liveStream.title || 'Live now'}
+                </p>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  {displayName} is live
+                  {liveStream.viewer_count
+                    ? ` · ${liveStream.viewer_count} watching`
+                    : ''}
+                </p>
+              </div>
+              <span className="flex-shrink-0 text-sm font-semibold text-pink-400 group-hover:text-pink-300">
+                Watch →
+              </span>
+            </Link>
+          )}
+          <div className="flex flex-col sm:flex-row gap-6 mb-8">
+            <div className="flex flex-col items-center gap-3 flex-shrink-0">
+              <div className="relative">
+                <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ring-offset-2 ring-offset-zinc-950">
+                  {profile.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt={displayName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    initial
+                  )}
+                </div>
+                {liveStream && (
+                  <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-600 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-lg border border-red-400/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    LIVE
+                  </span>
                 )}
               </div>
               {profile.x_username && (

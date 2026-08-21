@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Creator ends live. Stream is not saved (no VOD).
+ * Returns summary stats for the end screen.
  */
 export async function POST(request: Request) {
   try {
@@ -43,17 +44,56 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
+    const endedAt = new Date().toISOString();
+    const started =
+      stream.started_at || stream.created_at
+        ? new Date(stream.started_at || stream.created_at).getTime()
+        : Date.now();
+    const durationSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - started) / 1000)
+    );
+
     await admin
       .from('live_streams')
       .update({
         status: 'ended',
-        ended_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        ended_at: endedAt,
+        updated_at: endedAt,
         viewer_count: 0,
+        private_active: false,
+        private_user_id: null,
+        private_request_id: null,
+        private_ends_at: null,
       })
       .eq('id', streamId);
 
-    return NextResponse.json({ ok: true });
+    // Tipper count
+    let tipperCount = 0;
+    try {
+      const { count } = await admin
+        .from('live_stream_tips')
+        .select('*', { count: 'exact', head: true })
+        .eq('stream_id', streamId);
+      tipperCount = count || 0;
+    } catch {
+      /* table may not exist on older deploys */
+    }
+
+    return NextResponse.json({
+      ok: true,
+      summary: {
+        title: stream.title,
+        duration_seconds: durationSeconds,
+        tip_raised_gbp: Number(stream.tip_raised_gbp || 0),
+        tip_goal_gbp: Number(stream.tip_goal_gbp || 0),
+        peak_viewers: Number(body.peak_viewers || stream.viewer_count || 0),
+        tipper_count: tipperCount,
+        showcase_name: stream.showcase_name || null,
+        showcase_amount_gbp: Number(stream.showcase_amount_gbp || 0),
+        showcase_avatar_url: stream.showcase_avatar_url || null,
+      },
+    });
   } catch (e: any) {
     console.error('live end', e);
     return NextResponse.json(
