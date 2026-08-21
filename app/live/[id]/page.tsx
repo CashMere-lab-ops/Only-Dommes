@@ -19,6 +19,11 @@ import {
   Lock,
   Unlock,
   Crown,
+  Heart,
+  Share2,
+  Check,
+  UserPlus,
+  Sparkles,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
@@ -90,7 +95,6 @@ function playPrivateChime() {
     if (!Ctx) return;
     const ctx = new Ctx();
     const now = ctx.currentTime;
-    // Soft two-tone alert
     [[523.25, 0], [659.25, 0.12], [783.99, 0.24]].forEach(([freq, delay]) => {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
@@ -106,7 +110,59 @@ function playPrivateChime() {
     });
     setTimeout(() => ctx.close().catch(() => {}), 800);
   } catch {
-    /* ignore autoplay blocks */
+    /* ignore */
+  }
+}
+
+function playTipChime() {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    [[880, 0], [1174.7, 0.1]].forEach(([freq, delay]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = freq as number;
+      g.gain.setValueAtTime(0.0001, now + (delay as number));
+      g.gain.exponentialRampToValueAtTime(0.06, now + (delay as number) + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + (delay as number) + 0.35);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(now + (delay as number));
+      o.stop(now + (delay as number) + 0.4);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 600);
+  } catch {
+    /* ignore */
+  }
+}
+
+function playGoalChime() {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    [[523.25, 0], [659.25, 0.15], [783.99, 0.3], [1046.5, 0.45]].forEach(
+      ([freq, delay]) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = freq as number;
+        g.gain.setValueAtTime(0.0001, now + (delay as number));
+        g.gain.exponentialRampToValueAtTime(0.09, now + (delay as number) + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + (delay as number) + 0.4);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(now + (delay as number));
+        o.stop(now + (delay as number) + 0.45);
+      }
+    );
+    setTimeout(() => ctx.close().catch(() => {}), 1200);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -139,6 +195,13 @@ export default function LiveWatchPage() {
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
+  const [goalReachedFlash, setGoalReachedFlash] = useState(false);
+  const [heartBursts, setHeartBursts] = useState<{ id: number; x: number }[]>([]);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const heartId = useRef(0);
+  const prevRaised = useRef(0);
 
   // Private
   const [showPrivate, setShowPrivate] = useState(false);
@@ -259,6 +322,7 @@ export default function LiveWatchPage() {
     }
 
     setStream(data);
+    prevRaised.current = Number(data.tip_raised_gbp || 0);
     if (data.status === 'ended') setLiveStatus('ended');
 
     const { data: profile } = await supabase
@@ -915,6 +979,68 @@ export default function LiveWatchPage() {
     }
   };
 
+
+  const shareLive = async () => {
+    const url =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/live/${id}`
+        : '';
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: stream?.title || 'Live on World Of Dommes',
+          url,
+        });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(url);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const toggleFollow = async () => {
+    if (!userId || !stream || isOwner || followBusy) return;
+    setFollowBusy(true);
+    try {
+      if (isFollowing) {
+        await supabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', userId)
+          .eq('following_id', stream.creator_id);
+        setIsFollowing(false);
+      } else {
+        await supabase.from('follows').insert({
+          follower_id: userId,
+          following_id: stream.creator_id,
+        });
+        setIsFollowing(true);
+      }
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+
+  const sendHearts = () => {
+    const idn = ++heartId.current;
+    const x = 12 + Math.random() * 40;
+    setHeartBursts((prev) => [...prev.slice(-12), { id: idn, x }]);
+    setTimeout(() => {
+      setHeartBursts((prev) => prev.filter((h) => h.id !== idn));
+    }, 1800);
+  };
+
   const sendTip = async (amount: number) => {
     if (!stream || isOwner) return;
     setTipping(true);
@@ -964,12 +1090,22 @@ export default function LiveWatchPage() {
           : s
       );
       const flash = data.is_showcase
-        ? `You tipped £${Number(data.amount).toFixed(2)} · Top tipper!`
-        : `You tipped £${Number(data.amount).toFixed(2)}`;
+        ? `£${Number(data.amount).toFixed(2)} · You're top tipper 👑`
+        : `£${Number(data.amount).toFixed(2)} tipped`;
       setTipFlash(flash);
-      setTimeout(() => setTipFlash(null), 3000);
+      playTipChime();
+      setTimeout(() => setTipFlash(null), 3200);
       setShowTip(false);
       setCustomTip('');
+
+      const newRaised = Number(data.tip_raised_gbp || 0);
+      const goalAmt = Number(data.tip_goal_gbp || stream.tip_goal_gbp || 0);
+      if (goalAmt > 0 && prevRaised.current < goalAmt && newRaised >= goalAmt) {
+        setGoalReachedFlash(true);
+        playGoalChime();
+        setTimeout(() => setGoalReachedFlash(false), 4500);
+      }
+      prevRaised.current = newRaised;
 
       // Optional system-style chat line from tipper
       const tipLine = `tipped £${Number(data.amount).toFixed(2)} 💸`;
@@ -1050,7 +1186,22 @@ export default function LiveWatchPage() {
         <div className="min-h-screen bg-black text-white flex items-center justify-center">
           <Loader2 className="animate-spin text-pink-500" size={28} />
         </div>
-      </AuthGuard>
+  
+        <style dangerouslySetInnerHTML={{ __html: `
+          @keyframes float-heart {
+            0% { transform: translateY(0) scale(0.6); opacity: 0; }
+            15% { opacity: 1; transform: translateY(-12px) scale(1); }
+            100% { transform: translateY(-160px) scale(1.15); opacity: 0; }
+          }
+          .animate-float-heart {
+            animation: float-heart 1.7s ease-out forwards;
+          }
+          .mask-fade-chat {
+            mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
+          }
+        `}} />
+    </AuthGuard>
     );
   }
 
@@ -1277,12 +1428,44 @@ export default function LiveWatchPage() {
                     </Link>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 pointer-events-auto flex-shrink-0">
+                <div className="flex items-center gap-1.5 pointer-events-auto flex-shrink-0">
+                  {!isOwner && userId && (
+                    <button
+                      type="button"
+                      onClick={() => void toggleFollow()}
+                      disabled={followBusy}
+                      className={`h-8 px-2.5 rounded-full text-[11px] font-semibold border backdrop-blur flex items-center gap-1 transition ${
+                        isFollowing
+                          ? 'bg-black/50 border-white/15 text-zinc-200'
+                          : 'bg-pink-600/90 border-pink-400/40 text-white'
+                      }`}
+                    >
+                      {isFollowing ? (
+                        'Following'
+                      ) : (
+                        <>
+                          <UserPlus size={12} /> Follow
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void shareLive()}
+                    className="h-8 w-8 rounded-full bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center"
+                    title="Share"
+                  >
+                    {linkCopied ? (
+                      <Check size={14} className="text-green-400" />
+                    ) : (
+                      <Share2 size={14} />
+                    )}
+                  </button>
                   <span className="bg-red-600 text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow">
                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                     LIVE
                   </span>
-                  <span className="bg-black/50 backdrop-blur text-xs px-2.5 py-1 rounded-full flex items-center gap-1 border border-white/10">
+                  <span className="bg-black/50 backdrop-blur text-xs px-2.5 py-1 rounded-full flex items-center gap-1 border border-white/10 tabular-nums">
                     <Users size={12} />
                     {viewerCount || stream?.viewer_count || 0}
                   </span>
@@ -1357,10 +1540,44 @@ export default function LiveWatchPage() {
               )}
 
             {tipFlash && (
-              <div className="absolute top-1/3 inset-x-0 z-30 flex justify-center pointer-events-none px-4">
-                <div className="bg-pink-600/95 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl">
+              <div className="absolute top-[28%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
+                <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-bold px-6 py-3.5 rounded-2xl shadow-2xl shadow-pink-900/50 border border-white/20 animate-in zoom-in-95 fade-in duration-300">
                   {tipFlash}
                 </div>
+              </div>
+            )}
+
+            {goalReachedFlash && (
+              <div className="absolute top-[22%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
+                <div className="bg-black/70 backdrop-blur-md text-white px-6 py-4 rounded-3xl shadow-2xl border border-yellow-400/40 flex items-center gap-3 animate-in zoom-in-95 fade-in">
+                  <Sparkles className="text-yellow-300" size={22} />
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-yellow-300">
+                      Goal reached
+                    </p>
+                    <p className="text-sm font-semibold">
+                      Tip goal smashed — thank you
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Floating hearts */}
+            {!ended && (
+              <div className="absolute bottom-24 right-4 z-25 pointer-events-none w-16 h-48 overflow-visible">
+                {heartBursts.map((h) => (
+                  <span
+                    key={h.id}
+                    className="absolute bottom-0 text-pink-400 animate-float-heart"
+                    style={{
+                      left: `${h.x}%`,
+                      fontSize: `${16 + (h.id % 3) * 4}px`,
+                    }}
+                  >
+                    ♥
+                  </span>
+                ))}
               </div>
             )}
 
@@ -1413,16 +1630,20 @@ export default function LiveWatchPage() {
                       key={m.id}
                       className="flex items-start gap-2 animate-in fade-in"
                     >
-                      <div className="bg-black/45 backdrop-blur-sm rounded-2xl px-2.5 py-1.5 max-w-[90%]">
+                      <div className="bg-black/50 backdrop-blur-md rounded-2xl px-2.5 py-1.5 max-w-[90%] border border-white/5 shadow-sm">
                         <span
                           className={`text-xs font-semibold mr-1.5 ${
                             isCreatorMsg(m)
-                              ? 'text-pink-400'
-                              : 'text-pink-200/90'
+                              ? 'text-pink-300'
+                              : 'text-zinc-200/90'
                           }`}
                         >
                           {displayName(m)}
-                          {isCreatorMsg(m) ? ' · Host' : ''}
+                          {isCreatorMsg(m) && (
+                            <span className="ml-1 text-[9px] font-bold uppercase tracking-wide bg-pink-500/30 text-pink-200 px-1.5 py-0.5 rounded-md">
+                              Host
+                            </span>
+                          )}
                         </span>
                         <span className="text-sm text-white/95 break-words">
                           {m.content}
@@ -1473,6 +1694,15 @@ export default function LiveWatchPage() {
                     </button>
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={sendHearts}
+                    className="w-11 h-11 rounded-full bg-black/55 backdrop-blur border border-white/15 flex items-center justify-center flex-shrink-0 text-pink-400 hover:text-pink-300 hover:border-pink-400/40 transition active:scale-90"
+                    title="Send love"
+                  >
+                    <Heart size={18} fill="currentColor" />
+                  </button>
+
                   {!isOwner && !stream?.private_active && privateEnabled && (
                     <>
                       <button
@@ -1481,7 +1711,7 @@ export default function LiveWatchPage() {
                           setTipError('');
                           setShowTip(true);
                         }}
-                        className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40"
+                        className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
                         title="Tip"
                       >
                         <DollarSign size={20} />
