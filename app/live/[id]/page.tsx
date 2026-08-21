@@ -57,6 +57,7 @@ type StreamRow = {
   private_end_by_creator?: boolean;
   private_end_by_fan?: boolean;
   show_join_messages?: boolean;
+  slow_mode_seconds?: number;
   showcase_user_id?: string | null;
   showcase_amount_gbp?: number;
   showcase_name?: string | null;
@@ -228,6 +229,9 @@ export default function LiveWatchPage() {
   const [privateEnabled, setPrivateEnabled] = useState(true);
   const [showJoinMessages, setShowJoinMessages] = useState(true);
   const showJoinsRef = useRef(true);
+  const [slowModeSeconds, setSlowModeSeconds] = useState(0);
+  const [slowModeLeft, setSlowModeLeft] = useState(0);
+  const lastChatSentAt = useRef(0);
   const [privateReqLeft, setPrivateReqLeft] = useState<Record<string, number>>({});
   const privateTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
@@ -337,6 +341,7 @@ export default function LiveWatchPage() {
     const joinsOn = data.show_join_messages !== false;
     setShowJoinMessages(joinsOn);
     showJoinsRef.current = joinsOn;
+    setSlowModeSeconds(Number(data.slow_mode_seconds || 0));
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -851,6 +856,9 @@ export default function LiveWatchPage() {
             setShowJoinMessages(data.stream.show_join_messages);
             showJoinsRef.current = data.stream.show_join_messages;
           }
+          if (data.stream.slow_mode_seconds != null) {
+            setSlowModeSeconds(Number(data.stream.slow_mode_seconds || 0));
+          }
         }
         if (data.status === 'ended' || data.stream?.status === 'ended') {
           void finalizeRef.current(data.stream);
@@ -1238,6 +1246,19 @@ export default function LiveWatchPage() {
     const text = chatText.trim();
     if (!text || !userId || !stream || sendingChat) return;
     if (text.length > 300) return;
+
+    // Slow mode — fans only (host always free)
+    const slow = Number(slowModeSeconds || stream.slow_mode_seconds || 0);
+    if (!isOwner && slow > 0) {
+      const elapsed = (Date.now() - lastChatSentAt.current) / 1000;
+      if (elapsed < slow) {
+        const left = Math.ceil(slow - elapsed);
+        setSlowModeLeft(left);
+        alert(`Slow mode: wait ${left}s before sending again`);
+        return;
+      }
+    }
+
     setSendingChat(true);
     try {
       const { data, error: insErr } = await supabase
@@ -1252,7 +1273,10 @@ export default function LiveWatchPage() {
 
       if (insErr) throw new Error(insErr.message);
       setChatText('');
-      // Optimistic already covered by realtime; if slow, push local
+      if (!isOwner) {
+        lastChatSentAt.current = Date.now();
+        setSlowModeLeft(slow);
+      }
       if (data) {
         setChatMessages((prev) => {
           if (prev.some((m) => m.id === data.id)) return prev;
@@ -1269,6 +1293,40 @@ export default function LiveWatchPage() {
       alert(e.message || 'Could not send');
     } finally {
       setSendingChat(false);
+    }
+  };
+
+  // Countdown label for slow mode
+  useEffect(() => {
+    if (isOwner || slowModeSeconds <= 0) {
+      setSlowModeLeft(0);
+      return;
+    }
+    const t = setInterval(() => {
+      const elapsed = (Date.now() - lastChatSentAt.current) / 1000;
+      const left = Math.max(0, Math.ceil(slowModeSeconds - elapsed));
+      setSlowModeLeft(left);
+    }, 250);
+    return () => clearInterval(t);
+  }, [isOwner, slowModeSeconds]);
+
+  const cycleSlowMode = async () => {
+    if (!isOwner || !stream) return;
+    const opts = [0, 5, 10, 30];
+    const idx = opts.indexOf(slowModeSeconds);
+    const next = opts[(idx < 0 ? 0 : idx + 1) % opts.length];
+    setSlowModeSeconds(next);
+    setStream((s) => (s ? { ...s, slow_mode_seconds: next } : s));
+    try {
+      await supabase
+        .from('live_streams')
+        .update({
+          slow_mode_seconds: next,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', stream.id);
+    } catch {
+      /* ignore */
     }
   };
 
@@ -2303,7 +2361,13 @@ export default function LiveWatchPage() {
                           void sendChat();
                         }
                       }}
-                      placeholder="Say something…"
+                      placeholder={
+                        !isOwner && slowModeLeft > 0
+                          ? `Slow mode · wait ${slowModeLeft}s`
+                          : !isOwner && slowModeSeconds > 0
+                            ? `Say something… (${slowModeSeconds}s slow)`
+                            : 'Say something…'
+                      }
                       className="flex-1 min-w-0 bg-transparent text-base sm:text-sm outline-none placeholder:text-zinc-400"
                       style={{ fontSize: '16px' }}
                       maxLength={300}
@@ -2314,7 +2378,11 @@ export default function LiveWatchPage() {
                     <button
                       type="button"
                       onClick={() => void sendChat()}
-                      disabled={sendingChat || !chatText.trim()}
+                      disabled={
+                        sendingChat ||
+                        !chatText.trim() ||
+                        (!isOwner && slowModeLeft > 0)
+                      }
                       className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-pink-600 hover:bg-pink-500 disabled:opacity-40 flex items-center justify-center flex-shrink-0 transition"
                     >
                       {sendingChat ? (
@@ -2400,6 +2468,23 @@ export default function LiveWatchPage() {
                       }
                     >
                       {showJoinMessages ? 'Joins on' : 'Joins off'}
+                    </button>
+                  )}
+
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => void cycleSlowMode()}
+                      className={`h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
+                        slowModeSeconds > 0
+                          ? 'bg-amber-600/90 border-amber-400/40 text-white'
+                          : 'bg-zinc-900/80 border-zinc-700 text-zinc-500'
+                      }`}
+                      title="Slow mode — limit how often fans can chat"
+                    >
+                      {slowModeSeconds > 0
+                        ? `Slow ${slowModeSeconds}s`
+                        : 'Slow off'}
                     </button>
                   )}
 
