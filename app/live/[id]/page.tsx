@@ -649,7 +649,7 @@ export default function LiveWatchPage() {
   );
 
   const finalizeStreamEnded = useCallback(
-    async (partial?: Partial<StreamRow>) => {
+    async (_partial?: Partial<StreamRow>) => {
       if (endFinalized.current) return;
       endFinalized.current = true;
       setLiveStatus('ended');
@@ -659,112 +659,48 @@ export default function LiveWatchPage() {
         /* ignore */
       }
 
-      // Fresh row from DB
-      let row: any = null;
       try {
-        const { data } = await supabase
-          .from('live_streams')
-          .select(
-            'id, creator_id, title, status, tip_raised_gbp, tip_goal_gbp, viewer_count, started_at, ended_at, created_at, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url'
-          )
-          .eq('id', id)
-          .single();
-        row = data;
-      } catch {
-        /* ignore */
-      }
-
-      setStream((s) => {
-        const merged = {
-          ...(s || {}),
-          ...(row || {}),
-          ...(partial || {}),
-          status: 'ended',
-        } as StreamRow;
-        return merged;
-      });
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const uid = user?.id || null;
-      const creatorId = row?.creator_id;
-      const isHost = !!(uid && creatorId && uid === creatorId);
-
-      // Host already got summary from /api/live/end — still fill if missing
-      if (isHost) {
-        setEndSummary((prev: any) => {
-          if (prev && prev.is_host) return prev;
-          const started = row?.started_at || row?.created_at
-            ? new Date(row.started_at || row.created_at).getTime()
-            : Date.now();
-          const endedTs = row?.ended_at
-            ? new Date(row.ended_at).getTime()
-            : Date.now();
-          return {
-            title: row?.title,
-            duration_seconds: Math.max(
-              0,
-              Math.floor((endedTs - started) / 1000)
-            ),
-            tip_raised_gbp: Number(row?.tip_raised_gbp || 0),
-            tip_goal_gbp: Number(row?.tip_goal_gbp || 0),
-            peak_viewers: Number(row?.viewer_count || 0),
-            tipper_count: 0,
-            showcase_name: row?.showcase_name,
-            showcase_amount_gbp: row?.showcase_amount_gbp,
-            showcase_avatar_url: row?.showcase_avatar_url,
-            my_tip_gbp: 0,
-            is_host: true,
-          };
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const res = await fetch(`/api/live/status?id=${id}`, {
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
         });
-        return;
-      }
-
-      // Viewer personalised summary
-      const started = row?.started_at || row?.created_at
-        ? new Date(row.started_at || row.created_at).getTime()
-        : Date.now();
-      const endedTs = row?.ended_at
-        ? new Date(row.ended_at).getTime()
-        : Date.now();
-      let my_tip = 0;
-      let tipper_count = 0;
-      try {
-        if (uid) {
-          const { data: mine } = await supabase
-            .from('live_stream_tips')
-            .select('total_gbp')
-            .eq('stream_id', id)
-            .eq('user_id', uid)
-            .maybeSingle();
-          my_tip = Number(mine?.total_gbp || 0);
-          setMyTipTotal(my_tip);
+        const data = await res.json().catch(() => ({}));
+        if (data.stream) {
+          setStream((s) =>
+            s ? { ...s, ...data.stream, status: 'ended' } : data.stream
+          );
         }
-        const { count } = await supabase
-          .from('live_stream_tips')
-          .select('*', { count: 'exact', head: true })
-          .eq('stream_id', id);
-        tipper_count = count || 0;
-      } catch {
-        /* ignore */
+        if (data.summary) {
+          setMyTipTotal(Number(data.summary.my_tip_gbp || 0));
+          setEndSummary((prev: any) => {
+            // Keep host summary from /api/live/end if already set
+            if (prev?.is_host) return prev;
+            return data.summary;
+          });
+        } else if (data.status === 'ended') {
+          setEndSummary((prev: any) =>
+            prev || {
+              title: data.stream?.title,
+              duration_seconds: data.duration_seconds || 0,
+              tip_raised_gbp: Number(data.stream?.tip_raised_gbp || 0),
+              tip_goal_gbp: Number(data.stream?.tip_goal_gbp || 0),
+              peak_viewers: Number(data.stream?.viewer_count || 0),
+              tipper_count: data.tipper_count || 0,
+              showcase_name: data.stream?.showcase_name,
+              showcase_amount_gbp: data.stream?.showcase_amount_gbp,
+              showcase_avatar_url: data.stream?.showcase_avatar_url,
+              my_tip_gbp: data.my_tip_gbp || 0,
+              is_host: !!data.is_host,
+            }
+          );
+        }
+      } catch (e) {
+        console.error('finalize end', e);
       }
-      setEndSummary({
-        title: row?.title,
-        duration_seconds: Math.max(
-          0,
-          Math.floor((endedTs - started) / 1000)
-        ),
-        tip_raised_gbp: Number(row?.tip_raised_gbp || 0),
-        tip_goal_gbp: Number(row?.tip_goal_gbp || 0),
-        peak_viewers: Number(row?.viewer_count || 0),
-        tipper_count,
-        showcase_name: row?.showcase_name,
-        showcase_amount_gbp: row?.showcase_amount_gbp,
-        showcase_avatar_url: row?.showcase_avatar_url,
-        my_tip_gbp: my_tip,
-        is_host: false,
-      });
     },
     [cleanupRoom, id, supabase]
   );
@@ -782,18 +718,23 @@ export default function LiveWatchPage() {
     })();
 
     const poll = setInterval(async () => {
-      const { data } = await supabase
-        .from('live_streams')
-        .select(
-          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, started_at, ended_at, created_at, private_active, private_user_id, private_ends_at, private_request_id, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url, creator_id'
-        )
-        .eq('id', id)
-        .single();
-      if (!data) return;
-      setStream((s) => (s ? { ...s, ...data } : s));
-      setPrivateEndsAt(data.private_ends_at || null);
-      if (data.status === 'ended') {
-        void finalizeRef.current(data);
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const res = await fetch(`/api/live/status?id=${id}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.stream) {
+          setStream((s) => (s ? { ...s, ...data.stream } : s));
+        }
+        if (data.status === 'ended') {
+          void finalizeRef.current(data.stream);
+        }
+      } catch {
+        /* ignore poll errors */
       }
     }, 2000);
 
@@ -1465,6 +1406,8 @@ export default function LiveWatchPage() {
     creator?.display_name ||
     (creator?.username ? `@${creator.username}` : 'Creator');
   const ended = liveStatus === 'ended' || stream?.status === 'ended';
+  const showAsHost = !!(isOwner || endSummary?.is_host);
+  const myTipShow = Number(endSummary?.my_tip_gbp ?? myTipTotal ?? 0);
   const goal = Number(stream?.tip_goal_gbp || 0);
   const raised = Number(stream?.tip_raised_gbp || 0);
 
@@ -1491,10 +1434,9 @@ export default function LiveWatchPage() {
           <div className="absolute inset-0 bg-black">
             {ended ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center px-5 overflow-y-auto py-10 bg-black">
-                <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
-                  {/* Header — creator focused for viewers */}
+                <div className="w-full max-w-sm bg-zinc-900/95 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
                   <div className="text-center mb-5">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center mx-auto mb-3 overflow-hidden text-2xl font-bold">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center mx-auto mb-3 overflow-hidden text-2xl font-bold ring-2 ring-pink-500/30">
                       {creator?.avatar_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -1507,7 +1449,9 @@ export default function LiveWatchPage() {
                       )}
                     </div>
                     <p className="text-xl font-bold text-white leading-tight">
-                      {isOwner ? 'Your live ended' : `${name} ended the live`}
+                      {showAsHost
+                        ? 'Your live ended'
+                        : `${name} ended the live`}
                     </p>
                     <p className="text-sm text-zinc-300 mt-1.5 truncate px-2">
                       {endSummary?.title || stream?.title || 'Live stream'}
@@ -1528,7 +1472,7 @@ export default function LiveWatchPage() {
                         )}
                       </p>
                     </div>
-                    {isOwner ? (
+                    {showAsHost ? (
                       <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
                         <p className="text-[10px] text-zinc-500 uppercase tracking-wide">
                           Peak viewers
@@ -1545,16 +1489,13 @@ export default function LiveWatchPage() {
                           You tipped
                         </p>
                         <p className="text-lg font-semibold mt-0.5 text-pink-400 tabular-nums">
-                          £
-                          {Number(
-                            endSummary?.my_tip_gbp ?? myTipTotal ?? 0
-                          ).toFixed(2)}
+                          £{myTipShow.toFixed(2)}
                         </p>
                       </div>
                     )}
                     <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
                       <p className="text-[10px] text-zinc-500 uppercase tracking-wide">
-                        {isOwner ? 'Tips raised' : 'Total tips'}
+                        Tips raised
                       </p>
                       <p className="text-lg font-semibold text-pink-400 mt-0.5 tabular-nums">
                         £{Number(endSummary?.tip_raised_gbp || 0).toFixed(2)}
@@ -1570,40 +1511,9 @@ export default function LiveWatchPage() {
                     </div>
                   </div>
 
-                  {/* Viewer personal line */}
-                  {!isOwner && (
-                    <div
-                      className={`mb-4 rounded-2xl px-4 py-3 border ${
-                        Number(endSummary?.my_tip_gbp ?? myTipTotal ?? 0) > 0
-                          ? 'bg-pink-600/15 border-pink-500/30'
-                          : 'bg-zinc-800/50 border-zinc-700'
-                      }`}
-                    >
-                      <p className="text-[11px] text-zinc-400 uppercase font-medium">
-                        Your support
-                      </p>
-                      {Number(endSummary?.my_tip_gbp ?? myTipTotal ?? 0) > 0 ? (
-                        <p className="text-sm text-white mt-0.5">
-                          You tipped{' '}
-                          <span className="font-bold text-pink-300">
-                            £
-                            {Number(
-                              endSummary?.my_tip_gbp ?? myTipTotal
-                            ).toFixed(2)}
-                          </span>{' '}
-                          this live
-                        </p>
-                      ) : (
-                        <p className="text-sm text-zinc-400 mt-0.5">
-                          You didn&apos;t tip this live
-                        </p>
-                      )}
-                    </div>
-                  )}
-
                   {endSummary?.showcase_name &&
                     Number(endSummary?.showcase_amount_gbp || 0) > 0 && (
-                      <div className="flex items-center gap-3 bg-gradient-to-r from-pink-600/20 to-rose-600/10 border border-pink-500/30 rounded-2xl px-3 py-2.5 mb-5">
+                      <div className="flex items-center gap-3 bg-gradient-to-r from-pink-600/25 to-rose-600/15 border border-pink-500/30 rounded-2xl px-3 py-2.5 mb-5">
                         {endSummary.showcase_avatar_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -1632,21 +1542,21 @@ export default function LiveWatchPage() {
                       </div>
                     )}
 
-                  {!isOwner && creator?.username && (
+                  {!showAsHost && creator?.username && (
                     <Link
                       href={`/${creator.username}`}
-                      className="block w-full text-center py-3 mb-2 rounded-2xl bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 font-medium text-sm transition"
+                      className="block w-full text-center py-3 mb-2 rounded-2xl bg-zinc-800 border border-zinc-700 font-medium text-sm"
                     >
-                      View {name}&apos;s profile
+                      View profile
                     </Link>
                   )}
                   <Link
                     href="/live"
                     className="block w-full text-center py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-sm"
                   >
-                    {isOwner ? 'Back to Live' : 'Discover more lives'}
+                    {showAsHost ? 'Back to Live' : 'Discover more lives'}
                   </Link>
-                  {isOwner && (
+                  {showAsHost && (
                     <button
                       type="button"
                       onClick={() => router.push('/live')}
