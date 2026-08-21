@@ -70,6 +70,7 @@ type FloatingReact = {
   id: string;
   emoji: string;
   left: number;
+  drift?: string;
 };
 
 type PrivateReq = {
@@ -1240,11 +1241,16 @@ export default function LiveWatchPage() {
 
   const spawnReaction = (emoji: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const left = 10 + Math.random() * 72;
-    setFloatingReacts((prev) => [...prev.slice(-18), { id, emoji, left }]);
+    // Cluster bottom-right (phone + desktop)
+    const left = 15 + Math.random() * 70; // within right panel
+    const drift = `${-8 - Math.random() * 28}px`;
+    setFloatingReacts((prev) => [
+      ...prev.slice(-18),
+      { id, emoji, left, drift },
+    ]);
     window.setTimeout(() => {
       setFloatingReacts((prev) => prev.filter((r) => r.id !== id));
-    }, 2200);
+    }, 2500);
   };
   spawnReactionRef.current = spawnReaction;
 
@@ -1805,18 +1811,47 @@ export default function LiveWatchPage() {
   
         <style dangerouslySetInnerHTML={{ __html: `
 @keyframes wod-float-react {
-  0% { transform: translateY(0) scale(0.55); opacity: 0; }
-  15% { opacity: 1; transform: translateY(-10px) scale(1.08); }
-  100% { transform: translateY(-130px) scale(1); opacity: 0; }
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.5);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+    transform: translate3d(0, -8px, 0) scale(1.15);
+  }
+  100% {
+    transform: translate3d(var(--drift, -12px), -48vh, 0) scale(1);
+    opacity: 0;
+  }
 }
 .wod-float-react {
-  animation: wod-float-react 2.1s ease-out forwards;
+  animation: wod-float-react 2.4s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
   pointer-events: none;
   position: absolute;
-  bottom: 8%;
-  font-size: 1.7rem;
+  bottom: 0;
+  font-size: 1.85rem;
   line-height: 1;
-  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.6));
+  will-change: transform, opacity;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.55));
+}
+@media (min-width: 1024px) {
+  .wod-float-react {
+    font-size: 2.1rem;
+  }
+  @keyframes wod-float-react {
+    0% {
+      transform: translate3d(0, 0, 0) scale(0.5);
+      opacity: 0;
+    }
+    8% {
+      opacity: 1;
+      transform: translate3d(0, -10px, 0) scale(1.2);
+    }
+    100% {
+      transform: translate3d(var(--drift, -16px), -42vh, 0) scale(1);
+      opacity: 0;
+    }
+  }
 }
 .mask-fade-chat {
             mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
@@ -2376,14 +2411,21 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Shared emoji reactions */}
+            {/* Shared emoji reactions — rise from bottom-right */}
             {!ended && floatingReacts.length > 0 && (
-              <div className="absolute inset-x-0 bottom-24 top-20 z-25 pointer-events-none overflow-hidden">
+              <div
+                className="absolute right-0 bottom-28 sm:bottom-32 top-[35%] z-25 pointer-events-none overflow-hidden w-[48%] sm:w-[42%] lg:w-[36%]"
+              >
                 {floatingReacts.map((r) => (
                   <span
                     key={r.id}
                     className="wod-float-react"
-                    style={{ left: `${r.left}%` }}
+                    style={{
+                      left: `${r.left}%`,
+                      // remap left % into this right-side panel
+                      // left was 62-90 of full screen → map into panel
+                      ['--drift' as any]: r.drift || '-12px',
+                    }}
                   >
                     {r.emoji}
                   </span>
@@ -2489,6 +2531,29 @@ export default function LiveWatchPage() {
               </div>
             )}
 
+
+            {/* Mobile emoji stack — right side, clear of chat */}
+            {!ended && liveStatus === 'live' && (
+              <div className="sm:hidden absolute right-2 z-30 pointer-events-auto flex flex-col gap-1.5"
+                style={{
+                  bottom:
+                    'max(5.5rem, calc(env(safe-area-inset-bottom) + 4.75rem))',
+                }}
+              >
+                {LIVE_REACT_EMOJIS.map((emoji) => (
+                  <button
+                    key={`m-${emoji}`}
+                    type="button"
+                    onClick={() => void sendReaction(emoji)}
+                    className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 active:scale-90 transition flex items-center justify-center text-lg shadow-lg"
+                    title="React"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Bottom: chat input + tip / creator controls */}
             {!ended && liveStatus === 'live' && (
               <div
@@ -2498,14 +2563,15 @@ export default function LiveWatchPage() {
                     'max(0.5rem, env(safe-area-inset-bottom))',
                 }}
               >
-                <div className="pointer-events-auto max-w-2xl mx-auto w-full space-y-2">
-                  <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+                <div className="pointer-events-auto max-w-2xl mx-auto w-full space-y-2 relative">
+                  {/* Desktop / tablet landscape: horizontal bar above input */}
+                  <div className="hidden sm:flex items-center justify-center gap-2">
                     {LIVE_REACT_EMOJIS.map((emoji) => (
                       <button
                         key={emoji}
                         type="button"
                         onClick={() => void sendReaction(emoji)}
-                        className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/55 hover:bg-black/75 border border-white/15 active:scale-90 transition flex items-center justify-center text-lg sm:text-xl shadow-md"
+                        className="w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 border border-white/15 active:scale-90 transition flex items-center justify-center text-xl shadow-md"
                         title="React"
                       >
                         {emoji}
