@@ -557,6 +557,35 @@ export default function LiveWatchPage() {
       });
       room.on(RoomEvent.ParticipantDisconnected, () => {
         bumpViewers(Math.max(0, room.numParticipants - 1));
+        // Host left room → check if live ended
+        if (!asCreator && room.remoteParticipants.size === 0) {
+          setTimeout(() => {
+            void (async () => {
+              const { data } = await supabase
+                .from('live_streams')
+                .select('status')
+                .eq('id', streamRow.id)
+                .single();
+              if (data?.status === 'ended') {
+                void finalizeRef.current();
+              }
+            })();
+          }, 500);
+        }
+      });
+      room.on(RoomEvent.Disconnected, () => {
+        if (!asCreator) {
+          void (async () => {
+            const { data } = await supabase
+              .from('live_streams')
+              .select('status')
+              .eq('id', streamRow.id)
+              .single();
+            if (data?.status === 'ended') {
+              void finalizeRef.current();
+            }
+          })();
+        }
       });
 
       await room.connect(data.url, data.token);
@@ -614,6 +643,134 @@ export default function LiveWatchPage() {
     }
   };
 
+  const endFinalized = useRef(false);
+  const finalizeRef = useRef<(partial?: Partial<StreamRow>) => Promise<void>>(
+    async () => {}
+  );
+
+  const finalizeStreamEnded = useCallback(
+    async (partial?: Partial<StreamRow>) => {
+      if (endFinalized.current) return;
+      endFinalized.current = true;
+      setLiveStatus('ended');
+      try {
+        await cleanupRoom();
+      } catch {
+        /* ignore */
+      }
+
+      // Fresh row from DB
+      let row: any = null;
+      try {
+        const { data } = await supabase
+          .from('live_streams')
+          .select(
+            'id, creator_id, title, status, tip_raised_gbp, tip_goal_gbp, viewer_count, started_at, ended_at, created_at, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url'
+          )
+          .eq('id', id)
+          .single();
+        row = data;
+      } catch {
+        /* ignore */
+      }
+
+      setStream((s) => {
+        const merged = {
+          ...(s || {}),
+          ...(row || {}),
+          ...(partial || {}),
+          status: 'ended',
+        } as StreamRow;
+        return merged;
+      });
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const uid = user?.id || null;
+      const creatorId = row?.creator_id;
+      const isHost = !!(uid && creatorId && uid === creatorId);
+
+      // Host already got summary from /api/live/end — still fill if missing
+      if (isHost) {
+        setEndSummary((prev: any) => {
+          if (prev && prev.is_host) return prev;
+          const started = row?.started_at || row?.created_at
+            ? new Date(row.started_at || row.created_at).getTime()
+            : Date.now();
+          const endedTs = row?.ended_at
+            ? new Date(row.ended_at).getTime()
+            : Date.now();
+          return {
+            title: row?.title,
+            duration_seconds: Math.max(
+              0,
+              Math.floor((endedTs - started) / 1000)
+            ),
+            tip_raised_gbp: Number(row?.tip_raised_gbp || 0),
+            tip_goal_gbp: Number(row?.tip_goal_gbp || 0),
+            peak_viewers: Number(row?.viewer_count || 0),
+            tipper_count: 0,
+            showcase_name: row?.showcase_name,
+            showcase_amount_gbp: row?.showcase_amount_gbp,
+            showcase_avatar_url: row?.showcase_avatar_url,
+            my_tip_gbp: 0,
+            is_host: true,
+          };
+        });
+        return;
+      }
+
+      // Viewer personalised summary
+      const started = row?.started_at || row?.created_at
+        ? new Date(row.started_at || row.created_at).getTime()
+        : Date.now();
+      const endedTs = row?.ended_at
+        ? new Date(row.ended_at).getTime()
+        : Date.now();
+      let my_tip = 0;
+      let tipper_count = 0;
+      try {
+        if (uid) {
+          const { data: mine } = await supabase
+            .from('live_stream_tips')
+            .select('total_gbp')
+            .eq('stream_id', id)
+            .eq('user_id', uid)
+            .maybeSingle();
+          my_tip = Number(mine?.total_gbp || 0);
+          setMyTipTotal(my_tip);
+        }
+        const { count } = await supabase
+          .from('live_stream_tips')
+          .select('*', { count: 'exact', head: true })
+          .eq('stream_id', id);
+        tipper_count = count || 0;
+      } catch {
+        /* ignore */
+      }
+      setEndSummary({
+        title: row?.title,
+        duration_seconds: Math.max(
+          0,
+          Math.floor((endedTs - started) / 1000)
+        ),
+        tip_raised_gbp: Number(row?.tip_raised_gbp || 0),
+        tip_goal_gbp: Number(row?.tip_goal_gbp || 0),
+        peak_viewers: Number(row?.viewer_count || 0),
+        tipper_count,
+        showcase_name: row?.showcase_name,
+        showcase_amount_gbp: row?.showcase_amount_gbp,
+        showcase_avatar_url: row?.showcase_avatar_url,
+        my_tip_gbp: my_tip,
+        is_host: false,
+      });
+    },
+    [cleanupRoom, id, supabase]
+  );
+
+  finalizeRef.current = finalizeStreamEnded;
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -628,88 +785,48 @@ export default function LiveWatchPage() {
       const { data } = await supabase
         .from('live_streams')
         .select(
-          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, started_at, ended_at, created_at, private_active, private_user_id, private_ends_at, private_request_id, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url'
+          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, started_at, ended_at, created_at, private_active, private_user_id, private_ends_at, private_request_id, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url, creator_id'
         )
         .eq('id', id)
         .single();
-      if (data) {
-        setStream((s) => {
-          const next = s ? { ...s, ...data } : s;
-          if (data.private_active && userId) {
-            const isC = !!(next && next.creator_id === userId);
-            const isF = data.private_user_id === userId;
-            setPrivateLockedOut(!!(data.private_active && !isC && !isF));
-          } else if (!data.private_active) {
-            setPrivateLockedOut(false);
-          }
-          return next;
-        });
-        setPrivateEndsAt(data.private_ends_at || null);
-        if (data.status === 'ended') {
-          setLiveStatus('ended');
-          void cleanupRoom();
-          setStream((s) => {
-            const merged = (s ? { ...s, ...data } : data) as StreamRow;
-            // Fire summary once for non-owners (owner already has endSummary from API)
-            if (s && s.creator_id !== userId) {
-              void (async () => {
-                const started = merged.started_at || merged.created_at
-                  ? new Date(merged.started_at || merged.created_at!).getTime()
-                  : Date.now();
-                const endedTs = merged.ended_at
-                  ? new Date(merged.ended_at).getTime()
-                  : Date.now();
-                let my_tip = 0;
-                let tipper_count = 0;
-                try {
-                  if (userId) {
-                    const { data: mine } = await supabase
-                      .from('live_stream_tips')
-                      .select('total_gbp')
-                      .eq('stream_id', id)
-                      .eq('user_id', userId)
-                      .maybeSingle();
-                    my_tip = Number(mine?.total_gbp || 0);
-                    setMyTipTotal(my_tip);
-                  }
-                  const { count } = await supabase
-                    .from('live_stream_tips')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('stream_id', id);
-                  tipper_count = count || 0;
-                } catch {
-                  /* ignore */
-                }
-                setEndSummary({
-                  title: merged.title,
-                  duration_seconds: Math.max(
-                    0,
-                    Math.floor((endedTs - started) / 1000)
-                  ),
-                  tip_raised_gbp: Number(merged.tip_raised_gbp || 0),
-                  tip_goal_gbp: Number(merged.tip_goal_gbp || 0),
-                  peak_viewers: Number(merged.viewer_count || 0),
-                  tipper_count,
-                  showcase_name: merged.showcase_name,
-                  showcase_amount_gbp: merged.showcase_amount_gbp,
-                  showcase_avatar_url: merged.showcase_avatar_url,
-                  my_tip_gbp: my_tip,
-                });
-              })();
-            }
-            return merged;
-          });
-        }
+      if (!data) return;
+      setStream((s) => (s ? { ...s, ...data } : s));
+      setPrivateEndsAt(data.private_ends_at || null);
+      if (data.status === 'ended') {
+        void finalizeRef.current(data);
       }
-    }, 8000);
+    }, 2000);
+
+    // Realtime: instant end for viewers
+    const statusCh = supabase
+      .channel(`live-status-${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'live_streams',
+          filter: `id=eq.${id}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+          setStream((s) => (s ? { ...s, ...row } : s));
+          if (row.status === 'ended') {
+            void finalizeRef.current(row);
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
       cancelled = true;
       clearInterval(poll);
+      void supabase.removeChannel(statusCh);
       cleanupRoom();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, finalizeStreamEnded]);
 
   // Realtime chat
   useEffect(() => {
@@ -1273,6 +1390,7 @@ export default function LiveWatchPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not end');
+      endFinalized.current = true;
       setLiveStatus('ended');
       setEndSummary({
         ...(data.summary || {
