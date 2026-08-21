@@ -216,6 +216,8 @@ export default function LiveWatchPage() {
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
+  const [milestoneFlash, setMilestoneFlash] = useState<number | null>(null);
+  const prevGoalPct = useRef(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -351,6 +353,9 @@ export default function LiveWatchPage() {
 
     setStream(data);
     prevRaised.current = Number(data.tip_raised_gbp || 0);
+    const g0 = Number(data.tip_goal_gbp || 0);
+    const r0 = Number(data.tip_raised_gbp || 0);
+    prevGoalPct.current = g0 > 0 ? Math.min(100, (r0 / g0) * 100) : 0;
     const joinsOn = data.show_join_messages !== false;
     setShowJoinMessages(joinsOn);
     showJoinsRef.current = joinsOn;
@@ -1712,10 +1717,23 @@ export default function LiveWatchPage() {
       }
       const newRaised = Number(data.tip_raised_gbp || 0);
       const goalAmt = Number(data.tip_goal_gbp || stream.tip_goal_gbp || 0);
-      if (goalAmt > 0 && prevRaised.current < goalAmt && newRaised >= goalAmt) {
-        setGoalReachedFlash(true);
-        playGoalChime();
-        setTimeout(() => setGoalReachedFlash(false), 4500);
+      if (goalAmt > 0) {
+        const newPct = Math.min(100, (newRaised / goalAmt) * 100);
+        const prevPct = prevGoalPct.current;
+        for (const m of [25, 50, 75, 100]) {
+          if (prevPct < m && newPct >= m) {
+            if (m === 100) {
+              setGoalReachedFlash(true);
+              playGoalChime();
+              setTimeout(() => setGoalReachedFlash(false), 4500);
+            } else {
+              setMilestoneFlash(m);
+              setTimeout(() => setMilestoneFlash(null), 2800);
+            }
+            break;
+          }
+        }
+        prevGoalPct.current = newPct;
       }
       prevRaised.current = newRaised;
 
@@ -2240,33 +2258,97 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Tip goal — left, never full-width on mobile */}
-            {!ended && (goal > 0 || raised > 0) && (
-              <div className="absolute top-[3.75rem] sm:top-20 left-3 z-20 pointer-events-none max-w-[48%] sm:max-w-[220px]">
-                <div className="bg-black/55 backdrop-blur-md rounded-xl px-2.5 py-1.5 sm:px-3 sm:py-2 border border-white/10">
-                  <div className="flex justify-between gap-2 text-[10px] sm:text-[11px] mb-1">
-                    <span className="text-zinc-300 truncate">
-                      {goal > 0 ? 'Tip goal' : 'Tips'}
-                    </span>
-                    <span className="font-semibold tabular-nums flex-shrink-0">
-                      {goal > 0
-                        ? `£${raised.toFixed(0)}/£${goal.toFixed(0)}`
-                        : `£${raised.toFixed(2)}`}
-                    </span>
-                  </div>
-                  {goal > 0 && (
-                    <div className="h-1 sm:h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-pink-600 to-rose-500 rounded-full transition-all duration-500"
-                        style={{
-                          width: `${Math.min(100, (raised / goal) * 100)}%`,
-                        }}
-                      />
+            {/* Tip goal — premium progress + milestones */}
+            {!ended && (goal > 0 || raised > 0) && (() => {
+              const pct =
+                goal > 0 ? Math.min(100, (raised / goal) * 100) : 0;
+              const r = 18;
+              const c = 2 * Math.PI * r;
+              const offset = c - (pct / 100) * c;
+              return (
+                <div className="absolute top-[3.75rem] sm:top-20 left-3 z-20 pointer-events-none max-w-[52%] sm:max-w-[240px]">
+                  <div className="bg-black/60 backdrop-blur-md rounded-2xl px-2.5 py-2 sm:px-3 sm:py-2.5 border border-white/12 shadow-lg">
+                    <div className="flex items-center gap-2.5">
+                      {goal > 0 && (
+                        <div className="relative w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0">
+                          <svg
+                            className="w-full h-full -rotate-90"
+                            viewBox="0 0 44 44"
+                          >
+                            <circle
+                              cx="22"
+                              cy="22"
+                              r={r}
+                              fill="none"
+                              stroke="rgba(63,63,70,0.9)"
+                              strokeWidth="4"
+                            />
+                            <circle
+                              cx="22"
+                              cy="22"
+                              r={r}
+                              fill="none"
+                              stroke="url(#tipGoalGrad)"
+                              strokeWidth="4"
+                              strokeLinecap="round"
+                              strokeDasharray={c}
+                              strokeDashoffset={offset}
+                              className="transition-all duration-700 ease-out"
+                            />
+                            <defs>
+                              <linearGradient
+                                id="tipGoalGrad"
+                                x1="0%"
+                                y1="0%"
+                                x2="100%"
+                                y2="0%"
+                              >
+                                <stop offset="0%" stopColor="#db2777" />
+                                <stop offset="100%" stopColor="#f43f5e" />
+                              </linearGradient>
+                            </defs>
+                          </svg>
+                          <span className="absolute inset-0 flex items-center justify-center text-[10px] sm:text-[11px] font-bold tabular-nums text-white">
+                            {Math.round(pct)}%
+                          </span>
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] sm:text-[11px] text-zinc-300 font-medium truncate">
+                          {goal > 0 ? 'Tip goal' : 'Tips this live'}
+                        </p>
+                        <p className="text-sm sm:text-base font-bold tabular-nums text-white leading-tight">
+                          {goal > 0
+                            ? `£${raised.toFixed(0)}`
+                            : `£${raised.toFixed(2)}`}
+                          {goal > 0 && (
+                            <span className="text-zinc-400 font-semibold text-xs sm:text-sm">
+                              {' '}
+                              / £{goal.toFixed(0)}
+                            </span>
+                          )}
+                        </p>
+                        {goal > 0 && (
+                          <div className="mt-1.5 flex items-center gap-1">
+                            {[25, 50, 75, 100].map((m) => (
+                              <div
+                                key={m}
+                                className={`h-1 flex-1 rounded-full transition-colors duration-500 ${
+                                  pct >= m
+                                    ? 'bg-gradient-to-r from-pink-500 to-rose-400'
+                                    : 'bg-zinc-700'
+                                }`}
+                                title={`${m}%`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Top tipper — compact on mobile */}
             {!ended &&
@@ -2310,6 +2392,18 @@ export default function LiveWatchPage() {
               <div className="absolute top-[28%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
                 <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-bold px-6 py-3.5 rounded-2xl shadow-2xl shadow-pink-900/50 border border-white/20 animate-in zoom-in-95 fade-in duration-300">
                   {tipFlash}
+                </div>
+              </div>
+            )}
+
+            {milestoneFlash != null && milestoneFlash < 100 && (
+              <div className="absolute top-[24%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
+                <div className="bg-black/75 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-pink-400/35 flex items-center gap-2.5 animate-in zoom-in-95 fade-in">
+                  <Sparkles className="text-pink-300" size={18} />
+                  <p className="text-sm font-bold">
+                    Tip goal{' '}
+                    <span className="text-pink-300">{milestoneFlash}%</span>
+                  </p>
                 </div>
               </div>
             )}
