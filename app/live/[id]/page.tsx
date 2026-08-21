@@ -1241,16 +1241,15 @@ export default function LiveWatchPage() {
 
   const spawnReaction = (emoji: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    // Spread slightly inside the right-side spawn panel
-    const left = 8 + Math.random() * 55;
-    const drift = `${-10 - Math.random() * 36}px`;
+    const left = 10 + Math.random() * 50;
+    const drift = `${-8 - Math.random() * 36}px`;
     setFloatingReacts((prev) => [
-      ...prev.slice(-16),
+      ...prev.slice(-14),
       { id, emoji, left, drift },
     ]);
     window.setTimeout(() => {
       setFloatingReacts((prev) => prev.filter((r) => r.id !== id));
-    }, 2700);
+    }, 2600);
   };
   spawnReactionRef.current = spawnReaction;
 
@@ -1808,70 +1807,7 @@ export default function LiveWatchPage() {
         <div className="min-h-screen bg-black text-white flex items-center justify-center">
           <Loader2 className="animate-spin text-pink-500" size={28} />
         </div>
-  
-        <style dangerouslySetInnerHTML={{ __html: `
-/* TikTok-style live reactions — big, rise ~half screen */
-@keyframes wod-float-react {
-  0% {
-    transform: translate3d(0, 8px, 0) scale(0.35);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1.05);
-  }
-  70% {
-    opacity: 1;
-  }
-  100% {
-    transform: translate3d(var(--drift, -18px), -50vh, 0) scale(1.15);
-    opacity: 0;
-  }
-}
-.wod-float-react {
-  animation: wod-float-react 2.6s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
-  pointer-events: none;
-  position: absolute;
-  bottom: 4px;
-  font-size: 2.75rem; /* phone — large */
-  line-height: 1;
-  will-change: transform, opacity;
-  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.55));
-  user-select: none;
-}
-@media (min-width: 640px) {
-  .wod-float-react {
-    font-size: 3.25rem;
-  }
-}
-@media (min-width: 1024px) {
-  .wod-float-react {
-    font-size: 4rem; /* desktop — very large */
-  }
-  @keyframes wod-float-react {
-    0% {
-      transform: translate3d(0, 12px, 0) scale(0.3);
-      opacity: 0;
-    }
-    12% {
-      opacity: 1;
-      transform: translate3d(0, 0, 0) scale(1.08);
-    }
-    65% {
-      opacity: 1;
-    }
-    100% {
-      transform: translate3d(var(--drift, -24px), -48vh, 0) scale(1.2);
-      opacity: 0;
-    }
-  }
-}
-.mask-fade-chat {
-            mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
-            -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
-          }
-        `}} />
-    </AuthGuard>
+      </AuthGuard>
     );
   }
 
@@ -1971,6 +1907,35 @@ export default function LiveWatchPage() {
   return (
     <AuthGuard>
       <div className="bg-black text-white flex lg:min-h-screen">
+        <style dangerouslySetInnerHTML={{ __html: `
+@keyframes wod-float-react {
+  0% { transform: translateY(0) scale(0.3); opacity: 0; }
+  12% { transform: translateY(-20px) scale(1.15); opacity: 1; }
+  100% { transform: translateY(-50vh) translateX(var(--drift, -24px)) scale(1.1); opacity: 0; }
+}
+.wod-float-react {
+  position: absolute;
+  bottom: 6.5rem;
+  animation: wod-float-react 2.5s ease-out forwards;
+  pointer-events: none;
+  font-size: 3.25rem;
+  line-height: 1;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.55));
+  will-change: transform, opacity;
+  user-select: none;
+}
+@media (min-width: 640px) {
+  .wod-float-react { font-size: 3.75rem; bottom: 7.5rem; }
+}
+@media (min-width: 1024px) {
+  .wod-float-react { font-size: 5rem; bottom: 8rem; }
+}
+.mask-fade-chat {
+  mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
+}
+` }} />
+
         <div className="hidden lg:block">
           <Sidebar />
         </div>
@@ -2424,14 +2389,13 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Shared emoji reactions — TikTok-style rise from bottom-right */}
-            {!ended && floatingReacts.length > 0 && (
+            {/* Shared emoji reactions — full-height right column so float can travel */}
+            {!ended && (
               <div
-                className="absolute z-25 pointer-events-none overflow-hidden
-                  right-12 bottom-28 w-[42%]
-                  sm:right-4 sm:bottom-36 sm:w-[38%]
-                  lg:right-6 lg:bottom-40 lg:w-[32%] lg:max-w-[280px]
-                  top-[40%]"
+                className="absolute z-[28] pointer-events-none overflow-hidden
+                  top-0 bottom-0 right-11 w-[46%]
+                  sm:right-3 sm:w-[40%]
+                  lg:right-8 lg:w-[34%] lg:max-w-[340px]"
               >
                 {floatingReacts.map((r) => (
                   <span
@@ -2439,7 +2403,7 @@ export default function LiveWatchPage() {
                     className="wod-float-react"
                     style={{
                       left: `${r.left}%`,
-                      ['--drift' as any]: r.drift || '-16px',
+                      ['--drift' as any]: r.drift || '-24px',
                     }}
                   >
                     {r.emoji}
