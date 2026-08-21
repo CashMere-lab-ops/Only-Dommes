@@ -130,6 +130,9 @@ export default function LiveWatchPage() {
   const [camOn, setCamOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
   const [viewerCount, setViewerCount] = useState(0);
+  const [peakViewers, setPeakViewers] = useState(0);
+  const [endSummary, setEndSummary] = useState<any>(null);
+  const [liveStartedAt, setLiveStartedAt] = useState<number | null>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipAmount, setTipAmount] = useState(5);
   const [customTip, setCustomTip] = useState('');
@@ -173,6 +176,12 @@ export default function LiveWatchPage() {
     stream.private_user_id === userId
   );
   const inPrivate = !!(stream?.private_active && (isOwner || isPrivateFan));
+
+  const bumpViewers = (n: number) => {
+    const v = Math.max(0, n);
+    setViewerCount(v);
+    setPeakViewers((p) => Math.max(p, v));
+  };
 
   const cleanupRoom = useCallback(async () => {
     try {
@@ -418,10 +427,10 @@ export default function LiveWatchPage() {
       });
 
       room.on(RoomEvent.ParticipantConnected, () => {
-        setViewerCount(Math.max(0, room.numParticipants - 1));
+        bumpViewers(Math.max(0, room.numParticipants - 1));
       });
       room.on(RoomEvent.ParticipantDisconnected, () => {
-        setViewerCount(Math.max(0, room.numParticipants - 1));
+        bumpViewers(Math.max(0, room.numParticipants - 1));
       });
 
       await room.connect(data.url, data.token);
@@ -466,7 +475,7 @@ export default function LiveWatchPage() {
         });
       }
 
-      setViewerCount(Math.max(0, room.numParticipants - 1));
+      bumpViewers(Math.max(0, room.numParticipants - 1));
       setLiveStatus('live');
       setStream((s) => (s ? { ...s, status: 'active' } : s));
     } catch (e: any) {
@@ -706,17 +715,29 @@ export default function LiveWatchPage() {
   }, [privateEndsAt, stream?.private_active, id, supabase]);
 
   useEffect(() => {
-    if (!isOwner || liveStatus !== 'live') return;
-    const t = setInterval(() => {
+    if (liveStatus !== 'live' || !id) return;
+    const push = () => {
       const n = roomRef.current
-        ? Math.max(0, roomRef.current.numParticipants - 1)
-        : 0;
-      setViewerCount(n);
-      void supabase
-        .from('live_streams')
-        .update({ viewer_count: n, updated_at: new Date().toISOString() })
-        .eq('id', id);
-    }, 10000);
+        ? Math.max(0, roomRef.current.numParticipants - (isOwner ? 1 : 0))
+        : viewerCount;
+      // Creator subtracts self; viewers report room size minus 1 (creator)
+      let count = n;
+      if (!isOwner && roomRef.current) {
+        count = Math.max(0, roomRef.current.numParticipants - 1);
+      }
+      bumpViewers(count);
+      if (isOwner) {
+        void supabase
+          .from('live_streams')
+          .update({
+            viewer_count: count,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id);
+      }
+    };
+    push();
+    const t = setInterval(push, 5000);
     return () => clearInterval(t);
   }, [isOwner, liveStatus, id, supabase]);
 
@@ -975,6 +996,7 @@ export default function LiveWatchPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      const peak = Math.max(peakViewers, viewerCount);
       await cleanupRoom();
       const res = await fetch('/api/live/end', {
         method: 'POST',
@@ -982,17 +1004,44 @@ export default function LiveWatchPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ stream_id: id }),
+        body: JSON.stringify({
+          stream_id: id,
+          peak_viewers: peak,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not end');
       setLiveStatus('ended');
-      router.push('/live');
+      setEndSummary(
+        data.summary || {
+          title: stream?.title,
+          duration_seconds: liveStartedAt
+            ? Math.floor((Date.now() - liveStartedAt) / 1000)
+            : 0,
+          tip_raised_gbp: Number(stream?.tip_raised_gbp || 0),
+          tip_goal_gbp: Number(stream?.tip_goal_gbp || 0),
+          peak_viewers: peak,
+          tipper_count: 0,
+          showcase_name: stream?.showcase_name,
+          showcase_amount_gbp: stream?.showcase_amount_gbp,
+          showcase_avatar_url: stream?.showcase_avatar_url,
+        }
+      );
     } catch (e: any) {
       alert(e.message || 'Failed');
     } finally {
       setEnding(false);
     }
+  };
+
+  const formatDuration = (sec: number) => {
+    const s = Math.max(0, Math.floor(sec));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    if (h > 0)
+      return `${h}:${m.toString().padStart(2, '0')}:${r.toString().padStart(2, '0')}`;
+    return `${m}:${r.toString().padStart(2, '0')}`;
   };
 
   if (loading) {
@@ -1047,18 +1096,116 @@ export default function LiveWatchPage() {
         <main className="flex-1 flex flex-col h-[100dvh] max-h-[100dvh] overflow-hidden relative">
           <div className="flex-1 min-h-0 relative bg-black">
             {ended ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 gap-2 px-6">
-                <Radio size={40} className="text-zinc-600" />
-                <p className="font-semibold text-zinc-200 text-lg">
-                  Stream ended
-                </p>
-                <p className="text-sm text-center">This live was not saved</p>
-                <Link
-                  href="/live"
-                  className="mt-4 px-5 py-2.5 rounded-xl bg-pink-600 text-sm font-semibold"
-                >
-                  Back to Live
-                </Link>
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-6 overflow-y-auto py-10">
+                <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
+                  <div className="text-center mb-5">
+                    <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center mx-auto mb-3">
+                      <Radio className="text-pink-500" size={28} />
+                    </div>
+                    <p className="text-xl font-bold text-white">Live ended</p>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      Not saved · no replay
+                    </p>
+                    {endSummary?.title && (
+                      <p className="text-sm text-zinc-300 mt-2 truncate">
+                        {endSummary.title}
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
+                      <p className="text-[11px] text-zinc-500 uppercase">Duration</p>
+                      <p className="text-lg font-semibold mt-0.5">
+                        {formatDuration(Number(endSummary?.duration_seconds || 0))}
+                      </p>
+                    </div>
+                    <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
+                      <p className="text-[11px] text-zinc-500 uppercase">Peak viewers</p>
+                      <p className="text-lg font-semibold mt-0.5">
+                        {Number(endSummary?.peak_viewers || peakViewers || 0)}
+                      </p>
+                    </div>
+                    <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
+                      <p className="text-[11px] text-zinc-500 uppercase">Tips</p>
+                      <p className="text-lg font-semibold text-pink-400 mt-0.5">
+                        £{Number(endSummary?.tip_raised_gbp || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
+                      <p className="text-[11px] text-zinc-500 uppercase">Tippers</p>
+                      <p className="text-lg font-semibold mt-0.5">
+                        {Number(endSummary?.tipper_count || 0)}
+                      </p>
+                    </div>
+                  </div>
+                  {Number(endSummary?.tip_goal_gbp || 0) > 0 && (
+                    <div className="mb-4">
+                      <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                        <span>Goal</span>
+                        <span>
+                          £{Number(endSummary?.tip_raised_gbp || 0).toFixed(0)} / £
+                          {Number(endSummary.tip_goal_gbp).toFixed(0)}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-pink-600 to-rose-500 rounded-full"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              (Number(endSummary?.tip_raised_gbp || 0) /
+                                Number(endSummary.tip_goal_gbp)) *
+                                100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {endSummary?.showcase_name &&
+                    Number(endSummary?.showcase_amount_gbp || 0) > 0 && (
+                      <div className="flex items-center gap-3 bg-gradient-to-r from-pink-600/20 to-rose-600/10 border border-pink-500/30 rounded-2xl px-3 py-2.5 mb-5">
+                        {endSummary.showcase_avatar_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={endSummary.showcase_avatar_url}
+                            alt=""
+                            className="w-9 h-9 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-pink-700 flex items-center justify-center text-sm font-bold">
+                            {String(endSummary.showcase_name)[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase text-pink-300 font-bold">
+                            Top tipper
+                          </p>
+                          <p className="text-sm font-semibold truncate">
+                            {endSummary.showcase_name}
+                          </p>
+                          <p className="text-xs text-pink-200">
+                            £{Number(endSummary.showcase_amount_gbp).toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  <Link
+                    href="/live"
+                    className="block w-full text-center py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-sm"
+                  >
+                    Back to Live
+                  </Link>
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => router.push('/live')}
+                      className="w-full mt-2 py-2.5 text-sm text-zinc-400 hover:text-white"
+                    >
+                      Go live again
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <>
