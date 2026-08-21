@@ -64,6 +64,14 @@ type StreamRow = {
   showcase_avatar_url?: string | null;
 };
 
+const LIVE_REACT_EMOJIS = ['🔥', '👏', '👑', '😍', '💎'] as const;
+
+type FloatingReact = {
+  id: string;
+  emoji: string;
+  left: number;
+};
+
 type PrivateReq = {
   id: string;
   stream_id: string;
@@ -233,6 +241,9 @@ export default function LiveWatchPage() {
   const slowModeRef = useRef(0);
   const [slowModeLeft, setSlowModeLeft] = useState(0);
   const lastChatSentAt = useRef(0);
+  const [floatingReacts, setFloatingReacts] = useState<FloatingReact[]>([]);
+  const lastReactAt = useRef(0);
+  const spawnReactionRef = useRef<(emoji: string) => void>(() => {});
   const [privateReqLeft, setPrivateReqLeft] = useState<Record<string, number>>({});
   const privateTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
@@ -606,6 +617,9 @@ export default function LiveWatchPage() {
             setStream((s) =>
               s ? { ...s, show_join_messages: on } : s
             );
+          }
+          if (msg?.type === 'reaction' && msg.emoji) {
+            spawnReactionRef.current(String(msg.emoji));
           }
         } catch {
           /* ignore bad payloads */
@@ -1223,6 +1237,35 @@ export default function LiveWatchPage() {
     setMicOn(next);
   };
 
+
+  const spawnReaction = (emoji: string) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const left = 10 + Math.random() * 72;
+    setFloatingReacts((prev) => [...prev.slice(-18), { id, emoji, left }]);
+    window.setTimeout(() => {
+      setFloatingReacts((prev) => prev.filter((r) => r.id !== id));
+    }, 2200);
+  };
+  spawnReactionRef.current = spawnReaction;
+
+  const sendReaction = async (emoji: string) => {
+    if (liveStatus !== 'live') return;
+    if (Date.now() - lastReactAt.current < 400) return;
+    lastReactAt.current = Date.now();
+    spawnReaction(emoji);
+    try {
+      const room = roomRef.current;
+      if (room?.localParticipant) {
+        const data = new TextEncoder().encode(
+          JSON.stringify({ type: 'reaction', emoji })
+        );
+        await room.localParticipant.publishData(data, { reliable: false });
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
   const announceJoinLeave = async (
     streamId: string,
     kind: 'join' | 'leave'
@@ -1761,6 +1804,20 @@ export default function LiveWatchPage() {
         </div>
   
         <style dangerouslySetInnerHTML={{ __html: `
+@keyframes wod-float-react {
+  0% { transform: translateY(0) scale(0.55); opacity: 0; }
+  15% { opacity: 1; transform: translateY(-10px) scale(1.08); }
+  100% { transform: translateY(-130px) scale(1); opacity: 0; }
+}
+.wod-float-react {
+  animation: wod-float-react 2.1s ease-out forwards;
+  pointer-events: none;
+  position: absolute;
+  bottom: 8%;
+  font-size: 1.7rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.6));
+}
 .mask-fade-chat {
             mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
             -webkit-mask-image: linear-gradient(to bottom, transparent, black 12%, black 100%);
@@ -2319,6 +2376,21 @@ export default function LiveWatchPage() {
               </div>
             )}
 
+            {/* Shared emoji reactions */}
+            {!ended && floatingReacts.length > 0 && (
+              <div className="absolute inset-x-0 bottom-24 top-20 z-25 pointer-events-none overflow-hidden">
+                {floatingReacts.map((r) => (
+                  <span
+                    key={r.id}
+                    className="wod-float-react"
+                    style={{ left: `${r.left}%` }}
+                  >
+                    {r.emoji}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {/* Chat — fixed height, swipe/scroll to older messages */}
             {!ended && (
               <div
@@ -2426,7 +2498,21 @@ export default function LiveWatchPage() {
                     'max(0.5rem, env(safe-area-inset-bottom))',
                 }}
               >
-                <div className="pointer-events-auto flex items-center gap-2 max-w-2xl mx-auto">
+                <div className="pointer-events-auto max-w-2xl mx-auto w-full space-y-2">
+                  <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+                    {LIVE_REACT_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => void sendReaction(emoji)}
+                        className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/55 hover:bg-black/75 border border-white/15 active:scale-90 transition flex items-center justify-center text-lg sm:text-xl shadow-md"
+                        title="React"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
                   <div className="flex-1 flex items-center gap-1.5 bg-black/70 backdrop-blur-md border border-white/15 rounded-full pl-3 sm:pl-4 pr-1 py-1 min-w-0">
                     <input
                       value={chatText}
@@ -2599,6 +2685,7 @@ export default function LiveWatchPage() {
                       </button>
                     </div>
                   )}
+                </div>
                 </div>
               </div>
             )}
