@@ -47,6 +47,9 @@ type StreamRow = {
   tip_goal_gbp?: number;
   tip_raised_gbp?: number;
   viewer_count?: number;
+  started_at?: string | null;
+  ended_at?: string | null;
+  created_at?: string | null;
   private_active?: boolean;
   private_user_id?: string | null;
   private_ends_at?: string | null;
@@ -188,6 +191,7 @@ export default function LiveWatchPage() {
   const [viewerCount, setViewerCount] = useState(0);
   const [peakViewers, setPeakViewers] = useState(0);
   const [endSummary, setEndSummary] = useState<any>(null);
+  const [myTipTotal, setMyTipTotal] = useState(0);
   const [liveStartedAt, setLiveStartedAt] = useState<number | null>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipAmount, setTipAmount] = useState(5);
@@ -322,7 +326,6 @@ export default function LiveWatchPage() {
 
     setStream(data);
     prevRaised.current = Number(data.tip_raised_gbp || 0);
-    if (data.status === 'ended') setLiveStatus('ended');
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -330,6 +333,66 @@ export default function LiveWatchPage() {
       .eq('id', data.creator_id)
       .single();
     setCreator(profile);
+
+    // Load this viewer's tip total on this stream
+    if (user?.id && data.creator_id !== user.id) {
+      try {
+        const { data: mine } = await supabase
+          .from('live_stream_tips')
+          .select('total_gbp')
+          .eq('stream_id', data.id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (mine) setMyTipTotal(Number(mine.total_gbp || 0));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (data.status === 'ended') {
+      setLiveStatus('ended');
+      const started = data.started_at || data.created_at
+        ? new Date(data.started_at || data.created_at).getTime()
+        : Date.now();
+      const endedTs = data.ended_at
+        ? new Date(data.ended_at).getTime()
+        : Date.now();
+      let my_tip = 0;
+      let tipper_count = 0;
+      try {
+        if (user?.id) {
+          const { data: mine } = await supabase
+            .from('live_stream_tips')
+            .select('total_gbp')
+            .eq('stream_id', data.id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+          my_tip = Number(mine?.total_gbp || 0);
+          setMyTipTotal(my_tip);
+        }
+        const { count } = await supabase
+          .from('live_stream_tips')
+          .select('*', { count: 'exact', head: true })
+          .eq('stream_id', data.id);
+        tipper_count = count || 0;
+      } catch {
+        /* ignore */
+      }
+      setEndSummary({
+        title: data.title,
+        duration_seconds: Math.max(0, Math.floor((endedTs - started) / 1000)),
+        tip_raised_gbp: Number(data.tip_raised_gbp || 0),
+        tip_goal_gbp: Number(data.tip_goal_gbp || 0),
+        peak_viewers: Number(data.viewer_count || 0),
+        tipper_count,
+        showcase_name: data.showcase_name,
+        showcase_amount_gbp: data.showcase_amount_gbp,
+        showcase_avatar_url: data.showcase_avatar_url,
+        my_tip_gbp: my_tip,
+        is_host: data.creator_id === user?.id,
+      });
+    }
+
     setLoading(false);
 
     // Private rate from creator live-private settings (fallback voice)
@@ -565,7 +628,7 @@ export default function LiveWatchPage() {
       const { data } = await supabase
         .from('live_streams')
         .select(
-          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, private_active, private_user_id, private_ends_at, private_request_id, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url'
+          'status, viewer_count, tip_raised_gbp, tip_goal_gbp, title, started_at, ended_at, created_at, private_active, private_user_id, private_ends_at, private_request_id, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url'
         )
         .eq('id', id)
         .single();
@@ -584,7 +647,58 @@ export default function LiveWatchPage() {
         setPrivateEndsAt(data.private_ends_at || null);
         if (data.status === 'ended') {
           setLiveStatus('ended');
-          cleanupRoom();
+          void cleanupRoom();
+          setStream((s) => {
+            const merged = (s ? { ...s, ...data } : data) as StreamRow;
+            // Fire summary once for non-owners (owner already has endSummary from API)
+            if (s && s.creator_id !== userId) {
+              void (async () => {
+                const started = merged.started_at || merged.created_at
+                  ? new Date(merged.started_at || merged.created_at!).getTime()
+                  : Date.now();
+                const endedTs = merged.ended_at
+                  ? new Date(merged.ended_at).getTime()
+                  : Date.now();
+                let my_tip = 0;
+                let tipper_count = 0;
+                try {
+                  if (userId) {
+                    const { data: mine } = await supabase
+                      .from('live_stream_tips')
+                      .select('total_gbp')
+                      .eq('stream_id', id)
+                      .eq('user_id', userId)
+                      .maybeSingle();
+                    my_tip = Number(mine?.total_gbp || 0);
+                    setMyTipTotal(my_tip);
+                  }
+                  const { count } = await supabase
+                    .from('live_stream_tips')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('stream_id', id);
+                  tipper_count = count || 0;
+                } catch {
+                  /* ignore */
+                }
+                setEndSummary({
+                  title: merged.title,
+                  duration_seconds: Math.max(
+                    0,
+                    Math.floor((endedTs - started) / 1000)
+                  ),
+                  tip_raised_gbp: Number(merged.tip_raised_gbp || 0),
+                  tip_goal_gbp: Number(merged.tip_goal_gbp || 0),
+                  peak_viewers: Number(merged.viewer_count || 0),
+                  tipper_count,
+                  showcase_name: merged.showcase_name,
+                  showcase_amount_gbp: merged.showcase_amount_gbp,
+                  showcase_avatar_url: merged.showcase_avatar_url,
+                  my_tip_gbp: my_tip,
+                });
+              })();
+            }
+            return merged;
+          });
         }
       }
     }, 8000);
@@ -1102,6 +1216,13 @@ export default function LiveWatchPage() {
       setShowTip(false);
       setCustomTip('');
 
+      if (typeof data.user_total === 'number') {
+        setMyTipTotal(Number(data.user_total));
+      } else {
+        setMyTipTotal((prev) =>
+          Math.round((prev + Number(data.amount || 0)) * 100) / 100
+        );
+      }
       const newRaised = Number(data.tip_raised_gbp || 0);
       const goalAmt = Number(data.tip_goal_gbp || stream.tip_goal_gbp || 0);
       if (goalAmt > 0 && prevRaised.current < goalAmt && newRaised >= goalAmt) {
@@ -1129,6 +1250,7 @@ export default function LiveWatchPage() {
     }
   };
 
+
   const endLive = async () => {
     if (!confirm('End this live stream? It will not be saved.')) return;
     setEnding(true);
@@ -1152,8 +1274,8 @@ export default function LiveWatchPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not end');
       setLiveStatus('ended');
-      setEndSummary(
-        data.summary || {
+      setEndSummary({
+        ...(data.summary || {
           title: stream?.title,
           duration_seconds: liveStartedAt
             ? Math.floor((Date.now() - liveStartedAt) / 1000)
@@ -1165,8 +1287,10 @@ export default function LiveWatchPage() {
           showcase_name: stream?.showcase_name,
           showcase_amount_gbp: stream?.showcase_amount_gbp,
           showcase_avatar_url: stream?.showcase_avatar_url,
-        }
-      );
+        }),
+        my_tip_gbp: 0,
+        is_host: true,
+      });
     } catch (e: any) {
       alert(e.message || 'Failed');
     } finally {
@@ -1248,72 +1372,117 @@ export default function LiveWatchPage() {
         >
           <div className="absolute inset-0 bg-black">
             {ended ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center px-6 overflow-y-auto py-10">
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-5 overflow-y-auto py-10 bg-black">
                 <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl">
+                  {/* Header — creator focused for viewers */}
                   <div className="text-center mb-5">
-                    <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center mx-auto mb-3">
-                      <Radio className="text-pink-500" size={28} />
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center mx-auto mb-3 overflow-hidden text-2xl font-bold">
+                      {creator?.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={creator.avatar_url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        (name || 'C')[0]?.toUpperCase()
+                      )}
                     </div>
-                    <p className="text-xl font-bold text-white">Live ended</p>
-                    <p className="text-sm text-zinc-400 mt-1">
+                    <p className="text-xl font-bold text-white leading-tight">
+                      {isOwner ? 'Your live ended' : `${name} ended the live`}
+                    </p>
+                    <p className="text-sm text-zinc-300 mt-1.5 truncate px-2">
+                      {endSummary?.title || stream?.title || 'Live stream'}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-1">
                       Not saved · no replay
                     </p>
-                    {endSummary?.title && (
-                      <p className="text-sm text-zinc-300 mt-2 truncate">
-                        {endSummary.title}
-                      </p>
-                    )}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 mb-4">
+
+                  <div className="grid grid-cols-2 gap-2.5 mb-4">
                     <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
-                      <p className="text-[11px] text-zinc-500 uppercase">Duration</p>
-                      <p className="text-lg font-semibold mt-0.5">
-                        {formatDuration(Number(endSummary?.duration_seconds || 0))}
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wide">
+                        Duration
+                      </p>
+                      <p className="text-lg font-semibold mt-0.5 tabular-nums">
+                        {formatDuration(
+                          Number(endSummary?.duration_seconds || 0)
+                        )}
                       </p>
                     </div>
+                    {isOwner ? (
+                      <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-wide">
+                          Peak viewers
+                        </p>
+                        <p className="text-lg font-semibold mt-0.5 tabular-nums">
+                          {Number(
+                            endSummary?.peak_viewers || peakViewers || 0
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-wide">
+                          You tipped
+                        </p>
+                        <p className="text-lg font-semibold mt-0.5 text-pink-400 tabular-nums">
+                          £
+                          {Number(
+                            endSummary?.my_tip_gbp ?? myTipTotal ?? 0
+                          ).toFixed(2)}
+                        </p>
+                      </div>
+                    )}
                     <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
-                      <p className="text-[11px] text-zinc-500 uppercase">Peak viewers</p>
-                      <p className="text-lg font-semibold mt-0.5">
-                        {Number(endSummary?.peak_viewers || peakViewers || 0)}
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wide">
+                        {isOwner ? 'Tips raised' : 'Total tips'}
                       </p>
-                    </div>
-                    <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
-                      <p className="text-[11px] text-zinc-500 uppercase">Tips</p>
-                      <p className="text-lg font-semibold text-pink-400 mt-0.5">
+                      <p className="text-lg font-semibold text-pink-400 mt-0.5 tabular-nums">
                         £{Number(endSummary?.tip_raised_gbp || 0).toFixed(2)}
                       </p>
                     </div>
                     <div className="bg-zinc-800/80 rounded-2xl p-3 text-center">
-                      <p className="text-[11px] text-zinc-500 uppercase">Tippers</p>
-                      <p className="text-lg font-semibold mt-0.5">
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wide">
+                        Tippers
+                      </p>
+                      <p className="text-lg font-semibold mt-0.5 tabular-nums">
                         {Number(endSummary?.tipper_count || 0)}
                       </p>
                     </div>
                   </div>
-                  {Number(endSummary?.tip_goal_gbp || 0) > 0 && (
-                    <div className="mb-4">
-                      <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                        <span>Goal</span>
-                        <span>
-                          £{Number(endSummary?.tip_raised_gbp || 0).toFixed(0)} / £
-                          {Number(endSummary.tip_goal_gbp).toFixed(0)}
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-pink-600 to-rose-500 rounded-full"
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              (Number(endSummary?.tip_raised_gbp || 0) /
-                                Number(endSummary.tip_goal_gbp)) *
-                                100
-                            )}%`,
-                          }}
-                        />
-                      </div>
+
+                  {/* Viewer personal line */}
+                  {!isOwner && (
+                    <div
+                      className={`mb-4 rounded-2xl px-4 py-3 border ${
+                        Number(endSummary?.my_tip_gbp ?? myTipTotal ?? 0) > 0
+                          ? 'bg-pink-600/15 border-pink-500/30'
+                          : 'bg-zinc-800/50 border-zinc-700'
+                      }`}
+                    >
+                      <p className="text-[11px] text-zinc-400 uppercase font-medium">
+                        Your support
+                      </p>
+                      {Number(endSummary?.my_tip_gbp ?? myTipTotal ?? 0) > 0 ? (
+                        <p className="text-sm text-white mt-0.5">
+                          You tipped{' '}
+                          <span className="font-bold text-pink-300">
+                            £
+                            {Number(
+                              endSummary?.my_tip_gbp ?? myTipTotal
+                            ).toFixed(2)}
+                          </span>{' '}
+                          this live
+                        </p>
+                      ) : (
+                        <p className="text-sm text-zinc-400 mt-0.5">
+                          You didn&apos;t tip this live
+                        </p>
+                      )}
                     </div>
                   )}
+
                   {endSummary?.showcase_name &&
                     Number(endSummary?.showcase_amount_gbp || 0) > 0 && (
                       <div className="flex items-center gap-3 bg-gradient-to-r from-pink-600/20 to-rose-600/10 border border-pink-500/30 rounded-2xl px-3 py-2.5 mb-5">
@@ -1322,31 +1491,42 @@ export default function LiveWatchPage() {
                           <img
                             src={endSummary.showcase_avatar_url}
                             alt=""
-                            className="w-9 h-9 rounded-full object-cover"
+                            className="w-10 h-10 rounded-full object-cover"
                           />
                         ) : (
-                          <div className="w-9 h-9 rounded-full bg-pink-700 flex items-center justify-center text-sm font-bold">
+                          <div className="w-10 h-10 rounded-full bg-pink-700 flex items-center justify-center text-sm font-bold">
                             {String(endSummary.showcase_name)[0]?.toUpperCase()}
                           </div>
                         )}
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase text-pink-300 font-bold">
-                            Top tipper
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] uppercase text-pink-300 font-bold flex items-center gap-1">
+                            <Crown size={11} className="text-yellow-300" /> Top
+                            tipper
                           </p>
                           <p className="text-sm font-semibold truncate">
                             {endSummary.showcase_name}
                           </p>
                           <p className="text-xs text-pink-200">
-                            £{Number(endSummary.showcase_amount_gbp).toFixed(2)}
+                            £
+                            {Number(endSummary.showcase_amount_gbp).toFixed(2)}
                           </p>
                         </div>
                       </div>
                     )}
+
+                  {!isOwner && creator?.username && (
+                    <Link
+                      href={`/${creator.username}`}
+                      className="block w-full text-center py-3 mb-2 rounded-2xl bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 font-medium text-sm transition"
+                    >
+                      View {name}&apos;s profile
+                    </Link>
+                  )}
                   <Link
                     href="/live"
                     className="block w-full text-center py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-sm"
                   >
-                    Back to Live
+                    {isOwner ? 'Back to Live' : 'Discover more lives'}
                   </Link>
                   {isOwner && (
                     <button
