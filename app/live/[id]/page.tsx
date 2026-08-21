@@ -196,6 +196,9 @@ export default function LiveWatchPage() {
   const [endSummary, setEndSummary] = useState<any>(null);
   const [myTipTotal, setMyTipTotal] = useState(0);
   const [liveStartedAt, setLiveStartedAt] = useState<number | null>(null);
+  const liveStartedAtRef = useRef<number | null>(null);
+  const joinAnnouncedRef = useRef(false);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipAmount, setTipAmount] = useState(5);
   const [customTip, setCustomTip] = useState('');
@@ -619,15 +622,24 @@ export default function LiveWatchPage() {
           });
         });
 
-        // Viewer announces join with their display name
-        if (showJoinsRef.current) {
+        // Viewer announces join once (skip if we just remounted within leave debounce)
+        if (showJoinsRef.current && !joinAnnouncedRef.current) {
+          joinAnnouncedRef.current = true;
+          if (leaveTimerRef.current) {
+            clearTimeout(leaveTimerRef.current);
+            leaveTimerRef.current = null;
+          }
           void announceJoinLeave(streamRow.id, 'join');
         }
       }
 
       bumpViewers(Math.max(0, room.numParticipants - 1));
       setLiveStatus('live');
-      setLiveStartedAt((prev) => prev || Date.now());
+      setLiveStartedAt((prev) => {
+        const v = prev || Date.now();
+        liveStartedAtRef.current = v;
+        return v;
+      });
       setStream((s) => (s ? { ...s, status: 'active' } : s));
     } catch (e: any) {
       console.error(e);
@@ -653,8 +665,9 @@ export default function LiveWatchPage() {
       setStream((s) => (s ? { ...s, status: 'ended' } : s));
 
       const localElapsed = () => {
-        if (liveStartedAt) {
-          return Math.max(0, Math.floor((Date.now() - liveStartedAt) / 1000));
+        const started = liveStartedAtRef.current;
+        if (started) {
+          return Math.max(0, Math.floor((Date.now() - started) / 1000));
         }
         return 0;
       };
@@ -805,7 +818,7 @@ export default function LiveWatchPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cleanupRoom, id, supabase, liveStartedAt]
+    [cleanupRoom, id, supabase]
   );
 
   finalizeRef.current = finalizeStreamEnded;
@@ -869,48 +882,57 @@ export default function LiveWatchPage() {
       )
       .subscribe();
 
+    // Cancel any pending "left" from a quick remount (React strict / reconnect)
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+
     return () => {
       cancelled = true;
       clearInterval(poll);
       void supabase.removeChannel(statusCh);
-      // Viewer leaving page → "left" line (if joins enabled)
-      if (showJoinsRef.current && id) {
-        void (async () => {
-          try {
-            const {
-              data: { user },
-            } = await supabase.auth.getUser();
-            if (!user) return;
-            // Skip if this user is the creator of the stream
-            const { data: s } = await supabase
-              .from('live_streams')
-              .select('creator_id, show_join_messages')
-              .eq('id', id)
-              .maybeSingle();
-            if (!s || s.creator_id === user.id) return;
-            if (s.show_join_messages === false) return;
-            let label = 'Someone';
-            const { data: prof } = await supabase
-              .from('profiles')
-              .select('display_name, username')
-              .eq('id', user.id)
-              .maybeSingle();
-            if (prof?.display_name) label = prof.display_name;
-            else if (prof?.username) label = `@${prof.username}`;
-            await supabase.from('live_chat_messages').insert({
-              stream_id: id,
-              user_id: user.id,
-              content: `__LEAVE__:${label}`.slice(0, 300),
-            });
-          } catch {
-            /* ignore */
-          }
-        })();
-      }
       cleanupRoom();
+      // Debounced leave: only post if still gone after 4s (avoids join→left→join glitch)
+      if (showJoinsRef.current && id && joinAnnouncedRef.current) {
+        leaveTimerRef.current = setTimeout(() => {
+          void (async () => {
+            try {
+              const {
+                data: { user },
+              } = await supabase.auth.getUser();
+              if (!user) return;
+              const { data: s } = await supabase
+                .from('live_streams')
+                .select('creator_id, show_join_messages, status')
+                .eq('id', id)
+                .maybeSingle();
+              if (!s || s.creator_id === user.id) return;
+              if (s.show_join_messages === false) return;
+              if (s.status === 'ended') return;
+              let label = 'Someone';
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('display_name, username')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (prof?.display_name) label = prof.display_name;
+              else if (prof?.username) label = `@${prof.username}`;
+              await supabase.from('live_chat_messages').insert({
+                stream_id: id,
+                user_id: user.id,
+                content: `__LEAVE__:${label}`.slice(0, 300),
+              });
+              joinAnnouncedRef.current = false;
+            } catch {
+              /* ignore */
+            }
+          })();
+        }, 4000);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, finalizeStreamEnded]);
+  }, [id]);
 
   // Realtime chat
   useEffect(() => {
@@ -2185,7 +2207,13 @@ export default function LiveWatchPage() {
                     if (system) {
                       return (
                         <div key={m.id} className="flex justify-center py-0.5">
-                          <p className="text-[11px] text-zinc-400/90 bg-black/35 backdrop-blur-sm px-2.5 py-1 rounded-full">
+                          <p
+                            className={`text-xs font-medium px-3 py-1 rounded-full border backdrop-blur-md shadow-sm ${
+                              system.type === 'join'
+                                ? 'text-white bg-zinc-800/90 border-zinc-600/80'
+                                : 'text-zinc-200 bg-zinc-900/90 border-zinc-700/80'
+                            }`}
+                          >
                             {system.type === 'join'
                               ? `${system.label} joined`
                               : `${system.label} left`}
