@@ -3085,20 +3085,6 @@ export default function LiveWatchPage() {
                     </button>
                   )}
 
-                  {isOwner && (
-                    <button
-                      type="button"
-                      onClick={() => void toggleChatBlockLinks()}
-                      className={`h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
-                        chatBlockLinks
-                          ? 'bg-pink-600/90 border-pink-400/40 text-white'
-                          : 'bg-zinc-900/80 border-zinc-700 text-zinc-500'
-                      }`}
-                      title="Block links in chat"
-                    >
-                      {chatBlockLinks ? 'No links' : 'Links ok'}
-                    </button>
-                  )}
 
                   {isOwner && (
                     <button
@@ -3114,8 +3100,8 @@ export default function LiveWatchPage() {
                       {chatRequire === 'anyone'
                         ? 'Chat: all'
                         : chatRequire === 'followers'
-                          ? 'Chat: fans'
-                          : 'Chat: subs'}
+                          ? 'Fans only'
+                          : 'Subs only'}
                     </button>
                   )}
 
