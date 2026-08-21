@@ -56,6 +56,7 @@ type StreamRow = {
   private_request_id?: string | null;
   private_end_by_creator?: boolean;
   private_end_by_fan?: boolean;
+  show_join_messages?: boolean;
   showcase_user_id?: string | null;
   showcase_amount_gbp?: number;
   showcase_name?: string | null;
@@ -222,6 +223,8 @@ export default function LiveWatchPage() {
   const [privateEndsAt, setPrivateEndsAt] = useState<string | null>(null);
   const [privateCountdown, setPrivateCountdown] = useState('');
   const [privateEnabled, setPrivateEnabled] = useState(true);
+  const [showJoinMessages, setShowJoinMessages] = useState(true);
+  const showJoinsRef = useRef(true);
   const [privateReqLeft, setPrivateReqLeft] = useState<Record<string, number>>({});
   const privateTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
@@ -328,6 +331,9 @@ export default function LiveWatchPage() {
 
     setStream(data);
     prevRaised.current = Number(data.tip_raised_gbp || 0);
+    const joinsOn = data.show_join_messages !== false;
+    setShowJoinMessages(joinsOn);
+    showJoinsRef.current = joinsOn;
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -554,12 +560,43 @@ export default function LiveWatchPage() {
         track.detach().forEach((el) => el.remove());
       });
 
-      room.on(RoomEvent.ParticipantConnected, () => {
+      room.on(RoomEvent.ParticipantConnected, (participant) => {
         bumpViewers(Math.max(0, room.numParticipants - 1));
+        if (
+          asCreator &&
+          showJoinsRef.current &&
+          participant.identity &&
+          participant.identity !== streamRow.creator_id
+        ) {
+          const label =
+            participant.name ||
+            participant.identity.slice(0, 8) ||
+            'Someone';
+          void supabase.from('live_chat_messages').insert({
+            stream_id: streamRow.id,
+            user_id: streamRow.creator_id,
+            content: `__JOIN__:${label}`.slice(0, 300),
+          });
+        }
       });
-      room.on(RoomEvent.ParticipantDisconnected, () => {
+      room.on(RoomEvent.ParticipantDisconnected, (participant) => {
         bumpViewers(Math.max(0, room.numParticipants - 1));
-        // Host was the only remote participant → live is over for viewers
+        if (
+          asCreator &&
+          showJoinsRef.current &&
+          participant?.identity &&
+          participant.identity !== streamRow.creator_id
+        ) {
+          const label =
+            participant.name ||
+            participant.identity.slice(0, 8) ||
+            'Someone';
+          void supabase.from('live_chat_messages').insert({
+            stream_id: streamRow.id,
+            user_id: streamRow.creator_id,
+            content: `__LEAVE__:${label}`.slice(0, 300),
+          });
+        }
         if (!asCreator && room.remoteParticipants.size === 0) {
           setTimeout(() => {
             void finalizeRef.current();
@@ -1569,6 +1606,41 @@ export default function LiveWatchPage() {
     return null;
   };
 
+  const parseSystemLine = (content: string) => {
+    if (content.startsWith('__JOIN__:')) {
+      return {
+        type: 'join' as const,
+        label: content.slice(8).trim() || 'Someone',
+      };
+    }
+    if (content.startsWith('__LEAVE__:')) {
+      return {
+        type: 'leave' as const,
+        label: content.slice(9).trim() || 'Someone',
+      };
+    }
+    return null;
+  };
+
+  const toggleJoinMessages = async () => {
+    if (!isOwner || !stream) return;
+    const next = !showJoinMessages;
+    setShowJoinMessages(next);
+    showJoinsRef.current = next;
+    setStream((s) => (s ? { ...s, show_join_messages: next } : s));
+    try {
+      await supabase
+        .from('live_streams')
+        .update({
+          show_join_messages: next,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', stream.id);
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
     <AuthGuard>
       <div className="bg-black text-white flex lg:min-h-screen">
@@ -2043,6 +2115,18 @@ export default function LiveWatchPage() {
                   }}
                 >
                   {chatMessages.slice(-40).map((m) => {
+                    const system = parseSystemLine(m.content);
+                    if (system) {
+                      return (
+                        <div key={m.id} className="flex justify-center py-0.5">
+                          <p className="text-[11px] text-zinc-400/90 bg-black/35 backdrop-blur-sm px-2.5 py-1 rounded-full">
+                            {system.type === 'join'
+                              ? `${system.label} joined`
+                              : `${system.label} left`}
+                          </p>
+                        </div>
+                      );
+                    }
                     const tip = parseTipMessage(m.content);
                     if (tip) {
                       return (
@@ -2197,6 +2281,25 @@ export default function LiveWatchPage() {
                         if (!me && them) return 'Confirm end';
                         return 'Request end';
                       })()}
+                    </button>
+                  )}
+
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => void toggleJoinMessages()}
+                      className={`h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
+                        showJoinMessages
+                          ? 'bg-zinc-800/90 border-white/20 text-zinc-200'
+                          : 'bg-zinc-900/80 border-zinc-700 text-zinc-500'
+                      }`}
+                      title={
+                        showJoinMessages
+                          ? 'Join notices on — tap to hide'
+                          : 'Join notices off — tap to show'
+                      }
+                    >
+                      {showJoinMessages ? 'Joins on' : 'Joins off'}
                     </button>
                   )}
 
