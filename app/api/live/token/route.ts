@@ -51,6 +51,24 @@ export async function POST(request: Request) {
     }
 
     const isCreator = stream.creator_id === user.id;
+
+    if (!isCreator) {
+      const { data: mod } = await admin
+        .from('live_stream_moderation')
+        .select('action')
+        .eq('stream_id', streamId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (mod?.action === 'ban') {
+        return NextResponse.json(
+          {
+            error: 'You are banned from this live',
+            code: 'BANNED_FROM_LIVE',
+          },
+          { status: 403 }
+        );
+      }
+    }
     const isPrivateFan =
       !!stream.private_active && stream.private_user_id === user.id;
 
@@ -140,3 +158,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

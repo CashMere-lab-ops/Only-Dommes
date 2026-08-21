@@ -254,6 +254,9 @@ export default function LiveWatchPage() {
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatText, setChatText] = useState('');
+  const [myModeration, setMyModeration] = useState<'mute' | 'ban' | null>(null);
+  const [chatModMenuId, setChatModMenuId] = useState<string | null>(null);
+  const [modBusy, setModBusy] = useState(false);
   const [sendingChat, setSendingChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const chatBoxRef = useRef<HTMLDivElement | null>(null);
@@ -373,6 +376,24 @@ export default function LiveWatchPage() {
       setTipAmount((prev) => (prev < minT ? minT : prev));
     } catch {
       setCreatorMinTip(2);
+    }
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (u && data.creator_id !== u.id) {
+        const { data: mod } = await supabase
+          .from('live_stream_moderation')
+          .select('action')
+          .eq('stream_id', data.id)
+          .eq('user_id', u.id)
+          .maybeSingle();
+        if (mod?.action === 'mute' || mod?.action === 'ban') {
+          setMyModeration(mod.action);
+        } else {
+          setMyModeration(null);
+        }
+      }
+    } catch {
+      /* ignore */
     }
 
     const { data: profile } = await supabase
@@ -1345,10 +1366,58 @@ export default function LiveWatchPage() {
     }
   };
 
+  const moderateUser = async (
+    targetUserId: string,
+    action: 'mute' | 'ban' | 'clear'
+  ) => {
+    if (!stream || !isOwner || modBusy) return;
+    setModBusy(true);
+    setChatModMenuId(null);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch('/api/live/moderate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          stream_id: stream.id,
+          user_id: targetUserId,
+          action,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      if (action === 'ban') {
+        alert('User banned from this live');
+      } else if (action === 'mute') {
+        alert('User muted for this live');
+      } else {
+        alert('Restriction cleared');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Could not update moderation');
+    } finally {
+      setModBusy(false);
+    }
+  };
+
   const sendChat = async () => {
     const text = chatText.trim();
     if (!text || !userId || !stream || sendingChat) return;
     if (text.length > 300) return;
+
+    if (myModeration === 'mute' || myModeration === 'ban') {
+      alert(
+        myModeration === 'ban'
+          ? 'You are banned from this live'
+          : 'You are muted and cannot chat in this live'
+      );
+      return;
+    }
 
     // Slow mode — fans only (host always free)
     // Prefer live state (LiveKit broadcast) then stream row
@@ -2595,7 +2664,7 @@ export default function LiveWatchPage() {
                       );
                     }
                     return (
-                      <div key={m.id} className="flex items-start gap-2">
+                      <div key={m.id} className="flex items-start gap-2 group relative">
                         <div className="bg-black/55 backdrop-blur-md rounded-2xl px-2.5 py-1.5 max-w-[92%] border border-white/5 shadow-sm">
                           <span
                             className={`text-xs font-semibold mr-1.5 ${
@@ -2615,6 +2684,59 @@ export default function LiveWatchPage() {
                             {m.content}
                           </span>
                         </div>
+                        {isOwner &&
+                          !isCreatorMsg(m) &&
+                          m.user_id &&
+                          !String(m.content || '').startsWith('__') && (
+                            <div className="relative flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setChatModMenuId(
+                                    chatModMenuId === m.id ? null : m.id
+                                  )
+                                }
+                                className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition"
+                                aria-label="Moderate"
+                              >
+                                <MoreHorizontal size={16} />
+                              </button>
+                              {chatModMenuId === m.id && (
+                                <div className="absolute left-0 bottom-8 z-50 w-40 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl py-1 overflow-hidden">
+                                  <button
+                                    type="button"
+                                    disabled={modBusy}
+                                    onClick={() =>
+                                      void moderateUser(m.user_id, 'mute')
+                                    }
+                                    className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                                  >
+                                    Mute chat
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={modBusy}
+                                    onClick={() =>
+                                      void moderateUser(m.user_id, 'ban')
+                                    }
+                                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-zinc-800"
+                                  >
+                                    Ban from live
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={modBusy}
+                                    onClick={() =>
+                                      void moderateUser(m.user_id, 'clear')
+                                    }
+                                    className="w-full text-left px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
+                                  >
+                                    Clear restriction
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                       </div>
                     );
                   })}
