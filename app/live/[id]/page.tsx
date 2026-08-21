@@ -230,6 +230,7 @@ export default function LiveWatchPage() {
   const [showJoinMessages, setShowJoinMessages] = useState(true);
   const showJoinsRef = useRef(true);
   const [slowModeSeconds, setSlowModeSeconds] = useState(0);
+  const slowModeRef = useRef(0);
   const [slowModeLeft, setSlowModeLeft] = useState(0);
   const lastChatSentAt = useRef(0);
   const [privateReqLeft, setPrivateReqLeft] = useState<Record<string, number>>({});
@@ -586,6 +587,31 @@ export default function LiveWatchPage() {
         }
       });
 
+      // Live settings broadcast (slow mode, etc.)
+      room.on(RoomEvent.DataReceived, (payload, _participant) => {
+        try {
+          const text = new TextDecoder().decode(payload);
+          const msg = JSON.parse(text);
+          if (msg?.type === 'slow_mode') {
+            const sec = Number(msg.seconds || 0);
+            setSlowModeSeconds(sec);
+            setStream((s) =>
+              s ? { ...s, slow_mode_seconds: sec } : s
+            );
+          }
+          if (msg?.type === 'join_messages') {
+            const on = !!msg.enabled;
+            setShowJoinMessages(on);
+            showJoinsRef.current = on;
+            setStream((s) =>
+              s ? { ...s, show_join_messages: on } : s
+            );
+          }
+        } catch {
+          /* ignore bad payloads */
+        }
+      });
+
       await room.connect(data.url, data.token);
 
       if (asCreator) {
@@ -883,6 +909,13 @@ export default function LiveWatchPage() {
           const row = payload.new as any;
           if (!row) return;
           setStream((s) => (s ? { ...s, ...row } : s));
+          if (row.slow_mode_seconds != null) {
+            setSlowModeSeconds(Number(row.slow_mode_seconds || 0));
+          }
+          if (typeof row.show_join_messages === 'boolean') {
+            setShowJoinMessages(row.show_join_messages);
+            showJoinsRef.current = row.show_join_messages;
+          }
           if (row.status === 'ended') {
             void finalizeRef.current(row);
           }
@@ -1083,6 +1116,9 @@ export default function LiveWatchPage() {
           const row = payload.new as any;
           if (!row) return;
           setStream((s) => (s ? { ...s, ...row } : s));
+          if (row.slow_mode_seconds != null) {
+            setSlowModeSeconds(Number(row.slow_mode_seconds || 0));
+          }
           setPrivateEndsAt(row.private_ends_at || null);
           if (!row.private_active) {
             setPrivateLockedOut(false);
@@ -1248,7 +1284,13 @@ export default function LiveWatchPage() {
     if (text.length > 300) return;
 
     // Slow mode — fans only (host always free)
-    const slow = Number(slowModeSeconds || stream.slow_mode_seconds || 0);
+    // Prefer live state (LiveKit broadcast) then stream row
+    const slow = Number(
+      slowModeRef.current ||
+        slowModeSeconds ||
+        stream.slow_mode_seconds ||
+        0
+    );
     if (!isOwner && slow > 0) {
       const elapsed = (Date.now() - lastChatSentAt.current) / 1000;
       if (elapsed < slow) {
@@ -1296,6 +1338,11 @@ export default function LiveWatchPage() {
     }
   };
 
+
+  useEffect(() => {
+    slowModeRef.current = slowModeSeconds;
+  }, [slowModeSeconds]);
+
   // Countdown label for slow mode
   useEffect(() => {
     if (isOwner || slowModeSeconds <= 0) {
@@ -1317,14 +1364,32 @@ export default function LiveWatchPage() {
     const next = opts[(idx < 0 ? 0 : idx + 1) % opts.length];
     setSlowModeSeconds(next);
     setStream((s) => (s ? { ...s, slow_mode_seconds: next } : s));
+
+    // Instant to everyone in the room (does not wait for DB/poll)
     try {
-      await supabase
+      const room = roomRef.current;
+      if (room?.localParticipant) {
+        const data = new TextEncoder().encode(
+          JSON.stringify({ type: 'slow_mode', seconds: next })
+        );
+        await room.localParticipant.publishData(data, { reliable: true });
+      }
+    } catch (e) {
+      console.error('slow mode broadcast', e);
+    }
+
+    try {
+      const { error } = await supabase
         .from('live_streams')
         .update({
           slow_mode_seconds: next,
           updated_at: new Date().toISOString(),
         })
         .eq('id', stream.id);
+      if (error) {
+        console.error('slow mode save', error.message);
+        // Column may be missing — still works via LiveKit for current viewers
+      }
     } catch {
       /* ignore */
     }
@@ -1774,6 +1839,17 @@ export default function LiveWatchPage() {
     setShowJoinMessages(next);
     showJoinsRef.current = next;
     setStream((s) => (s ? { ...s, show_join_messages: next } : s));
+    try {
+      const room = roomRef.current;
+      if (room?.localParticipant) {
+        const data = new TextEncoder().encode(
+          JSON.stringify({ type: 'join_messages', enabled: next })
+        );
+        await room.localParticipant.publishData(data, { reliable: true });
+      }
+    } catch {
+      /* ignore */
+    }
     try {
       await supabase
         .from('live_streams')
