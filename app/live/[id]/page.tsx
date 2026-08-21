@@ -1423,8 +1423,8 @@ export default function LiveWatchPage() {
       }
       prevRaised.current = newRaised;
 
-      // Optional system-style chat line from tipper
-      const tipLine = `tipped £${Number(data.amount).toFixed(2)} 💸`;
+      // Highlighted tip line in chat (parsed as pink pill)
+      const tipLine = `__TIP__:${Number(data.amount).toFixed(2)}`;
       try {
         await supabase.from('live_chat_messages').insert({
           stream_id: stream.id,
@@ -1555,6 +1555,19 @@ export default function LiveWatchPage() {
 
   const isCreatorMsg = (m: ChatMsg) =>
     !!stream && m.user_id === stream.creator_id;
+
+  /** Parse tip chat lines: __TIP__:12.50 or legacy "tipped £12.50" */
+  const parseTipMessage = (content: string) => {
+    const structured = content.match(/^__TIP__:([0-9]+(?:\.[0-9]+)?)$/);
+    if (structured) {
+      return { amount: Number(structured[1]) };
+    }
+    const legacy = content.match(/^tipped £([0-9]+(?:\.[0-9]+)?)/i);
+    if (legacy) {
+      return { amount: Number(legacy[1]) };
+    }
+    return null;
+  };
 
   return (
     <AuthGuard>
@@ -2029,29 +2042,58 @@ export default function LiveWatchPage() {
                     scrollbarWidth: 'thin',
                   }}
                 >
-                  {chatMessages.slice(-40).map((m) => (
-                    <div key={m.id} className="flex items-start gap-2">
-                      <div className="bg-black/55 backdrop-blur-md rounded-2xl px-2.5 py-1.5 max-w-[92%] border border-white/5 shadow-sm">
-                        <span
-                          className={`text-xs font-semibold mr-1.5 ${
-                            isCreatorMsg(m)
-                              ? 'text-pink-300'
-                              : 'text-zinc-200/90'
-                          }`}
-                        >
-                          {displayName(m)}
-                          {isCreatorMsg(m) && (
-                            <span className="ml-1 text-[9px] font-bold uppercase tracking-wide bg-pink-500/30 text-pink-200 px-1.5 py-0.5 rounded-md">
-                              Host
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-sm text-white/95 break-words">
-                          {m.content}
-                        </span>
+                  {chatMessages.slice(-40).map((m) => {
+                    const tip = parseTipMessage(m.content);
+                    if (tip) {
+                      return (
+                        <div key={m.id} className="flex items-start gap-2">
+                          <div className="max-w-[92%] rounded-2xl px-3 py-2 bg-gradient-to-r from-pink-600/90 to-rose-600/85 border border-pink-300/30 shadow-lg shadow-pink-900/30 backdrop-blur-md">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                                <DollarSign size={14} className="text-white" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-pink-50 truncate">
+                                  {displayName(m)}
+                                  {isCreatorMsg(m) && (
+                                    <span className="ml-1 text-[9px] font-bold uppercase tracking-wide bg-white/20 px-1.5 py-0.5 rounded-md">
+                                      Host
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-sm font-bold text-white tabular-nums">
+                                  tipped £{tip.amount.toFixed(2)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={m.id} className="flex items-start gap-2">
+                        <div className="bg-black/55 backdrop-blur-md rounded-2xl px-2.5 py-1.5 max-w-[92%] border border-white/5 shadow-sm">
+                          <span
+                            className={`text-xs font-semibold mr-1.5 ${
+                              isCreatorMsg(m)
+                                ? 'text-pink-300'
+                                : 'text-zinc-200/90'
+                            }`}
+                          >
+                            {displayName(m)}
+                            {isCreatorMsg(m) && (
+                              <span className="ml-1 text-[9px] font-bold uppercase tracking-wide bg-pink-500/30 text-pink-200 px-1.5 py-0.5 rounded-md">
+                                Host
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-sm text-white/95 break-words">
+                            {m.content}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div ref={chatEndRef} />
                 </div>
               </div>
