@@ -56,12 +56,13 @@ async function notifyFollowersLive(
 
     for (let i = 0; i < rows.length; i += 80) {
       const chunk = rows.slice(i, i + 80);
-      const { error: insErr } = await admin.from('notifications').insert(chunk);
+      const { error: insErr } = await admin
+        .from('notifications')
+        .insert(chunk as any);
       if (insErr) {
         console.error('live notify insert', insErr);
-        // Retry without is_read if column name differs
-        const slim = chunk.map(({ is_read, ...rest }) => rest);
-        await admin.from('notifications').insert(slim);
+        const slim = chunk.map(({ is_read: _r, ...rest }) => rest);
+        await admin.from('notifications').insert(slim as any);
       }
     }
   } catch (e) {
@@ -230,6 +231,7 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 
 
