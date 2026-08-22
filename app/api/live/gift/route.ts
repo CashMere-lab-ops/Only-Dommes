@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
-/** Platform default gifts (step 1). Creator-custom list comes in step 3. */
+/** Platform default gifts when creator has not customised */
 export const DEFAULT_GIFTS = [
   { id: 'rose', label: 'Rose', emoji: '🌹', amount_gbp: 5 },
   { id: 'kiss', label: 'Kiss', emoji: '💋', amount_gbp: 10 },
@@ -13,9 +12,43 @@ export const DEFAULT_GIFTS = [
   { id: 'diamond', label: 'Diamond', emoji: '💎', amount_gbp: 100 },
 ] as const;
 
+export type LiveGift = {
+  id: string;
+  label: string;
+  emoji: string;
+  amount_gbp: number;
+};
+
+export function normalizeGifts(raw: unknown): LiveGift[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return DEFAULT_GIFTS.map((g) => ({ ...g }));
+  }
+  const out: LiveGift[] = [];
+  for (const item of raw.slice(0, 8)) {
+    if (!item || typeof item !== 'object') continue;
+    const id = String((item as any).id || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '')
+      .slice(0, 24);
+    if (!id) continue;
+    let label = String((item as any).label || id)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 24);
+    if (!label) label = id;
+    const emoji = String((item as any).emoji || '🎁').slice(0, 8) || '🎁';
+    let amount = Number((item as any).amount_gbp);
+    if (!Number.isFinite(amount) || amount < 1) continue;
+    if (amount > 500) amount = 500;
+    amount = Math.round(amount * 100) / 100;
+    out.push({ id, label, emoji, amount_gbp: amount });
+  }
+  return out.length ? out : DEFAULT_GIFTS.map((g) => ({ ...g }));
+}
+
 /**
  * Send a fixed-price gift during a live stream.
- * Same wallet flow as tips — counts toward goal + top tippers.
+ * Uses creator's custom list when set; otherwise platform defaults.
  */
 export async function POST(request: Request) {
   try {
@@ -46,13 +79,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'stream_id required' }, { status: 400 });
     }
 
-    const gift = DEFAULT_GIFTS.find((g) => g.id === giftId);
-    if (!gift) {
-      return NextResponse.json({ error: 'Invalid gift' }, { status: 400 });
-    }
-
-    const rounded = Math.round(gift.amount_gbp * 100) / 100;
-
     const { data: stream, error: stErr } = await admin
       .from('live_streams')
       .select('*, tip_goals')
@@ -77,6 +103,33 @@ export async function POST(request: Request) {
       );
     }
 
+    const { data: creator } = await admin
+      .from('profiles')
+      .select(
+        'balance_gbp, display_name, username, live_gifts, live_gifts_enabled'
+      )
+      .eq('id', stream.creator_id)
+      .single();
+
+    if (!creator) {
+      return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
+    }
+
+    if (creator.live_gifts_enabled === false) {
+      return NextResponse.json(
+        { error: 'This creator has gifts turned off' },
+        { status: 400 }
+      );
+    }
+
+    const catalog = normalizeGifts(creator.live_gifts);
+    const gift = catalog.find((g) => g.id === giftId);
+    if (!gift) {
+      return NextResponse.json({ error: 'Invalid gift' }, { status: 400 });
+    }
+
+    const rounded = Math.round(gift.amount_gbp * 100) / 100;
+
     const { data: sender } = await admin
       .from('profiles')
       .select('balance_gbp, display_name, username, avatar_url')
@@ -98,16 +151,6 @@ export async function POST(request: Request) {
         },
         { status: 402 }
       );
-    }
-
-    const { data: creator } = await admin
-      .from('profiles')
-      .select('balance_gbp, display_name, username')
-      .eq('id', stream.creator_id)
-      .single();
-
-    if (!creator) {
-      return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
     }
 
     const newSenderBal = Math.round((senderBal - rounded) * 100) / 100;
@@ -258,3 +301,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

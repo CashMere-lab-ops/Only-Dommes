@@ -264,6 +264,10 @@ export default function LiveWatchPage() {
   const [showTip, setShowTip] = useState(false);
   const [tipSheetTab, setTipSheetTab] = useState<'tip' | 'gifts'>('tip');
   const [giftingId, setGiftingId] = useState<string | null>(null);
+  const [liveGifts, setLiveGifts] = useState<
+    { id: string; label: string; emoji: string; amount_gbp: number }[]
+  >(DEFAULT_GIFTS.map((g) => ({ ...g })));
+  const [giftsEnabled, setGiftsEnabled] = useState(true);
   const [tipAmount, setTipAmount] = useState(5);
   const [tipNote, setTipNote] = useState('');
   const [creatorMinTip, setCreatorMinTip] = useState(2);
@@ -511,15 +515,33 @@ export default function LiveWatchPage() {
     try {
       const { data: cProf } = await supabase
         .from('profiles')
-        .select('min_tip_gbp')
+        .select('min_tip_gbp, live_gifts, live_gifts_enabled')
         .eq('id', data.creator_id)
         .maybeSingle();
       const mt = Number(cProf?.min_tip_gbp);
       const minT = Number.isFinite(mt) && mt > 2 ? mt : 2;
       setCreatorMinTip(minT);
       setTipAmount((prev) => (prev < minT ? minT : prev));
+      setGiftsEnabled(cProf?.live_gifts_enabled !== false);
+      if (Array.isArray(cProf?.live_gifts) && cProf.live_gifts.length > 0) {
+        setLiveGifts(
+          cProf.live_gifts.slice(0, 8).map((g: any, i: number) => ({
+            id: String(g.id || `gift_${i}`).slice(0, 24),
+            label: String(g.label || 'Gift').slice(0, 24),
+            emoji: String(g.emoji || '🎁').slice(0, 8) || '🎁',
+            amount_gbp: Math.min(
+              500,
+              Math.max(1, Number(g.amount_gbp) || 5)
+            ),
+          }))
+        );
+      } else {
+        setLiveGifts(DEFAULT_GIFTS.map((g) => ({ ...g })));
+      }
     } catch {
       setCreatorMinTip(2);
+      setGiftsEnabled(true);
+      setLiveGifts(DEFAULT_GIFTS.map((g) => ({ ...g })));
     }
     try {
       const { data: { user: u } } = await supabase.auth.getUser();
@@ -2391,8 +2413,8 @@ export default function LiveWatchPage() {
   };
 
   const sendGift = async (giftId: string) => {
-    if (!stream || isOwner) return;
-    const gift = DEFAULT_GIFTS.find((g) => g.id === giftId);
+    if (!stream || isOwner || !giftsEnabled) return;
+    const gift = liveGifts.find((g) => g.id === giftId);
     if (!gift) return;
     setGiftingId(giftId);
     setTipError('');
@@ -4579,8 +4601,9 @@ export default function LiveWatchPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={!!giftingId || tipping}
+                    disabled={!!giftingId || tipping || !giftsEnabled}
                     onClick={() => {
+                      if (!giftsEnabled) return;
                       setTipSheetTab('gifts');
                       setTipError('');
                     }}
@@ -4588,7 +4611,8 @@ export default function LiveWatchPage() {
                       tipSheetTab === 'gifts'
                         ? 'bg-pink-600 text-white shadow'
                         : 'text-zinc-400 hover:text-white'
-                    }`}
+                    } ${!giftsEnabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    title={!giftsEnabled ? 'Gifts off for this creator' : undefined}
                   >
                     Gifts
                   </button>
@@ -4735,13 +4759,17 @@ export default function LiveWatchPage() {
                       )}
                     </button>
                   </>
+                ) : !giftsEnabled ? (
+                  <p className="text-sm text-zinc-400 text-center py-6">
+                    This creator has gifts turned off
+                  </p>
                 ) : (
                   <>
                     <p className="text-xs text-zinc-400">
                       Fixed-price gifts · count toward tip goal &amp; Top 3
                     </p>
                     <div className="grid grid-cols-1 gap-2">
-                      {DEFAULT_GIFTS.map((g) => {
+                      {liveGifts.map((g) => {
                         const busy = giftingId === g.id;
                         const anyBusy = !!giftingId || tipping;
                         return (
