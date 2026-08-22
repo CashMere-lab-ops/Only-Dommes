@@ -377,57 +377,18 @@ export default function PublicProfilePage() {
         </div>
 
         <div className="max-w-3xl mx-auto px-4 lg:px-8 py-8">
-          {liveStream && (
-            <Link
-              href={`/live/${liveStream.id}`}
-              className="mb-6 block rounded-2xl overflow-hidden border border-red-500/50 bg-gradient-to-br from-red-950/40 via-zinc-900 to-pink-950/30 hover:border-red-400/70 transition group shadow-lg shadow-red-900/10"
-            >
-              <div className="relative aspect-[2.4/1] sm:aspect-[3/1] bg-zinc-900">
-                {(liveStream.thumbnail_url || profile.avatar_url) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={liveStream.thumbnail_url || profile.avatar_url}
-                    alt=""
-                    className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-pink-950/40" />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                <span className="absolute top-3 left-3 bg-red-600 text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                  LIVE NOW
-                </span>
-                <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm sm:text-base font-semibold text-white truncate">
-                      {liveStream.title || 'Live now'}
-                    </p>
-                    <p className="text-xs text-zinc-300 mt-0.5">
-                      {displayName} is live
-                      {liveStream.viewer_count
-                        ? ` · ${liveStream.viewer_count} watching`
-                        : ''}
-                    </p>
-                  </div>
-                  <span className="flex-shrink-0 text-xs sm:text-sm font-semibold bg-pink-600 hover:bg-pink-500 text-white px-3 py-1.5 rounded-full">
-                    Watch
-                  </span>
-                </div>
-              </div>
-            </Link>
-          )}
-          <div className="flex flex-col sm:flex-row gap-6 mb-8">
+          <div className="flex flex-col sm:flex-row gap-6 mb-6">
             <div className="flex flex-col items-center gap-3 flex-shrink-0">
               <div className="relative">
                 <div
-                  className={`w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ${
+                  className={`w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ${
                     liveStream
                       ? 'ring-4 ring-red-500 ring-offset-2 ring-offset-zinc-950 shadow-[0_0_24px_rgba(239,68,68,0.45)]'
-                      : ''
+                      : 'ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950'
                   }`}
                 >
                   {profile.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={profile.avatar_url}
                       alt={displayName}
@@ -440,7 +401,7 @@ export default function PublicProfilePage() {
                 {liveStream && (
                   <Link
                     href={`/live/${liveStream.id}`}
-                    className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-600 hover:bg-red-500 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-lg border border-red-400/40"
+                    className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-600 hover:bg-red-500 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-lg border border-red-400/40"
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                     LIVE
@@ -556,6 +517,47 @@ export default function PublicProfilePage() {
               )}
             </div>
           </div>
+
+          {liveStream && (
+            <Link
+              href={`/live/${liveStream.id}`}
+              className="mb-8 block rounded-2xl overflow-hidden border border-red-500/50 bg-gradient-to-br from-red-950/40 via-zinc-900 to-pink-950/30 hover:border-red-400/70 transition group shadow-lg shadow-red-900/10"
+            >
+              <div className="relative aspect-[2.4/1] sm:aspect-[3/1] bg-zinc-900">
+                {(liveStream.thumbnail_url || profile.avatar_url) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={liveStream.thumbnail_url || profile.avatar_url}
+                    alt=""
+                    className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-pink-950/40" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                <span className="absolute top-3 left-3 bg-red-600 text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  LIVE NOW
+                </span>
+                <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm sm:text-base font-semibold text-white truncate">
+                      {liveStream.title || 'Live now'}
+                    </p>
+                    <p className="text-xs text-zinc-300 mt-0.5">
+                      {displayName} is live
+                      {liveStream.viewer_count
+                        ? ` · ${liveStream.viewer_count} watching`
+                        : ''}
+                    </p>
+                  </div>
+                  <span className="flex-shrink-0 text-xs sm:text-sm font-semibold bg-pink-600 group-hover:bg-pink-500 text-white px-3 py-1.5 rounded-full">
+                    Watch
+                  </span>
+                </div>
+              </div>
+            </Link>
+          )}
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">

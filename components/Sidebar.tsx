@@ -21,6 +21,7 @@ import {
   HelpCircle,
   User,
   Crown,
+  Menu,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import WalletBalance from './WalletBalance';
@@ -411,7 +412,7 @@ export default function Sidebar() {
 
       {/* ── Mobile bottom nav ── */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-zinc-950 border-t border-zinc-800 pb-[env(safe-area-inset-bottom)]">
-        <div className="flex items-stretch justify-around h-14">
+        <div className="flex items-stretch justify-between h-14 px-1">
           {mobileNav.map((item) => {
             if (item.href === '#more') {
               return (
@@ -419,10 +420,10 @@ export default function Sidebar() {
                   key="more"
                   type="button"
                   onClick={() => setShowMoreMenu(true)}
-                  className="flex-1 flex flex-col items-center justify-center gap-0.5 text-zinc-400 text-[10px]"
+                  className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 text-zinc-400 text-[10px] leading-tight"
                 >
-                  <span className="text-lg leading-none">☰</span>
-                  More
+                  <Menu size={22} strokeWidth={2} className="flex-shrink-0" />
+                  <span className="truncate max-w-full px-0.5">More</span>
                 </button>
               );
             }
@@ -432,19 +433,19 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] relative ${
+                className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 text-[10px] leading-tight relative ${
                   active ? 'text-pink-400' : 'text-zinc-400'
                 }`}
               >
-                <span className="relative">
-                  <Icon size={22} />
+                <span className="relative inline-flex">
+                  <Icon size={22} strokeWidth={2} className="flex-shrink-0" />
                   {item.badge && item.badge > 0 ? (
                     <span className="absolute -top-1 -right-2 min-w-[14px] h-3.5 px-0.5 rounded-full bg-pink-500 text-[8px] font-bold flex items-center justify-center text-white">
                       {item.badge > 9 ? '9+' : item.badge}
                     </span>
                   ) : null}
                 </span>
-                {item.label}
+                <span className="truncate max-w-full px-0.5">{item.label}</span>
               </Link>
             );
           })}
@@ -525,3 +526,4 @@ export default function Sidebar() {
     </>
   );
 }
+

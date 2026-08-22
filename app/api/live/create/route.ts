@@ -3,9 +3,75 @@ import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
+async function notifyFollowersLive(
+  admin: ReturnType<typeof createClient>,
+  creatorId: string,
+  creatorName: string,
+  streamId: string,
+  title: string
+) {
+  try {
+    const { data: followers, error: fErr } = await admin
+      .from('follows')
+      .select('follower_id')
+      .eq('following_id', creatorId)
+      .limit(800);
+
+    if (fErr) {
+      console.error('live notify follows', fErr);
+      return;
+    }
+
+    const ids = [
+      ...new Set(
+        (followers || [])
+          .map((f: any) => f.follower_id as string)
+          .filter((id) => id && id !== creatorId)
+      ),
+    ];
+    if (!ids.length) return;
+
+    // Avoid spam: skip if we already notified this follower for this stream
+    const { data: existing } = await admin
+      .from('notifications')
+      .select('user_id')
+      .eq('actor_id', creatorId)
+      .eq('type', 'live')
+      .eq('link', `/live/${streamId}`)
+      .in('user_id', ids.slice(0, 200));
+
+    const already = new Set((existing || []).map((r: any) => r.user_id));
+    const targets = ids.filter((id) => !already.has(id)).slice(0, 500);
+    if (!targets.length) return;
+
+    const rows = targets.map((followerId) => ({
+      user_id: followerId,
+      actor_id: creatorId,
+      type: 'live',
+      title: `${creatorName} is live`,
+      body: title,
+      link: `/live/${streamId}`,
+      is_read: false,
+    }));
+
+    for (let i = 0; i < rows.length; i += 80) {
+      const chunk = rows.slice(i, i + 80);
+      const { error: insErr } = await admin.from('notifications').insert(chunk);
+      if (insErr) {
+        console.error('live notify insert', insErr);
+        // Retry without is_read if column name differs
+        const slim = chunk.map(({ is_read, ...rest }) => rest);
+        await admin.from('notifications').insert(slim);
+      }
+    }
+  } catch (e) {
+    console.error('live notifyFollowersLive', e);
+  }
+}
+
 /**
  * Creator starts an in-platform live (LiveKit room).
- * Thumbnail required. Notifies followers once per new stream.
+ * Thumbnail required. Notifies followers (new + resume if not yet notified for this stream).
  */
 export async function POST(request: Request) {
   try {
@@ -88,6 +154,16 @@ export async function POST(request: Request) {
         .select('*')
         .eq('id', existing.id)
         .single();
+
+      // Still notify if this stream never pushed to followers yet
+      await notifyFollowersLive(
+        admin,
+        user.id,
+        creatorName,
+        existing.id,
+        title
+      );
+
       return NextResponse.json({
         ok: true,
         resumed: true,
@@ -138,47 +214,7 @@ export async function POST(request: Request) {
       })
       .eq('id', row.id);
 
-    try {
-      const { data: followers } = await admin
-        .from('follows')
-        .select('follower_id')
-        .eq('following_id', user.id)
-        .limit(800);
-
-      const ids = (followers || [])
-        .map((f: any) => f.follower_id)
-        .filter((id: string) => id && id !== user.id);
-
-      if (ids.length) {
-        const { data: prefsRows } = await admin
-          .from('profiles')
-          .select('id, notification_prefs')
-          .in('id', ids);
-
-        const allow = new Set<string>();
-        for (const id of ids) {
-          const p = prefsRows?.find((r: any) => r.id === id);
-          const livePref = (p as any)?.notification_prefs?.live;
-          if (livePref?.enabled === false) continue;
-          allow.add(id);
-        }
-
-        const rows = [...allow].slice(0, 500).map((followerId) => ({
-          user_id: followerId,
-          actor_id: user.id,
-          type: 'live',
-          title: `${creatorName} is live`,
-          body: title,
-          link: `/live/${row.id}`,
-        }));
-
-        for (let i = 0; i < rows.length; i += 100) {
-          await admin.from('notifications').insert(rows.slice(i, i + 100));
-        }
-      }
-    } catch (notifyErr) {
-      console.error('live follower notify', notifyErr);
-    }
+    await notifyFollowersLive(admin, user.id, creatorName, row.id, title);
 
     return NextResponse.json({
       ok: true,
@@ -194,6 +230,7 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 
 
