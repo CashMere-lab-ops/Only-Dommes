@@ -262,9 +262,13 @@ export default function LiveWatchPage() {
   >([{ label: '', amount: '' }]);
   const [savingGoal, setSavingGoal] = useState(false);
   const [announceBanner, setAnnounceBanner] = useState<string | null>(null);
+  const [announceExiting, setAnnounceExiting] = useState(false);
   const [showAnnounceEditor, setShowAnnounceEditor] = useState(false);
   const [announceDraft, setAnnounceDraft] = useState('');
+  /** ms; 0 = permanent until cleared */
+  const [announceDurationMs, setAnnounceDurationMs] = useState(10000);
   const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announceExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [milestoneFlash, setMilestoneFlash] = useState<number | null>(null);
   const prevGoalPct = useRef(0);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -722,16 +726,51 @@ export default function LiveWatchPage() {
           if (msg?.type === 'reaction' && msg.emoji) {
             spawnReactionRef.current(String(msg.emoji));
           }
+          if (msg?.type === 'announce_clear') {
+            setAnnounceExiting(true);
+            if (announceTimerRef.current) {
+              clearTimeout(announceTimerRef.current);
+              announceTimerRef.current = null;
+            }
+            if (announceExitTimerRef.current) {
+              clearTimeout(announceExitTimerRef.current);
+            }
+            announceExitTimerRef.current = setTimeout(() => {
+              setAnnounceBanner(null);
+              setAnnounceExiting(false);
+              announceExitTimerRef.current = null;
+            }, 380);
+          }
           if (msg?.type === 'announce' && typeof msg.text === 'string') {
             const clean = String(msg.text).trim().slice(0, 120);
             if (clean) {
-              if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+              const durationMs = Number(msg.durationMs);
+              const ms =
+                Number.isFinite(durationMs) && durationMs >= 0
+                  ? durationMs
+                  : 10000;
+              if (announceTimerRef.current) {
+                clearTimeout(announceTimerRef.current);
+                announceTimerRef.current = null;
+              }
+              if (announceExitTimerRef.current) {
+                clearTimeout(announceExitTimerRef.current);
+                announceExitTimerRef.current = null;
+              }
+              setAnnounceExiting(false);
               setAnnounceBanner(clean);
               playAnnounceChime();
-              announceTimerRef.current = setTimeout(() => {
-                setAnnounceBanner(null);
-                announceTimerRef.current = null;
-              }, 9000);
+              if (ms > 0) {
+                announceTimerRef.current = setTimeout(() => {
+                  setAnnounceExiting(true);
+                  announceExitTimerRef.current = setTimeout(() => {
+                    setAnnounceBanner(null);
+                    setAnnounceExiting(false);
+                    announceExitTimerRef.current = null;
+                  }, 380);
+                  announceTimerRef.current = null;
+                }, ms);
+              }
             }
           }
           if (msg?.type === 'tip_goal') {
@@ -1689,16 +1728,55 @@ export default function LiveWatchPage() {
     return () => clearInterval(t);
   }, [isOwner, slowModeSeconds]);
 
-  const showAnnounceBanner = (text: string) => {
+  const clearAnnounceTimers = () => {
+    if (announceTimerRef.current) {
+      clearTimeout(announceTimerRef.current);
+      announceTimerRef.current = null;
+    }
+    if (announceExitTimerRef.current) {
+      clearTimeout(announceExitTimerRef.current);
+      announceExitTimerRef.current = null;
+    }
+  };
+
+  const hideAnnounceBanner = () => {
+    if (!announceBanner || announceExiting) return;
+    setAnnounceExiting(true);
+    clearAnnounceTimers();
+    announceExitTimerRef.current = setTimeout(() => {
+      setAnnounceBanner(null);
+      setAnnounceExiting(false);
+      announceExitTimerRef.current = null;
+    }, 380);
+  };
+
+  const showAnnounceBanner = (text: string, durationMs: number) => {
     const clean = text.trim().slice(0, 120);
     if (!clean) return;
-    if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+    clearAnnounceTimers();
+    setAnnounceExiting(false);
     setAnnounceBanner(clean);
     playAnnounceChime();
-    announceTimerRef.current = setTimeout(() => {
-      setAnnounceBanner(null);
-      announceTimerRef.current = null;
-    }, 9000);
+    // 0 = permanent (until host clears or new announce)
+    if (durationMs > 0) {
+      announceTimerRef.current = setTimeout(() => {
+        hideAnnounceBanner();
+      }, durationMs);
+    }
+  };
+
+  const broadcastAnnounce = async (
+    payload: Record<string, unknown>
+  ) => {
+    try {
+      const room = roomRef.current;
+      if (room?.localParticipant) {
+        const data = new TextEncoder().encode(JSON.stringify(payload));
+        await room.localParticipant.publishData(data, { reliable: true });
+      }
+    } catch {
+      /* ignore */
+    }
   };
 
   const sendAnnounce = async () => {
@@ -1708,19 +1786,21 @@ export default function LiveWatchPage() {
       alert('Write a short announcement');
       return;
     }
-    showAnnounceBanner(clean);
+    const durationMs = announceDurationMs;
+    showAnnounceBanner(clean, durationMs);
     setShowAnnounceEditor(false);
     setAnnounceDraft('');
-    try {
-      const room = roomRef.current;
-      if (room?.localParticipant) {
-        const payload = new TextEncoder().encode(
-          JSON.stringify({ type: 'announce', text: clean })
-        );
-        await room.localParticipant.publishData(payload, { reliable: true });
-      }
-    } catch {
-      /* local banner already shown */
+    await broadcastAnnounce({
+      type: 'announce',
+      text: clean,
+      durationMs,
+    });
+  };
+
+  const clearAnnounceForAll = async () => {
+    hideAnnounceBanner();
+    if (isOwner) {
+      await broadcastAnnounce({ type: 'announce_clear' });
     }
   };
 
@@ -2941,16 +3021,21 @@ export default function LiveWatchPage() {
             )}
 
             
-            {/* Host announce banner — below goal on mobile, polished */}
+            {/* Host announce banner — enter/exit transitions */}
             {announceBanner && !ended && (
               <div
-                className="absolute z-30 pointer-events-none left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[min(90%,400px)]
+                className="absolute z-30 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[min(90%,400px)]
                   top-[7.75rem] sm:top-[5.75rem]
                   flex justify-center"
-                style={{ animation: 'wod-announce-in 0.45s cubic-bezier(0.22,1,0.36,1) both' }}
+                style={{
+                  animation: announceExiting
+                    ? 'wod-announce-out 0.38s cubic-bezier(0.4,0,0.2,1) forwards'
+                    : 'wod-announce-in 0.45s cubic-bezier(0.22,1,0.36,1) both',
+                  pointerEvents: isOwner ? 'auto' : 'none',
+                }}
               >
-                <div className="w-full sm:w-auto max-w-full rounded-2xl overflow-hidden shadow-[0_12px_40px_rgba(190,24,93,0.45)] border border-white/20">
-                  <div className="bg-gradient-to-br from-pink-500 via-pink-600 to-rose-600 px-3.5 py-2.5 sm:px-5 sm:py-3 text-center relative">
+                <div className="w-full sm:w-auto max-w-full rounded-2xl overflow-hidden shadow-[0_12px_40px_rgba(190,24,93,0.45)] border border-white/20 relative">
+                  <div className="bg-gradient-to-br from-pink-500 via-pink-600 to-rose-600 px-3.5 py-2.5 sm:px-5 sm:py-3 text-center relative pr-9">
                     <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_0%,rgba(255,255,255,0.18)_45%,transparent_55%)] opacity-60 pointer-events-none" />
                     <p className="relative text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.14em] text-pink-100/95 mb-0.5">
                       Announcement
@@ -2958,6 +3043,17 @@ export default function LiveWatchPage() {
                     <p className="relative text-[13px] sm:text-sm font-semibold text-white leading-snug break-words">
                       {announceBanner}
                     </p>
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => void clearAnnounceForAll()}
+                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/25 hover:bg-black/40 flex items-center justify-center text-white/90"
+                        title="Dismiss for everyone"
+                        aria-label="Dismiss"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -3457,7 +3553,7 @@ export default function LiveWatchPage() {
                 Announce
               </h3>
               <p className="text-sm text-zinc-400 text-center mb-4">
-                One line shown to everyone on this live for 10 seconds
+                One line shown to everyone on this live
               </p>
               <textarea
                 value={announceDraft}
@@ -3466,9 +3562,35 @@ export default function LiveWatchPage() {
                 placeholder="e.g. Next goal: remove top at £50"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 resize-none mb-2"
               />
-              <p className="text-[11px] text-zinc-500 text-right mb-4">
+              <p className="text-[11px] text-zinc-500 text-right mb-3">
                 {announceDraft.length}/120
               </p>
+              <p className="text-xs text-zinc-500 mb-2">How long to show</p>
+              <div className="flex flex-wrap gap-2 mb-5">
+                {(
+                  [
+                    { label: '10s', ms: 10_000 },
+                    { label: '30s', ms: 30_000 },
+                    { label: '1m', ms: 60_000 },
+                    { label: '2m', ms: 120_000 },
+                    { label: '5m', ms: 300_000 },
+                    { label: 'Perm', ms: 0 },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => setAnnounceDurationMs(opt.ms)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
+                      announceDurationMs === opt.ms
+                        ? 'bg-pink-600 border-pink-500 text-white'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => void sendAnnounce()}
