@@ -22,14 +22,16 @@ async function notifyFollowersLive(
       return;
     }
 
-    const ids: string[] = [
-      ...new Set(
-        (followers || [])
-          .map((f: any) => String(f.follower_id || ''))
-          .filter((id: string) => id.length > 0 && id !== creatorId)
-      ),
-    ];
-    if (!ids.length) return;
+    const raw: any[] = Array.isArray(followers) ? followers : [];
+    const seen: Record<string, true> = {};
+    const ids: string[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      const id = String(raw[i]?.follower_id || '');
+      if (!id || id === creatorId || seen[id]) continue;
+      seen[id] = true;
+      ids.push(id);
+    }
+    if (ids.length === 0) return;
 
     // Avoid spam: skip if we already notified this follower for this stream
     const { data: existing } = await admin
@@ -40,33 +42,51 @@ async function notifyFollowersLive(
       .eq('link', `/live/${streamId}`)
       .in('user_id', ids.slice(0, 200));
 
-    const already = new Set(
-      (existing || []).map((r: any) => String(r.user_id || ''))
-    );
-    const targets = ids
-      .filter((id: string) => !already.has(id))
-      .slice(0, 500);
-    if (!targets.length) return;
+    const already: Record<string, true> = {};
+    const existingRows: any[] = Array.isArray(existing) ? existing : [];
+    for (let i = 0; i < existingRows.length; i++) {
+      const uid = String(existingRows[i]?.user_id || '');
+      if (uid) already[uid] = true;
+    }
 
-    const rows = targets.map((followerId) => ({
-      user_id: followerId,
-      actor_id: creatorId,
-      type: 'live',
-      title: `${creatorName} is live`,
-      body: title,
-      link: `/live/${streamId}`,
-      is_read: false,
-    }));
+    const targets: string[] = [];
+    for (let i = 0; i < ids.length && targets.length < 500; i++) {
+      if (!already[ids[i]]) targets.push(ids[i]);
+    }
+    if (targets.length === 0) return;
+
+    const rows: any[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      rows.push({
+        user_id: targets[i],
+        actor_id: creatorId,
+        type: 'live',
+        title: `${creatorName} is live`,
+        body: title,
+        link: `/live/${streamId}`,
+        is_read: false,
+      });
+    }
 
     for (let i = 0; i < rows.length; i += 80) {
       const chunk = rows.slice(i, i + 80);
       const { error: insErr } = await admin
         .from('notifications')
-        .insert(chunk as any);
+        .insert(chunk);
       if (insErr) {
         console.error('live notify insert', insErr);
-        const slim = chunk.map(({ is_read: _r, ...rest }) => rest);
-        await admin.from('notifications').insert(slim as any);
+        const slim: any[] = [];
+        for (let j = 0; j < chunk.length; j++) {
+          slim.push({
+            user_id: chunk[j].user_id,
+            actor_id: chunk[j].actor_id,
+            type: chunk[j].type,
+            title: chunk[j].title,
+            body: chunk[j].body,
+            link: chunk[j].link,
+          });
+        }
+        await admin.from('notifications').insert(slim);
       }
     }
   } catch (e) {
@@ -160,7 +180,6 @@ export async function POST(request: Request) {
         .eq('id', existing.id)
         .single();
 
-      // Still notify if this stream never pushed to followers yet
       await notifyFollowersLive(
         admin,
         user.id,
@@ -235,6 +254,7 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 
 
