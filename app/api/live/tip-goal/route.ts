@@ -3,12 +3,75 @@ import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
+type Level = { label: string; amount: number };
+
+function normalizeLevels(raw: unknown, raised: number): {
+  levels: Level[];
+  tip_goal_gbp: number;
+  error?: string;
+} {
+  if (!Array.isArray(raw)) {
+    return { levels: [], tip_goal_gbp: 0, error: 'Invalid goals' };
+  }
+
+  const levels: Level[] = [];
+  for (const item of raw.slice(0, 3)) {
+    if (!item || typeof item !== 'object') continue;
+    const label = String((item as any).label || '')
+      .trim()
+      .slice(0, 40);
+    const amount = Math.round(Number((item as any).amount) * 100) / 100;
+    if (!label || !Number.isFinite(amount) || amount <= 0) continue;
+    if (amount > 100000) {
+      return {
+        levels: [],
+        tip_goal_gbp: 0,
+        error: 'Goal amount too large',
+      };
+    }
+    levels.push({ label, amount });
+  }
+
+  // Sort by amount ascending (cumulative totals)
+  levels.sort((a, b) => a.amount - b.amount);
+
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i].amount <= levels[i - 1].amount) {
+      return {
+        levels: [],
+        tip_goal_gbp: 0,
+        error: 'Each level must be a higher total than the one before',
+      };
+    }
+  }
+
+  // Active target = first level not yet reached, else last, else 0
+  let tip_goal_gbp = 0;
+  if (levels.length) {
+    const next = levels.find((l) => raised < l.amount);
+    tip_goal_gbp = next ? next.amount : levels[levels.length - 1].amount;
+  }
+
+  // Fairness: if setting goals while money is raised, highest-or-active must not
+  // sit below raised unless clearing everything
+  if (levels.length && tip_goal_gbp > 0 && tip_goal_gbp < raised) {
+    // Allow only if every level is already passed (all complete) — then tip_goal stays last
+    const allDone = levels.every((l) => raised >= l.amount);
+    if (!allDone) {
+      return {
+        levels: [],
+        tip_goal_gbp: 0,
+        error: `Active goal must be at least £${raised.toFixed(2)} (already raised)`,
+      };
+    }
+  }
+
+  return { levels, tip_goal_gbp };
+}
+
 /**
- * Host updates tip goal during an active live.
- * Rules:
- * - tip_raised never changes here
- * - tip_goal 0 = clear goal (allowed)
- * - tip_goal > 0 must be >= tip_raised (fair to fans)
+ * Host sets multi-level tip goals (up to 3) with labels.
+ * tip_raised never changes. tip_goal_gbp = active level target.
  */
 export async function POST(request: Request) {
   try {
@@ -33,23 +96,14 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({}));
     const streamId = String(body?.stream_id || '');
-    const tipGoal = Number(body?.tip_goal_gbp);
 
     if (!streamId) {
       return NextResponse.json({ error: 'stream_id required' }, { status: 400 });
     }
-    if (!Number.isFinite(tipGoal) || tipGoal < 0) {
-      return NextResponse.json({ error: 'Invalid goal' }, { status: 400 });
-    }
-    if (tipGoal > 100000) {
-      return NextResponse.json({ error: 'Goal too large' }, { status: 400 });
-    }
-
-    const rounded = Math.round(tipGoal * 100) / 100;
 
     const { data: stream } = await admin
       .from('live_streams')
-      .select('id, creator_id, status, tip_raised_gbp, tip_goal_gbp')
+      .select('id, creator_id, status, tip_raised_gbp')
       .eq('id', streamId)
       .single();
 
@@ -68,35 +122,53 @@ export async function POST(request: Request) {
 
     const raised = Math.round(Number(stream.tip_raised_gbp || 0) * 100) / 100;
 
-    // Clear goal always allowed; raised total is unchanged
-    if (rounded > 0 && rounded < raised) {
+    // New format: levels array. Legacy: single tip_goal_gbp
+    let rawLevels = body?.levels;
+    if (!Array.isArray(rawLevels) && body?.tip_goal_gbp != null) {
+      const n = Number(body.tip_goal_gbp);
+      if (Number.isFinite(n) && n > 0) {
+        rawLevels = [{ label: 'Tip goal', amount: n }];
+      } else {
+        rawLevels = [];
+      }
+    }
+
+    const { levels, tip_goal_gbp, error } = normalizeLevels(rawLevels, raised);
+    if (error) {
       return NextResponse.json(
-        {
-          error: `Goal must be at least £${raised.toFixed(2)} (already raised). You can clear the goal or set a higher target.`,
-          code: 'GOAL_BELOW_RAISED',
-          tip_raised_gbp: raised,
-          min_goal_gbp: raised,
-        },
+        { error, code: 'INVALID_GOALS', tip_raised_gbp: raised },
         { status: 400 }
       );
     }
 
-    const { error } = await admin
+    const { error: upErr } = await admin
       .from('live_streams')
       .update({
-        tip_goal_gbp: rounded,
-        // tip_raised_gbp intentionally NOT touched
+        tip_goals: levels,
+        tip_goal_gbp,
         updated_at: new Date().toISOString(),
       })
       .eq('id', streamId);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (upErr) {
+      // tip_goals column may not exist yet
+      if (/tip_goals/i.test(upErr.message)) {
+        return NextResponse.json(
+          {
+            error:
+              'Run SQL: ALTER TABLE live_streams ADD COLUMN IF NOT EXISTS tip_goals jsonb DEFAULT \'[]\'::jsonb;',
+            code: 'MISSING_COLUMN',
+          },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ error: upErr.message }, { status: 500 });
     }
 
     return NextResponse.json({
       ok: true,
-      tip_goal_gbp: rounded,
+      tip_goals: levels,
+      tip_goal_gbp,
       tip_raised_gbp: raised,
     });
   } catch (e: any) {
@@ -106,3 +178,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

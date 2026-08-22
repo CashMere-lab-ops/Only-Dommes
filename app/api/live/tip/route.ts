@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
     const { data: stream, error: stErr } = await admin
       .from('live_streams')
-      .select('*')
+      .select('*, tip_goals')
       .eq('id', streamId)
       .single();
 
@@ -187,8 +187,22 @@ export async function POST(request: Request) {
 
     // Showcase = highest total tipper on this live
     const currentShowcase = Number(stream.showcase_amount_gbp || 0);
+    // Advance active tip_goal_gbp from multi-level tip_goals
+    let nextGoal = Number(stream.tip_goal_gbp || 0);
+    const levels = Array.isArray((stream as any).tip_goals)
+      ? ([...(stream as any).tip_goals] as { label: string; amount: number }[])
+      : [];
+    if (levels.length) {
+      levels.sort((a, b) => Number(a.amount) - Number(b.amount));
+      const active = levels.find((l) => newRaised < Number(l.amount));
+      nextGoal = active
+        ? Number(active.amount)
+        : Number(levels[levels.length - 1].amount);
+    }
+
     let showcasePayload: Record<string, any> = {
       tip_raised_gbp: newRaised,
+      tip_goal_gbp: nextGoal,
       updated_at: new Date().toISOString(),
     };
 
@@ -226,7 +240,8 @@ export async function POST(request: Request) {
       amount: rounded,
       balance: newSenderBal,
       tip_raised_gbp: newRaised,
-      tip_goal_gbp: Number(stream.tip_goal_gbp || 0),
+      tip_goal_gbp: nextGoal,
+      tip_goals: levels.length ? levels : (stream as any).tip_goals || [],
       from_name: fromName,
       user_total: userTotal,
       is_showcase: isShowcase,
@@ -249,4 +264,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
