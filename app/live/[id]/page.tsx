@@ -3726,69 +3726,74 @@ export default function LiveWatchPage() {
                     const tip = parseTipMessage(m.content);
                     if (tip) {
                       const isGift = tip.kind === 'gift';
+                      // Pill size follows Live settings → Chat text size (S/M/L)
+                      const pillPad =
+                        chatTextSize === 's'
+                          ? 'px-1.5 py-0.5 gap-x-1 rounded-xl'
+                          : chatTextSize === 'l'
+                            ? 'px-2.5 py-1.5 gap-x-1.5 rounded-2xl'
+                            : 'px-2 py-1 gap-x-1 rounded-xl';
+                      const pillText =
+                        chatTextSize === 's'
+                          ? 'text-[10px]'
+                          : chatTextSize === 'l'
+                            ? 'text-[13px]'
+                            : 'text-[11px]';
+                      const noteText =
+                        chatTextSize === 's'
+                          ? 'text-[9px]'
+                          : chatTextSize === 'l'
+                            ? 'text-[12px]'
+                            : 'text-[10px]';
+                      const emojiSize =
+                        chatTextSize === 's'
+                          ? 'text-[11px]'
+                          : chatTextSize === 'l'
+                            ? 'text-[15px]'
+                            : 'text-[12px]';
+                      const dollarSize =
+                        chatTextSize === 's' ? 10 : chatTextSize === 'l' ? 13 : 11;
                       return (
-                        <div key={m.id} className="flex items-start max-w-[92%]">
+                        <div key={m.id} className="flex items-start max-w-[88%]">
                           <div
-                            className={`inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 rounded-2xl px-2.5 py-1.5 shadow-sm backdrop-blur-sm border ${
+                            className={`inline-flex flex-wrap items-center shadow-sm backdrop-blur-sm border ${pillPad} ${
                               isGift
-                                ? 'bg-gradient-to-r from-amber-600/90 to-pink-600/90 border-amber-300/30'
-                                : 'bg-pink-600/90 border-pink-400/30'
+                                ? 'bg-gradient-to-r from-amber-600/85 to-pink-600/85 border-amber-300/25'
+                                : 'bg-pink-600/85 border-pink-400/25'
                             }`}
                           >
                             {isGift ? (
-                              <span className="text-sm leading-none flex-shrink-0">
+                              <span
+                                className={`${emojiSize} leading-none flex-shrink-0`}
+                              >
                                 {tip.giftEmoji || '🎁'}
                               </span>
                             ) : (
                               <DollarSign
-                                size={12}
-                                className="text-white/95 flex-shrink-0 relative top-[1px]"
+                                size={dollarSize}
+                                className="text-white/95 flex-shrink-0"
                               />
                             )}
                             <span
-                              className={`font-semibold text-pink-50 ${
-                                chatTextSize === 's'
-                                  ? 'text-[12px]'
-                                  : chatTextSize === 'l'
-                                    ? 'text-[14px]'
-                                    : 'text-[13px]'
-                              }`}
+                              className={`font-semibold text-pink-50 ${pillText}`}
                             >
                               {displayName(m)}
                             </span>
                             {isGift && tip.giftLabel ? (
                               <span
-                                className={`font-semibold text-white ${
-                                  chatTextSize === 's'
-                                    ? 'text-[12px]'
-                                    : chatTextSize === 'l'
-                                      ? 'text-[14px]'
-                                      : 'text-[13px]'
-                                }`}
+                                className={`font-medium text-white/95 ${pillText}`}
                               >
                                 {tip.giftLabel}
                               </span>
                             ) : null}
                             <span
-                              className={`font-bold text-white tabular-nums ${
-                                chatTextSize === 's'
-                                  ? 'text-[12px]'
-                                  : chatTextSize === 'l'
-                                    ? 'text-[14px]'
-                                    : 'text-[13px]'
-                              }`}
+                              className={`font-bold text-white tabular-nums ${pillText}`}
                             >
                               £{tip.amount.toFixed(2)}
                             </span>
                             {tip.note ? (
                               <span
-                                className={`w-full text-pink-50/95 leading-snug break-words ${
-                                  chatTextSize === 's'
-                                    ? 'text-[11px]'
-                                    : chatTextSize === 'l'
-                                      ? 'text-[13px]'
-                                      : 'text-[12px]'
-                                }`}
+                                className={`w-full text-pink-50/90 leading-snug break-words ${noteText}`}
                               >
                                 {tip.note}
                               </span>
@@ -4222,8 +4227,11 @@ export default function LiveWatchPage() {
 
               <div className="space-y-4">
                 <div>
-                  <p className="text-xs font-semibold text-zinc-400 mb-2 flex items-center gap-1.5">
-                    <Type size={14} /> Chat text size
+                  <p className="text-xs font-semibold text-zinc-400 mb-1 flex items-center gap-1.5">
+                    <Type size={14} /> Chat &amp; tip / gift size
+                  </p>
+                  <p className="text-[11px] text-zinc-500 mb-2">
+                    Scales normal chat, tip pills and gift pills
                   </p>
                   <div className="flex gap-2">
                     {(
