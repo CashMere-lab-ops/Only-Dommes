@@ -229,6 +229,10 @@ export default function LiveWatchPage() {
     { label: string; amount: string }[]
   >([{ label: '', amount: '' }]);
   const [savingGoal, setSavingGoal] = useState(false);
+  const [announceBanner, setAnnounceBanner] = useState<string | null>(null);
+  const [showAnnounceEditor, setShowAnnounceEditor] = useState(false);
+  const [announceDraft, setAnnounceDraft] = useState('');
+  const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [milestoneFlash, setMilestoneFlash] = useState<number | null>(null);
   const prevGoalPct = useRef(0);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -685,6 +689,17 @@ export default function LiveWatchPage() {
           }
           if (msg?.type === 'reaction' && msg.emoji) {
             spawnReactionRef.current(String(msg.emoji));
+          }
+          if (msg?.type === 'announce' && typeof msg.text === 'string') {
+            const clean = String(msg.text).trim().slice(0, 120);
+            if (clean) {
+              if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+              setAnnounceBanner(clean);
+              announceTimerRef.current = setTimeout(() => {
+                setAnnounceBanner(null);
+                announceTimerRef.current = null;
+              }, 10000);
+            }
           }
           if (msg?.type === 'tip_goal') {
             const g = Number(msg.tip_goal_gbp);
@@ -1641,7 +1656,41 @@ export default function LiveWatchPage() {
     return () => clearInterval(t);
   }, [isOwner, slowModeSeconds]);
 
-  const openGoalEditor = () => {
+  const showAnnounceBanner = (text: string) => {
+    const clean = text.trim().slice(0, 120);
+    if (!clean) return;
+    if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+    setAnnounceBanner(clean);
+    announceTimerRef.current = setTimeout(() => {
+      setAnnounceBanner(null);
+      announceTimerRef.current = null;
+    }, 10000);
+  };
+
+  const sendAnnounce = async () => {
+    if (!isOwner || !stream) return;
+    const clean = announceDraft.trim().slice(0, 120);
+    if (!clean) {
+      alert('Write a short announcement');
+      return;
+    }
+    showAnnounceBanner(clean);
+    setShowAnnounceEditor(false);
+    setAnnounceDraft('');
+    try {
+      const room = roomRef.current;
+      if (room?.localParticipant) {
+        const payload = new TextEncoder().encode(
+          JSON.stringify({ type: 'announce', text: clean })
+        );
+        await room.localParticipant.publishData(payload, { reliable: true });
+      }
+    } catch {
+      /* local banner already shown */
+    }
+  };
+
+    const openGoalEditor = () => {
     if (!isOwner || !stream) return;
     const existing = Array.isArray(stream.tip_goals) ? stream.tip_goals : [];
     if (existing.length) {
@@ -2857,6 +2906,21 @@ export default function LiveWatchPage() {
               </div>
             )}
 
+            
+            {/* Host announce banner — visible to everyone */}
+            {announceBanner && !ended && (
+              <div className="absolute top-[6.5rem] sm:top-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[min(92%,420px)] px-2">
+                <div className="bg-gradient-to-r from-pink-600/95 to-rose-600/95 backdrop-blur-md border border-pink-300/30 rounded-2xl px-4 py-3 shadow-2xl shadow-pink-900/40 text-center animate-[fadeIn_0.25s_ease-out]">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-pink-100/90 mb-0.5">
+                    Announcement
+                  </p>
+                  <p className="text-sm sm:text-base font-semibold text-white leading-snug">
+                    {announceBanner}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {goalReachedFlash && (
               <div className="absolute top-[22%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
                 <div className="bg-black/70 backdrop-blur-md text-white px-6 py-4 rounded-3xl shadow-2xl border border-yellow-400/40 flex items-center gap-3 animate-in zoom-in-95 fade-in">
@@ -3220,6 +3284,21 @@ export default function LiveWatchPage() {
                     </button>
                   )}
 
+
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnnounceDraft('');
+                        setShowAnnounceEditor(true);
+                      }}
+                      className="h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 bg-zinc-900/80 border-zinc-700 text-zinc-200 hover:border-pink-500/50"
+                      title="Announce to everyone"
+                    >
+                      Announce
+                    </button>
+                  )}
+
                   {isOwner && (
                     <button
                       type="button"
@@ -3320,6 +3399,53 @@ export default function LiveWatchPage() {
 
         
         
+        
+        {/* Host announce editor */}
+        {showAnnounceEditor && isOwner && (
+          <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/70"
+              aria-label="Close"
+              onClick={() => setShowAnnounceEditor(false)}
+            />
+            <div className="relative w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl">
+              <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-4 sm:hidden" />
+              <h3 className="text-lg font-semibold text-center mb-1">
+                Announce
+              </h3>
+              <p className="text-sm text-zinc-400 text-center mb-4">
+                One line shown to everyone on this live for 10 seconds
+              </p>
+              <textarea
+                value={announceDraft}
+                onChange={(e) => setAnnounceDraft(e.target.value.slice(0, 120))}
+                rows={3}
+                placeholder="e.g. Next goal: remove top at £50"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 resize-none mb-2"
+              />
+              <p className="text-[11px] text-zinc-500 text-right mb-4">
+                {announceDraft.length}/120
+              </p>
+              <button
+                type="button"
+                onClick={() => void sendAnnounce()}
+                disabled={!announceDraft.trim()}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-40"
+              >
+                Send announcement
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAnnounceEditor(false)}
+                className="w-full py-3 mt-1 text-sm text-zinc-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Host multi-level tip goals editor */}
         {showGoalEditor && isOwner && (
           <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center">
