@@ -22,11 +22,11 @@ async function notifyFollowersLive(
       return;
     }
 
-    const ids = [
+    const ids: string[] = [
       ...new Set(
         (followers || [])
-          .map((f: any) => f.follower_id as string)
-          .filter((id) => id && id !== creatorId)
+          .map((f: any) => String(f.follower_id || ''))
+          .filter((id: string) => id.length > 0 && id !== creatorId)
       ),
     ];
     if (!ids.length) return;
@@ -40,8 +40,12 @@ async function notifyFollowersLive(
       .eq('link', `/live/${streamId}`)
       .in('user_id', ids.slice(0, 200));
 
-    const already = new Set((existing || []).map((r: any) => r.user_id));
-    const targets = ids.filter((id) => !already.has(id)).slice(0, 500);
+    const already = new Set(
+      (existing || []).map((r: any) => String(r.user_id || ''))
+    );
+    const targets = ids
+      .filter((id: string) => !already.has(id))
+      .slice(0, 500);
     if (!targets.length) return;
 
     const rows = targets.map((followerId) => ({
@@ -231,6 +235,7 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 
 
