@@ -2827,7 +2827,13 @@ export default function LiveWatchPage() {
               const c = 2 * Math.PI * r;
               const offset = c - (pct / 100) * c;
               return (
-                <div className="absolute top-[3.75rem] sm:top-20 left-3 z-20 max-w-[52%] sm:max-w-[240px]">
+                <div
+                  className={`absolute left-3 z-20 max-w-[52%] sm:max-w-[240px] transition-[top] duration-300 ease-out ${
+                    announceBanner
+                      ? 'top-[8.5rem] sm:top-20'
+                      : 'top-[3.75rem] sm:top-20'
+                  }`}
+                >
                   <button
                     type="button"
                     disabled={!isOwner}
@@ -3021,12 +3027,12 @@ export default function LiveWatchPage() {
             )}
 
             
-            {/* Host announce banner — enter/exit transitions */}
+            {/* Host announce banner — phone: goal slot; tip goal slides under */}
             {announceBanner && !ended && (
               <div
                 className="absolute z-30 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[min(90%,400px)]
-                  top-[7.75rem] sm:top-[5.75rem]
-                  flex justify-center"
+                  top-[3.75rem] sm:top-[5.75rem]
+                  flex justify-center sm:justify-center"
                 style={{
                   animation: announceExiting
                     ? 'wod-announce-out 0.38s cubic-bezier(0.4,0,0.2,1) forwards'
