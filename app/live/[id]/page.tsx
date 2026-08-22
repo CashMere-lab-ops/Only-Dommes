@@ -825,6 +825,22 @@ export default function LiveWatchPage() {
               }
             }
           }
+          if (msg?.type === 'tip_alert') {
+            const amount = Number(msg.amount);
+            const note = String(msg.note || '').trim().slice(0, 50);
+            const tipName = String(msg.name || 'A fan').slice(0, 40);
+            if (Number.isFinite(amount) && note) {
+              setTipAlert({
+                amount,
+                note,
+                name: tipName,
+                isShowcase: !!msg.isShowcase,
+              });
+              playTipChime();
+              setTimeout(() => setTipAlert(null), 4500);
+            }
+            return;
+          }
           if (msg?.type === 'tip_goal') {
             const g = Number(msg.tip_goal_gbp);
             const r = Number(msg.tip_raised_gbp);
@@ -1277,46 +1293,6 @@ export default function LiveWatchPage() {
               },
             ].slice(-50);
           });
-
-          // Tip + note → center alert for ALL viewers (Twitch/Kick style)
-          const tipMatch = String(row.content || '').match(
-            /^__TIP__:([0-9]+(?:\.[0-9]+)?)\|(.{1,50})$/
-          );
-          if (tipMatch) {
-            const amount = Number(tipMatch[1]);
-            const note = tipMatch[2].trim();
-            if (Number.isFinite(amount) && note) {
-              // Resolve name quickly
-              let tipName = 'A fan';
-              try {
-                const { data: profile } = await supabase
-                  .from('profiles')
-                  .select('username, display_name, avatar_url')
-                  .eq('id', row.user_id)
-                  .single();
-                if (profile) {
-                  tipName =
-                    profile.display_name ||
-                    (profile.username ? `@${profile.username}` : 'A fan');
-                  setChatMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === row.id ? { ...m, profile } : m
-                    )
-                  );
-                }
-              } catch {
-                /* ignore */
-              }
-              setTipAlert({
-                amount,
-                note,
-                name: tipName,
-              });
-              playTipChime();
-              setTimeout(() => setTipAlert(null), 4500);
-              return;
-            }
-          }
 
           // Enrich profile in background
           const { data: profile } = await supabase
@@ -2304,7 +2280,7 @@ export default function LiveWatchPage() {
         (typeof data.from_name === 'string' && data.from_name) ||
         'A fan';
       if (noteFlash) {
-        // Premium center overlay only when there is a note
+        // Premium center overlay only when there is a note (not shown in chat)
         setTipAlert({
           amount: Number(data.amount),
           note: noteFlash,
@@ -2313,6 +2289,26 @@ export default function LiveWatchPage() {
         });
         playTipChime();
         setTimeout(() => setTipAlert(null), 4500);
+        // Broadcast to other viewers via LiveKit (chat stays amount-only)
+        try {
+          const room = roomRef.current;
+          if (room?.localParticipant) {
+            const payload = new TextEncoder().encode(
+              JSON.stringify({
+                type: 'tip_alert',
+                amount: Number(data.amount),
+                note: noteFlash,
+                name: tipperName,
+                isShowcase: !!data.is_showcase,
+              })
+            );
+            await room.localParticipant.publishData(payload, {
+              reliable: true,
+            });
+          }
+        } catch {
+          /* ignore */
+        }
       } else {
         const flash = data.is_showcase
           ? `£${Number(data.amount).toFixed(2)} · You're top tipper 👑`
@@ -2354,14 +2350,8 @@ export default function LiveWatchPage() {
       }
       prevRaised.current = newRaised;
 
-      // Highlighted tip line in chat (parsed as pink pill)
-      // Format: __TIP__:12.50 or __TIP__:12.50|optional note
-      const serverNote =
-        typeof data.message === 'string' ? String(data.message).trim() : '';
-      const noteForChat = serverNote || note;
-      const tipLine = noteForChat
-        ? `__TIP__:${Number(data.amount).toFixed(2)}|${noteForChat}`
-        : `__TIP__:${Number(data.amount).toFixed(2)}`;
+      // Chat: amount only (note is center-card only, not in chat)
+      const tipLine = `__TIP__:${Number(data.amount).toFixed(2)}`;
       try {
         await supabase.from('live_chat_messages').insert({
           stream_id: stream.id,
@@ -3372,8 +3362,8 @@ export default function LiveWatchPage() {
                     const tip = parseTipMessage(m.content);
                     if (tip) {
                       return (
-                        <div key={m.id} className="flex flex-col items-start gap-0.5 max-w-[92%]">
-                          <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
+                        <div key={m.id} className="flex items-center">
+                          <div className="inline-flex items-center gap-1.5 max-w-[92%] rounded-full px-2.5 py-1 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
                             <DollarSign size={12} className="text-white/95 flex-shrink-0" />
                             <span
                               className={`font-semibold text-pink-50 truncate max-w-[6.5rem] ${
@@ -3398,19 +3388,7 @@ export default function LiveWatchPage() {
                               £{tip.amount.toFixed(2)}
                             </span>
                           </div>
-                          {tip.note && (
-                            <p
-                              className={`ml-1 max-w-full rounded-xl bg-pink-950/70 border border-pink-500/25 px-2.5 py-1 text-pink-50/95 leading-snug break-words ${
-                                chatTextSize === 's'
-                                  ? 'text-[11px]'
-                                  : chatTextSize === 'l'
-                                    ? 'text-[13px]'
-                                    : 'text-[12px]'
-                              }`}
-                            >
-                              {tip.note}
-                            </p>
-                          )}
+
                         </div>
                       );
                     }
