@@ -223,6 +223,9 @@ export default function LiveWatchPage() {
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
+  const [showGoalEditor, setShowGoalEditor] = useState(false);
+  const [goalDraft, setGoalDraft] = useState('');
+  const [savingGoal, setSavingGoal] = useState(false);
   const [milestoneFlash, setMilestoneFlash] = useState<number | null>(null);
   const prevGoalPct = useRef(0);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -679,6 +682,24 @@ export default function LiveWatchPage() {
           }
           if (msg?.type === 'reaction' && msg.emoji) {
             spawnReactionRef.current(String(msg.emoji));
+          }
+          if (msg?.type === 'tip_goal') {
+            const g = Number(msg.tip_goal_gbp);
+            const r = Number(msg.tip_raised_gbp);
+            setStream((s) =>
+              s
+                ? {
+                    ...s,
+                    tip_goal_gbp: Number.isFinite(g) ? g : s.tip_goal_gbp,
+                    tip_raised_gbp: Number.isFinite(r)
+                      ? r
+                      : s.tip_raised_gbp,
+                  }
+                : s
+            );
+            if (Number.isFinite(g) && g > 0 && Number.isFinite(r)) {
+              prevGoalPct.current = Math.min(100, (r / g) * 100);
+            }
           }
           if (msg?.type === 'chat_filters') {
             if (typeof msg.block_links === 'boolean') {
@@ -1615,7 +1636,81 @@ export default function LiveWatchPage() {
     return () => clearInterval(t);
   }, [isOwner, slowModeSeconds]);
 
-  const cycleSlowMode = async () => {
+  const openGoalEditor = () => {
+    if (!isOwner || !stream) return;
+    setGoalDraft(String(Number(stream.tip_goal_gbp || 0) || ''));
+    setShowGoalEditor(true);
+  };
+
+  const saveTipGoal = async () => {
+    if (!isOwner || !stream || savingGoal) return;
+    const n = Number(goalDraft);
+    if (!Number.isFinite(n) || n < 0) {
+      alert('Enter a valid goal (0 to clear)');
+      return;
+    }
+    const raisedNow = Number(stream.tip_raised_gbp || 0);
+    if (n > 0 && n < raisedNow) {
+      alert(
+        `Goal must be at least £${raisedNow.toFixed(2)} (already raised). Clear the goal or set a higher target.`
+      );
+      return;
+    }
+    setSavingGoal(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch('/api/live/tip-goal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          stream_id: stream.id,
+          tip_goal_gbp: n,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      const goal = Number(data.tip_goal_gbp || 0);
+      const raised = Number(data.tip_raised_gbp || stream.tip_raised_gbp || 0);
+      setStream((s) =>
+        s
+          ? {
+              ...s,
+              tip_goal_gbp: goal,
+              tip_raised_gbp: raised,
+            }
+          : s
+      );
+      prevGoalPct.current =
+        goal > 0 ? Math.min(100, (raised / goal) * 100) : 0;
+      try {
+        const room = roomRef.current;
+        if (room?.localParticipant) {
+          const payload = new TextEncoder().encode(
+            JSON.stringify({
+              type: 'tip_goal',
+              tip_goal_gbp: goal,
+              tip_raised_gbp: raised,
+            })
+          );
+          await room.localParticipant.publishData(payload, { reliable: true });
+        }
+      } catch {
+        /* ignore */
+      }
+      setShowGoalEditor(false);
+    } catch (e: any) {
+      alert(e.message || 'Could not update goal');
+    } finally {
+      setSavingGoal(false);
+    }
+  };
+
+    const cycleSlowMode = async () => {
     if (!isOwner || !stream) return;
     const opts = [0, 5, 10, 30];
     const idx = opts.indexOf(slowModeSeconds);
@@ -2537,15 +2632,26 @@ export default function LiveWatchPage() {
             )}
 
             {/* Tip goal — premium progress + milestones */}
-            {!ended && (goal > 0 || raised > 0) && (() => {
+            {!ended && (goal > 0 || raised > 0 || isOwner) && (() => {
               const pct =
                 goal > 0 ? Math.min(100, (raised / goal) * 100) : 0;
               const r = 18;
               const c = 2 * Math.PI * r;
               const offset = c - (pct / 100) * c;
               return (
-                <div className="absolute top-[3.75rem] sm:top-20 left-3 z-20 pointer-events-none max-w-[52%] sm:max-w-[240px]">
-                  <div className="bg-black/60 backdrop-blur-md rounded-2xl px-2.5 py-2 sm:px-3 sm:py-2.5 border border-white/12 shadow-lg">
+                <div className="absolute top-[3.75rem] sm:top-20 left-3 z-20 max-w-[52%] sm:max-w-[240px]">
+                  <button
+                    type="button"
+                    disabled={!isOwner}
+                    onClick={() => {
+                      if (isOwner) openGoalEditor();
+                    }}
+                    className={`w-full text-left bg-black/60 backdrop-blur-md rounded-2xl px-2.5 py-2 sm:px-3 sm:py-2.5 border border-white/12 shadow-lg ${
+                      isOwner
+                        ? 'pointer-events-auto hover:border-pink-400/40 transition cursor-pointer'
+                        : 'pointer-events-none'
+                    }`}
+                  >
                     <div className="flex items-center gap-2.5">
                       {goal > 0 && (
                         <div className="relative w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0">
@@ -2621,9 +2727,14 @@ export default function LiveWatchPage() {
                             ))}
                           </div>
                         )}
+                        {isOwner && (
+                          <p className="text-[9px] text-zinc-500 mt-1">
+                            Tap to edit goal
+                          </p>
+                        )}
                       </div>
                     </div>
-                  </div>
+                  </button>
                 </div>
               );
             })()}
@@ -3089,6 +3200,17 @@ export default function LiveWatchPage() {
                   {isOwner && (
                     <button
                       type="button"
+                      onClick={() => openGoalEditor()}
+                      className="h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 bg-zinc-900/80 border-zinc-700 text-zinc-200 hover:border-pink-500/50"
+                      title="Change tip goal"
+                    >
+                      Goal
+                    </button>
+                  )}
+
+                  {isOwner && (
+                    <button
+                      type="button"
                       onClick={() => void cycleChatRequire()}
                       className={`h-11 px-2.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${
                         chatRequire !== 'anyone'
@@ -3148,6 +3270,89 @@ export default function LiveWatchPage() {
         </main>
 
         
+        
+        {/* Host tip goal editor */}
+        {showGoalEditor && isOwner && (
+          <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/70"
+              aria-label="Close"
+              onClick={() => setShowGoalEditor(false)}
+            />
+            <div className="relative w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl">
+              <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-4 sm:hidden" />
+              <h3 className="text-lg font-semibold text-center mb-1">
+                Tip goal
+              </h3>
+              <p className="text-sm text-zinc-400 text-center mb-2">
+                Raised tips never reset. New goal must be at least what&apos;s
+                already raised (or clear the goal).
+              </p>
+              <p className="text-xs text-pink-400/90 text-center mb-5 tabular-nums">
+                Raised so far: £
+                {Number(stream?.tip_raised_gbp || 0).toFixed(2)}
+                {Number(stream?.tip_raised_gbp || 0) > 0
+                  ? ` · min goal £${Number(stream?.tip_raised_gbp || 0).toFixed(2)}`
+                  : ''}
+              </p>
+              <label className="text-xs text-zinc-500 mb-1.5 block">
+                Goal amount (£)
+              </label>
+              <div className="relative mb-3">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
+                  £
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={goalDraft}
+                  onChange={(e) => setGoalDraft(e.target.value)}
+                  placeholder="0 = no goal"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mb-5">
+                {[0, 20, 50, 100, 250, 500]
+                  .filter((v) => {
+                    if (v === 0) return true;
+                    return v >= Number(stream?.tip_raised_gbp || 0);
+                  })
+                  .map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setGoalDraft(String(v))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                        Number(goalDraft) === v
+                          ? 'bg-pink-600 border-pink-500 text-white'
+                          : 'bg-zinc-800 border-zinc-700 text-zinc-300'
+                      }`}
+                    >
+                      {v === 0 ? 'Clear' : `£${v}`}
+                    </button>
+                  ))}
+              </div>
+              <button
+                type="button"
+                disabled={savingGoal}
+                onClick={() => void saveTipGoal()}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50"
+              >
+                {savingGoal ? 'Saving…' : 'Update goal'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowGoalEditor(false)}
+                className="w-full py-3 mt-2 text-sm text-zinc-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Host moderate viewer sheet */}
         {modTarget && isOwner && (
           <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center">
