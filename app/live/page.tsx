@@ -76,10 +76,7 @@ export default function LiveIndexPage() {
       if (data?.display_name || data?.username) {
         setLiveTitle(`${data.display_name || data.username} is live`);
       }
-      // Soft default preview from avatar
-      if (data?.avatar_url && !thumbPreview) {
-        setThumbPreview(data.avatar_url);
-      }
+      // Cover must be chosen deliberately — no avatar auto-fill
     })();
   }, []);
 
@@ -111,6 +108,10 @@ export default function LiveIndexPage() {
       setError('Add a title for your live');
       return;
     }
+    if (!thumbFile) {
+      setError('Add a cover image before going live');
+      return;
+    }
     setGoingLive(true);
     setError('');
     try {
@@ -121,30 +122,26 @@ export default function LiveIndexPage() {
         throw new Error('Please log in again');
       }
 
-      let thumbnailUrl: string | null = null;
-
-      if (thumbFile) {
-        const blob = await compressThumb(thumbFile);
-        const form = new FormData();
-        form.append(
-          'file',
-          new File([blob], 'live-thumb.jpg', { type: 'image/jpeg' })
-        );
-        const upRes = await fetch('/api/live/upload-thumb', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: form,
-        });
-        const upData = await upRes.json().catch(() => ({}));
-        if (!upRes.ok) {
-          throw new Error(upData.error || 'Thumbnail upload failed');
-        }
-        thumbnailUrl = upData.url;
-      } else if (thumbPreview && !thumbPreview.startsWith('blob:')) {
-        // existing avatar URL used as soft default
-        thumbnailUrl = thumbPreview;
+      const blob = await compressThumb(thumbFile);
+      const form = new FormData();
+      form.append(
+        'file',
+        new File([blob], 'live-thumb.jpg', { type: 'image/jpeg' })
+      );
+      const upRes = await fetch('/api/live/upload-thumb', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: form,
+      });
+      const upData = await upRes.json().catch(() => ({}));
+      if (!upRes.ok) {
+        throw new Error(upData.error || 'Thumbnail upload failed');
+      }
+      const thumbnailUrl = upData.url as string;
+      if (!thumbnailUrl) {
+        throw new Error('Thumbnail upload failed');
       }
 
       const res = await fetch('/api/live/create', {
@@ -334,14 +331,17 @@ export default function LiveIndexPage() {
                 </button>
               </div>
               <div className="px-5 py-5 space-y-4 max-h-[80vh] overflow-y-auto">
-                {/* Thumbnail */}
+                {/* Thumbnail — required */}
                 <div>
-                  <label className="text-sm text-zinc-400 mb-1.5 block">
+                  <label className="text-sm text-zinc-300 mb-1.5 flex items-center gap-2">
                     Cover image
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-pink-400 bg-pink-500/15 border border-pink-500/30 px-1.5 py-0.5 rounded">
+                      Required
+                    </span>
                   </label>
                   <p className="text-[11px] text-zinc-500 mb-2">
-                    Shown on the homepage and Live page. Use a clear photo of
-                    you / your setup.
+                    Shown on the homepage and Live page. Use a clear photo —
+                    profile picture is not enough.
                   </p>
                   <input
                     ref={fileRef}
@@ -355,7 +355,11 @@ export default function LiveIndexPage() {
                   <button
                     type="button"
                     onClick={() => fileRef.current?.click()}
-                    className="w-full aspect-video rounded-2xl border border-dashed border-zinc-600 bg-zinc-800/60 overflow-hidden relative group"
+                    className={`w-full aspect-video rounded-2xl border border-dashed overflow-hidden relative group transition ${
+                      thumbFile
+                        ? 'border-pink-500/50 bg-zinc-800'
+                        : 'border-zinc-600 bg-zinc-800/60 hover:border-pink-500/40'
+                    }`}
                   >
                     {thumbPreview ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -365,10 +369,13 @@ export default function LiveIndexPage() {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 gap-2">
-                        <ImagePlus size={28} />
-                        <span className="text-sm font-medium">
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 gap-2 px-4">
+                        <ImagePlus size={28} className="text-pink-400/80" />
+                        <span className="text-sm font-medium text-zinc-200">
                           Add cover photo
+                        </span>
+                        <span className="text-[11px] text-zinc-500 text-center">
+                          JPG, PNG or WebP · max 8MB
                         </span>
                       </div>
                     )}
@@ -434,7 +441,7 @@ export default function LiveIndexPage() {
                 <button
                   type="button"
                   onClick={goLive}
-                  disabled={goingLive || !liveTitle.trim()}
+                  disabled={goingLive || !liveTitle.trim() || !thumbFile}
                   className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-base disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {goingLive ? (
@@ -447,6 +454,11 @@ export default function LiveIndexPage() {
                     </>
                   )}
                 </button>
+                {!thumbFile && (
+                  <p className="text-center text-xs text-amber-400/90">
+                    Cover image required to start
+                  </p>
+                )}
                 <p className="text-center text-xs text-zinc-500">
                   Your browser will ask for camera & microphone
                 </p>
@@ -458,3 +470,4 @@ export default function LiveIndexPage() {
     </AuthGuard>
   );
 }
+

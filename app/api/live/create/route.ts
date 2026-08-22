@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Creator starts an in-platform live (LiveKit room).
- * Camera goes live from the browser — LoyalFans-style.
+ * Thumbnail is required for new streams (stronger Live + homepage cards).
  */
 export async function POST(request: Request) {
   try {
@@ -41,7 +41,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Resume existing open stream (still allow new thumbnail/title on resume)
     const { data: existing } = await admin
       .from('live_streams')
       .select('*')
@@ -58,23 +57,29 @@ export async function POST(request: Request) {
         : `${profile.display_name || profile.username || 'Creator'} is live`;
 
     const tipGoal = Math.max(0, Number(body.tip_goal_gbp) || 0);
-    let thumbnailUrl =
+    const thumbnailUrl =
       typeof body.thumbnail_url === 'string' && body.thumbnail_url.trim()
         ? body.thumbnail_url.trim().slice(0, 500)
         : null;
 
-    // Fallback: use profile avatar so cards never look empty
-    if (!thumbnailUrl && profile?.avatar_url) {
-      thumbnailUrl = profile.avatar_url;
-    }
-
+    // Resume open stream — require a thumb if none is set yet
     if (existing) {
+      const nextThumb = thumbnailUrl || existing.thumbnail_url || null;
+      if (!nextThumb) {
+        return NextResponse.json(
+          {
+            error: 'Add a cover image before going live',
+            code: 'THUMBNAIL_REQUIRED',
+          },
+          { status: 400 }
+        );
+      }
       const patch: Record<string, any> = {
         title,
         tip_goal_gbp: tipGoal,
         updated_at: new Date().toISOString(),
+        thumbnail_url: nextThumb,
       };
-      if (thumbnailUrl) patch.thumbnail_url = thumbnailUrl;
       await admin.from('live_streams').update(patch).eq('id', existing.id);
       const { data: updated } = await admin
         .from('live_streams')
@@ -87,6 +92,17 @@ export async function POST(request: Request) {
         stream: updated || { ...existing, ...patch },
         watchPath: `/live/${existing.id}`,
       });
+    }
+
+    // New stream — cover is required (no avatar fallback)
+    if (!thumbnailUrl) {
+      return NextResponse.json(
+        {
+          error: 'Add a cover image before going live',
+          code: 'THUMBNAIL_REQUIRED',
+        },
+        { status: 400 }
+      );
     }
 
     const { data: row, error: insErr } = await admin
@@ -134,3 +150,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

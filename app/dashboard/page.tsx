@@ -2035,17 +2035,13 @@ export default function DashboardPage() {
                 >
                   <Phone size={18} className="text-pink-400" /> Call history
                 </Link>
-                <button
-                  onClick={() => setIsLive(!isLive)}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition ${
-                    isLive
-                      ? 'bg-red-600 hover:bg-red-700'
-                      : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90'
-                  }`}
+                <Link
+                  href="/live"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90"
                 >
                   <Radio size={18} />
-                  {isLive ? 'End Stream' : 'Go Live'}
-                </button>
+                  Go Live
+                </Link>
               </div>
             </div>
 
