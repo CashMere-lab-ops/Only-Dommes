@@ -379,7 +379,7 @@ export default function SettingsPage() {
                 <Camera size={18} className="text-pink-500" /> Profile photo
               </h2>
               <div className="flex items-center gap-5">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-2xl font-bold">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-2xl font-bold">
                   {profile?.avatar_url ? (
                     <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (

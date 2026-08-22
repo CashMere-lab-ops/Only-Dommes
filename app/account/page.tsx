@@ -104,8 +104,9 @@ export default function MyAccountPage() {
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
             <div className="flex flex-col sm:flex-row gap-6 mb-6">
               <div className="flex flex-col items-center gap-3 flex-shrink-0">
-                <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden">
+                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950">
                   {profile?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
                     initial
@@ -286,7 +287,7 @@ export default function MyAccountPage() {
                     <span className="text-zinc-400">→</span>
                   </Link>
                   <Link
-                    href="/wallet"
+                    href="/wallet?from=account"
                     className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
                   >
                     <div className="flex items-center gap-3">
@@ -333,3 +334,4 @@ export default function MyAccountPage() {
     </AuthGuard>
   );
 }
+
