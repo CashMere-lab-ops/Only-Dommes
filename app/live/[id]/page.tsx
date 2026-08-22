@@ -262,6 +262,7 @@ export default function LiveWatchPage() {
   >([{ label: '', amount: '' }]);
   const [savingGoal, setSavingGoal] = useState(false);
   const [announceBanner, setAnnounceBanner] = useState<string | null>(null);
+  const [goalMeterHidden, setGoalMeterHidden] = useState(false);
   const [announceExiting, setAnnounceExiting] = useState(false);
   const [showAnnounceEditor, setShowAnnounceEditor] = useState(false);
   const [announceDraft, setAnnounceDraft] = useState('');
@@ -2819,151 +2820,104 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Tip goal — premium progress + milestones */}
+            {/* Tip goal — vertical left meter (LoyalFans-style), tap to hide/show */}
             {!ended && (goal > 0 || raised > 0 || isOwner) && (() => {
               const pct =
                 goal > 0 ? Math.min(100, (raised / goal) * 100) : 0;
-              const r = 18;
-              const c = 2 * Math.PI * r;
-              const offset = c - (pct / 100) * c;
+              const levels = Array.isArray(stream?.tip_goals)
+                ? stream!.tip_goals!
+                : [];
+              const activeLabel = (() => {
+                if (!levels.length) return goal > 0 ? 'Goal' : 'Tips';
+                const active =
+                  levels.find((l) => raised < Number(l.amount)) ||
+                  levels[levels.length - 1];
+                return active?.label || 'Goal';
+              })();
               return (
-                <div
-                  className={`absolute left-3 z-20 max-w-[52%] sm:max-w-[240px] transition-[top] duration-300 ease-out ${
-                    announceBanner
-                      ? 'top-[8.5rem] sm:top-20'
-                      : 'top-[3.75rem] sm:top-20'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    disabled={!isOwner}
-                    onClick={() => {
-                      if (isOwner) openGoalEditor();
-                    }}
-                    className={`w-full text-left bg-black/60 backdrop-blur-md rounded-2xl px-2.5 py-2 sm:px-3 sm:py-2.5 border border-white/12 shadow-lg ${
-                      isOwner
-                        ? 'pointer-events-auto hover:border-pink-400/40 transition cursor-pointer'
-                        : 'pointer-events-none'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      {goal > 0 && (
-                        <div className="relative w-11 h-11 sm:w-12 sm:h-12 flex-shrink-0">
-                          <svg
-                            className="w-full h-full -rotate-90"
-                            viewBox="0 0 44 44"
-                          >
-                            <circle
-                              cx="22"
-                              cy="22"
-                              r={r}
-                              fill="none"
-                              stroke="rgba(63,63,70,0.9)"
-                              strokeWidth="4"
-                            />
-                            <circle
-                              cx="22"
-                              cy="22"
-                              r={r}
-                              fill="none"
-                              stroke="url(#tipGoalGrad)"
-                              strokeWidth="4"
-                              strokeLinecap="round"
-                              strokeDasharray={c}
-                              strokeDashoffset={offset}
-                              className="transition-all duration-700 ease-out"
-                            />
-                            <defs>
-                              <linearGradient
-                                id="tipGoalGrad"
-                                x1="0%"
-                                y1="0%"
-                                x2="100%"
-                                y2="0%"
-                              >
-                                <stop offset="0%" stopColor="#db2777" />
-                                <stop offset="100%" stopColor="#f43f5e" />
-                              </linearGradient>
-                            </defs>
-                          </svg>
-                          <span className="absolute inset-0 flex items-center justify-center text-[10px] sm:text-[11px] font-bold tabular-nums text-white">
-                            {Math.round(pct)}%
-                          </span>
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] sm:text-[11px] text-zinc-300 font-medium truncate">
-                          {(() => {
-                            const levels = Array.isArray(stream?.tip_goals)
-                              ? stream!.tip_goals!
-                              : [];
-                            if (!levels.length) {
-                              return goal > 0 ? 'Tip goal' : 'Tips this live';
-                            }
-                            const active =
-                              levels.find(
-                                (l) => raised < Number(l.amount)
-                              ) || levels[levels.length - 1];
-                            const idx = levels.findIndex(
-                              (l) => l.amount === active.amount
-                            );
-                            return `${active.label || 'Goal'}${
-                              levels.length > 1
-                                ? ` · ${idx + 1}/${levels.length}`
-                                : ''
-                            }`;
-                          })()}
-                        </p>
-                        <p className="text-sm sm:text-base font-bold tabular-nums text-white leading-tight">
-                          {goal > 0
-                            ? `£${raised.toFixed(0)}`
-                            : `£${raised.toFixed(2)}`}
-                          {goal > 0 && (
-                            <span className="text-zinc-400 font-semibold text-xs sm:text-sm">
-                              {' '}
-                              / £{goal.toFixed(0)}
+                <div className="absolute left-1.5 sm:left-3 top-[26%] sm:top-[22%] z-20 pointer-events-auto flex flex-col items-center gap-1.5">
+                  {goalMeterHidden ? (
+                    <button
+                      type="button"
+                      onClick={() => setGoalMeterHidden(false)}
+                      className="w-8 h-14 sm:w-9 sm:h-16 rounded-full bg-black/55 backdrop-blur-md border border-pink-500/40 flex flex-col items-center justify-center shadow-lg active:scale-95 transition"
+                      title="Show tip goal"
+                    >
+                      <span className="text-[10px] font-bold text-pink-300 tabular-nums leading-none">
+                        {goal > 0 ? `${Math.round(pct)}%` : '£'}
+                      </span>
+                      <span className="text-[8px] text-zinc-400 mt-0.5">show</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setGoalMeterHidden(true)}
+                        className="group relative flex flex-col items-center active:scale-[0.98] transition"
+                        title="Tap to hide"
+                      >
+                        {/* Vertical meter */}
+                        <div className="relative h-[9.5rem] sm:h-[11rem] w-9 sm:w-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 overflow-hidden shadow-xl flex flex-col justify-end">
+                          <div
+                            className="w-full bg-gradient-to-t from-pink-700 via-pink-500 to-rose-400 transition-all duration-700 ease-out rounded-full"
+                            style={{
+                              height: goal > 0 ? `${Math.max(pct, pct > 0 ? 6 : 0)}%` : '0%',
+                            }}
+                          />
+                          {/* Top labels inside bar */}
+                          <div className="absolute inset-x-0 top-1.5 flex flex-col items-center pointer-events-none px-0.5">
+                            <span className="text-[9px] sm:text-[10px] font-bold text-white tabular-nums drop-shadow">
+                              {goal > 0 ? `${Math.round(pct)}%` : '—'}
                             </span>
+                          </div>
+                          {/* Shine */}
+                          <div className="absolute inset-y-0 left-0 w-[35%] bg-white/10 pointer-events-none rounded-full" />
+                        </div>
+                        {/* Amount under meter */}
+                        <div className="mt-1.5 max-w-[4.5rem] text-center">
+                          <p className="text-[9px] sm:text-[10px] font-semibold text-white/95 tabular-nums leading-tight drop-shadow-md">
+                            {goal > 0
+                              ? `£${raised.toFixed(0)}`
+                              : `£${raised.toFixed(0)}`}
+                          </p>
+                          {goal > 0 && (
+                            <p className="text-[8px] sm:text-[9px] text-zinc-300/90 tabular-nums leading-tight">
+                              / £{goal.toFixed(0)}
+                            </p>
                           )}
-                        </p>
-                        {goal > 0 && (
-                          <div className="mt-1.5 flex items-center gap-1">
-                            {Array.isArray(stream?.tip_goals) &&
-                            stream!.tip_goals!.length > 1
-                              ? stream!.tip_goals!.map((lvl, i) => {
-                                  const done = raised >= Number(lvl.amount);
-                                  return (
-                                    <div
-                                      key={i}
-                                      className={`h-1 flex-1 rounded-full transition-colors duration-500 ${
-                                        done
-                                          ? 'bg-gradient-to-r from-pink-500 to-rose-400'
-                                          : 'bg-zinc-700'
-                                      }`}
-                                      title={lvl.label}
-                                    />
-                                  );
-                                })
-                              : [25, 50, 75, 100].map((m) => (
-                                  <div
-                                    key={m}
-                                    className={`h-1 flex-1 rounded-full transition-colors duration-500 ${
-                                      pct >= m
-                                        ? 'bg-gradient-to-r from-pink-500 to-rose-400'
-                                        : 'bg-zinc-700'
-                                    }`}
-                                    title={`${m}%`}
-                                  />
-                                ))}
+                          {levels.length > 0 && (
+                            <p className="text-[8px] text-pink-200/90 truncate mt-0.5 max-w-[4.25rem]">
+                              {activeLabel}
+                            </p>
+                          )}
+                        </div>
+                        {/* Multi-level ticks */}
+                        {levels.length > 1 && (
+                          <div className="flex gap-0.5 mt-1">
+                            {levels.map((lvl, i) => (
+                              <div
+                                key={i}
+                                className={`h-1 w-1.5 rounded-full ${
+                                  raised >= Number(lvl.amount)
+                                    ? 'bg-pink-400'
+                                    : 'bg-zinc-600'
+                                }`}
+                              />
+                            ))}
                           </div>
                         )}
-                        {isOwner && (
-                          <p className="text-[9px] text-zinc-500 mt-1">
-                            Tap to edit goals
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </button>
+                      </button>
+                      {isOwner && (
+                        <button
+                          type="button"
+                          onClick={() => openGoalEditor()}
+                          className="text-[9px] font-semibold text-zinc-300 hover:text-pink-300 bg-black/50 border border-white/10 rounded-full px-2 py-0.5 backdrop-blur"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               );
             })()}
@@ -3208,26 +3162,15 @@ export default function LiveWatchPage() {
                     const tip = parseTipMessage(m.content);
                     if (tip) {
                       return (
-                        <div key={m.id} className="flex items-start gap-2 lg:max-w-[90%]">
-                          <div className="max-w-[92%] lg:max-w-full rounded-2xl px-3 py-2 bg-gradient-to-r from-pink-600/90 to-rose-600/85 border border-pink-300/30 shadow-lg shadow-pink-900/30 backdrop-blur-md">
-                            <div className="flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                                <DollarSign size={14} className="text-white" />
-                              </span>
-                              <div className="min-w-0">
-                                <p className="text-xs font-semibold text-pink-50 truncate">
-                                  {displayName(m)}
-                                  {isCreatorMsg(m) && (
-                                    <span className="ml-1 text-[9px] font-bold uppercase tracking-wide bg-white/20 px-1.5 py-0.5 rounded-md">
-                                      Host
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="text-sm font-bold text-white tabular-nums">
-                                  tipped £{tip.amount.toFixed(2)}
-                                </p>
-                              </div>
-                            </div>
+                        <div key={m.id} className="flex items-center">
+                          <div className="inline-flex items-center gap-1 max-w-[90%] rounded-full px-2 py-0.5 bg-pink-600/85 border border-pink-400/25 shadow-sm backdrop-blur-sm">
+                            <DollarSign size={11} className="text-white/95 flex-shrink-0" />
+                            <span className="text-[11px] font-semibold text-pink-50 truncate max-w-[5.5rem]">
+                              {displayName(m)}
+                            </span>
+                            <span className="text-[11px] font-bold text-white tabular-nums flex-shrink-0">
+                              £{tip.amount.toFixed(2)}
+                            </span>
                           </div>
                         </div>
                       );
