@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 
 async function notifyFollowersLive(
-  admin: ReturnType<typeof createClient>,
+  admin: any,
   creatorId: string,
   creatorName: string,
   streamId: string,
@@ -231,6 +231,7 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 
 
