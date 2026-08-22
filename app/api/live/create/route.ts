@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Creator starts an in-platform live (LiveKit room).
- * Thumbnail is required for new streams (stronger Live + homepage cards).
+ * Thumbnail required. Notifies followers once per new stream.
  */
 export async function POST(request: Request) {
   try {
@@ -62,7 +62,9 @@ export async function POST(request: Request) {
         ? body.thumbnail_url.trim().slice(0, 500)
         : null;
 
-    // Resume open stream — require a thumb if none is set yet
+    const creatorName =
+      profile.display_name || profile.username || 'A creator';
+
     if (existing) {
       const nextThumb = thumbnailUrl || existing.thumbnail_url || null;
       if (!nextThumb) {
@@ -94,7 +96,6 @@ export async function POST(request: Request) {
       });
     }
 
-    // New stream — cover is required (no avatar fallback)
     if (!thumbnailUrl) {
       return NextResponse.json(
         {
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
         tip_raised_gbp: 0,
         viewer_count: 0,
         thumbnail_url: thumbnailUrl,
+        started_at: new Date().toISOString(),
       })
       .select('*')
       .single();
@@ -136,6 +138,48 @@ export async function POST(request: Request) {
       })
       .eq('id', row.id);
 
+    try {
+      const { data: followers } = await admin
+        .from('follows')
+        .select('follower_id')
+        .eq('following_id', user.id)
+        .limit(800);
+
+      const ids = (followers || [])
+        .map((f: any) => f.follower_id)
+        .filter((id: string) => id && id !== user.id);
+
+      if (ids.length) {
+        const { data: prefsRows } = await admin
+          .from('profiles')
+          .select('id, notification_prefs')
+          .in('id', ids);
+
+        const allow = new Set<string>();
+        for (const id of ids) {
+          const p = prefsRows?.find((r: any) => r.id === id);
+          const livePref = (p as any)?.notification_prefs?.live;
+          if (livePref?.enabled === false) continue;
+          allow.add(id);
+        }
+
+        const rows = [...allow].slice(0, 500).map((followerId) => ({
+          user_id: followerId,
+          actor_id: user.id,
+          type: 'live',
+          title: `${creatorName} is live`,
+          body: title,
+          link: `/live/${row.id}`,
+        }));
+
+        for (let i = 0; i < rows.length; i += 100) {
+          await admin.from('notifications').insert(rows.slice(i, i + 100));
+        }
+      }
+    } catch (notifyErr) {
+      console.error('live follower notify', notifyErr);
+    }
+
     return NextResponse.json({
       ok: true,
       resumed: false,
@@ -150,5 +194,6 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 

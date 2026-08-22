@@ -9,6 +9,7 @@ const DEFAULT_PREFS: any = {
   like: { enabled: true, sound: 'soft' },
   comment: { enabled: true, sound: 'soft' },
   unlock: { enabled: true, sound: 'money' },
+  live: { enabled: true, sound: 'alert' },
 };
 
 export function playNotificationSound(sound: string) {
