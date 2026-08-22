@@ -290,18 +290,6 @@ export default function LiveWatchPage() {
     name: string;
     isShowcase?: boolean;
   } | null>(null);
-  // Read tip notes aloud when center alert shows (unless muted in Live settings)
-  useEffect(() => {
-    if (!tipAlert || !tipVoiceEnabled) return;
-    speakTipNote(tipAlert.name, tipAlert.amount, tipAlert.note);
-    return () => {
-      try {
-        window.speechSynthesis?.cancel();
-      } catch {
-        /* ignore */
-      }
-    };
-  }, [tipAlert, tipVoiceEnabled]);
 
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
@@ -317,6 +305,19 @@ export default function LiveWatchPage() {
   const [hideEmojis, setHideEmojis] = useState(false);
   /** Read tip notes aloud (Kick-style) — this device only */
   const [tipVoiceEnabled, setTipVoiceEnabled] = useState(true);
+  // Read tip notes aloud when center alert shows (unless muted in Live settings)
+  useEffect(() => {
+    if (!tipAlert || !tipVoiceEnabled) return;
+    speakTipNote(tipAlert.name, tipAlert.amount, tipAlert.note);
+    return () => {
+      try {
+        window.speechSynthesis?.cancel();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [tipAlert, tipVoiceEnabled]);
+
   const [compactChat, setCompactChat] = useState(false);
   const [hideTopTipper, setHideTopTipper] = useState(false);
 
