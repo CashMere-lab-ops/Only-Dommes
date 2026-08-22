@@ -135,6 +135,30 @@ function playPrivateChime() {
   }
 }
 
+
+/** Speak tip note aloud (browser TTS). Safe no-op if unsupported / muted. */
+function speakTipNote(name: string, amount: number, note: string) {
+  try {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const text = `${name} tipped ${amount.toFixed(2)} pounds. ${note}`;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    u.pitch = 1;
+    u.volume = 1;
+    // Prefer a clear English voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const en =
+      voices.find((v) => /en-GB/i.test(v.lang) && /female|samantha|google/i.test(v.name)) ||
+      voices.find((v) => /en-GB/i.test(v.lang)) ||
+      voices.find((v) => /^en/i.test(v.lang));
+    if (en) u.voice = en;
+    window.speechSynthesis.speak(u);
+  } catch {
+    /* ignore */
+  }
+}
+
 function playTipChime() {
   try {
     const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -266,6 +290,19 @@ export default function LiveWatchPage() {
     name: string;
     isShowcase?: boolean;
   } | null>(null);
+  // Read tip notes aloud when center alert shows (unless muted in Live settings)
+  useEffect(() => {
+    if (!tipAlert || !tipVoiceEnabled) return;
+    speakTipNote(tipAlert.name, tipAlert.amount, tipAlert.note);
+    return () => {
+      try {
+        window.speechSynthesis?.cancel();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [tipAlert, tipVoiceEnabled]);
+
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
   const [goalDraftLevels, setGoalDraftLevels] = useState<
@@ -278,6 +315,8 @@ export default function LiveWatchPage() {
   // Personal live view prefs (this device only)
   const [chatTextSize, setChatTextSize] = useState<'s' | 'm' | 'l'>('m');
   const [hideEmojis, setHideEmojis] = useState(false);
+  /** Read tip notes aloud (Kick-style) — this device only */
+  const [tipVoiceEnabled, setTipVoiceEnabled] = useState(true);
   const [compactChat, setCompactChat] = useState(false);
   const [hideTopTipper, setHideTopTipper] = useState(false);
 
@@ -293,6 +332,7 @@ export default function LiveWatchPage() {
       if (typeof p.compactChat === 'boolean') setCompactChat(p.compactChat);
       if (typeof p.hideTopTipper === 'boolean') setHideTopTipper(p.hideTopTipper);
       if (typeof p.goalMeterHidden === 'boolean') setGoalMeterHidden(p.goalMeterHidden);
+      if (typeof p.tipVoiceEnabled === 'boolean') setTipVoiceEnabled(p.tipVoiceEnabled);
     } catch {
       /* ignore */
     }
@@ -308,12 +348,13 @@ export default function LiveWatchPage() {
           compactChat,
           hideTopTipper,
           goalMeterHidden,
+          tipVoiceEnabled,
         })
       );
     } catch {
       /* ignore */
     }
-  }, [chatTextSize, hideEmojis, compactChat, hideTopTipper, goalMeterHidden]);
+  }, [chatTextSize, hideEmojis, compactChat, hideTopTipper, goalMeterHidden, tipVoiceEnabled]);
   const [announceExiting, setAnnounceExiting] = useState(false);
   const [showAnnounceEditor, setShowAnnounceEditor] = useState(false);
   const [announceDraft, setAnnounceDraft] = useState('');
@@ -3894,6 +3935,38 @@ export default function LiveWatchPage() {
                     }`}
                   >
                     {!hideEmojis ? 'On' : 'Off'}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-zinc-800">
+                  <div>
+                    <p className="text-sm font-medium">Read tip notes aloud</p>
+                    <p className="text-xs text-zinc-500">
+                      Voice reads name, amount &amp; note (this device)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTipVoiceEnabled((v) => {
+                        const next = !v;
+                        if (!next) {
+                          try {
+                            window.speechSynthesis?.cancel();
+                          } catch {
+                            /* ignore */
+                          }
+                        }
+                        return next;
+                      });
+                    }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      tipVoiceEnabled
+                        ? 'bg-pink-600/20 border-pink-500 text-pink-300'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    {tipVoiceEnabled ? 'On' : 'Off'}
                   </button>
                 </div>
 
