@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Any logged-in user can poll stream status (bypasses RLS).
- * Returns the same end summary for host + viewers (shared duration).
+ * Returns end summary + top 3 tippers for this live.
  */
 export async function GET(request: Request) {
   try {
@@ -48,25 +48,58 @@ export async function GET(request: Request) {
 
     let my_tip_gbp = 0;
     let tipper_count = 0;
+    let top_tippers: {
+      user_id: string;
+      total_gbp: number;
+      display_name: string | null;
+      username: string | null;
+      avatar_url: string | null;
+      rank: number;
+    }[] = [];
+    let my_rank: number | null = null;
+
     try {
-      const { data: mine } = await admin
+      const { data: allTips } = await admin
         .from('live_stream_tips')
-        .select('total_gbp')
+        .select('user_id, total_gbp')
         .eq('stream_id', streamId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .order('total_gbp', { ascending: false });
+
+      const tips = allTips || [];
+      tipper_count = tips.length;
+
+      const mine = tips.find((t) => t.user_id === user.id);
       my_tip_gbp = Number(mine?.total_gbp || 0);
 
-      const { count } = await admin
-        .from('live_stream_tips')
-        .select('*', { count: 'exact', head: true })
-        .eq('stream_id', streamId);
-      tipper_count = count || 0;
+      if (mine) {
+        const idx = tips.findIndex((t) => t.user_id === user.id);
+        my_rank = idx >= 0 ? idx + 1 : null;
+      }
+
+      const top3 = tips.slice(0, 3);
+      if (top3.length) {
+        const ids = top3.map((t) => t.user_id);
+        const { data: profiles } = await admin
+          .from('profiles')
+          .select('id, display_name, username, avatar_url')
+          .in('id', ids);
+        const byId = new Map((profiles || []).map((p) => [p.id, p]));
+        top_tippers = top3.map((t, i) => {
+          const p = byId.get(t.user_id);
+          return {
+            user_id: t.user_id,
+            total_gbp: Number(t.total_gbp || 0),
+            display_name: p?.display_name || null,
+            username: p?.username || null,
+            avatar_url: p?.avatar_url || null,
+            rank: i + 1,
+          };
+        });
+      }
     } catch {
-      /* ignore */
+      /* ignore tip board errors */
     }
 
-    // Prefer stored duration (set when host ends) so host + viewers match
     let duration_seconds = Number((stream as any).duration_seconds || 0);
     if (!duration_seconds || duration_seconds <= 0) {
       const startSrc = stream.started_at || stream.created_at;
@@ -99,6 +132,8 @@ export async function GET(request: Request) {
       showcase_avatar_url: stream.showcase_avatar_url,
       my_tip_gbp,
       is_host,
+      top_tippers,
+      my_rank,
     };
 
     return NextResponse.json({
@@ -108,8 +143,9 @@ export async function GET(request: Request) {
       my_tip_gbp,
       tipper_count,
       duration_seconds,
+      top_tippers,
+      my_rank,
       summary: stream.status === 'ended' ? summaryBase : null,
-      // Always expose duration so client can use it even mid-stream / race
       preview_summary: summaryBase,
     });
   } catch (e: any) {
@@ -120,4 +156,3 @@ export async function GET(request: Request) {
     );
   }
 }
-
