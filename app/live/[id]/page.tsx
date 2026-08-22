@@ -185,6 +185,38 @@ function playGoalChime() {
   }
 }
 
+function playAnnounceChime() {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    // Soft two-note “attention” chime
+    [[440, 0, 0.12], [659.25, 0.12, 0.22]].forEach(([freq, delay, dur]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq as number;
+      g.gain.setValueAtTime(0.0001, now + (delay as number));
+      g.gain.exponentialRampToValueAtTime(
+        0.07,
+        now + (delay as number) + 0.02
+      );
+      g.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + (delay as number) + (dur as number)
+      );
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(now + (delay as number));
+      o.stop(now + (delay as number) + (dur as number) + 0.05);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 800);
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function LiveWatchPage() {
   const params = useParams();
   const router = useRouter();
@@ -695,10 +727,11 @@ export default function LiveWatchPage() {
             if (clean) {
               if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
               setAnnounceBanner(clean);
+              playAnnounceChime();
               announceTimerRef.current = setTimeout(() => {
                 setAnnounceBanner(null);
                 announceTimerRef.current = null;
-              }, 10000);
+              }, 9000);
             }
           }
           if (msg?.type === 'tip_goal') {
@@ -1661,10 +1694,11 @@ export default function LiveWatchPage() {
     if (!clean) return;
     if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
     setAnnounceBanner(clean);
+    playAnnounceChime();
     announceTimerRef.current = setTimeout(() => {
       setAnnounceBanner(null);
       announceTimerRef.current = null;
-    }, 10000);
+    }, 9000);
   };
 
   const sendAnnounce = async () => {
@@ -2907,16 +2941,24 @@ export default function LiveWatchPage() {
             )}
 
             
-            {/* Host announce banner — visible to everyone */}
+            {/* Host announce banner — below goal on mobile, polished */}
             {announceBanner && !ended && (
-              <div className="absolute top-[6.5rem] sm:top-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-[min(92%,420px)] px-2">
-                <div className="bg-gradient-to-r from-pink-600/95 to-rose-600/95 backdrop-blur-md border border-pink-300/30 rounded-2xl px-4 py-3 shadow-2xl shadow-pink-900/40 text-center animate-[fadeIn_0.25s_ease-out]">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-pink-100/90 mb-0.5">
-                    Announcement
-                  </p>
-                  <p className="text-sm sm:text-base font-semibold text-white leading-snug">
-                    {announceBanner}
-                  </p>
+              <div
+                className="absolute z-30 pointer-events-none left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[min(90%,400px)]
+                  top-[7.75rem] sm:top-[5.75rem]
+                  flex justify-center"
+                style={{ animation: 'wod-announce-in 0.45s cubic-bezier(0.22,1,0.36,1) both' }}
+              >
+                <div className="w-full sm:w-auto max-w-full rounded-2xl overflow-hidden shadow-[0_12px_40px_rgba(190,24,93,0.45)] border border-white/20">
+                  <div className="bg-gradient-to-br from-pink-500 via-pink-600 to-rose-600 px-3.5 py-2.5 sm:px-5 sm:py-3 text-center relative">
+                    <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_0%,rgba(255,255,255,0.18)_45%,transparent_55%)] opacity-60 pointer-events-none" />
+                    <p className="relative text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.14em] text-pink-100/95 mb-0.5">
+                      Announcement
+                    </p>
+                    <p className="relative text-[13px] sm:text-sm font-semibold text-white leading-snug break-words">
+                      {announceBanner}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
