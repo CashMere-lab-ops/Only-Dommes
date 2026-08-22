@@ -259,6 +259,13 @@ export default function LiveWatchPage() {
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
+  /** Center-screen tip+note alert (Twitch/Kick style) — only when note present */
+  const [tipAlert, setTipAlert] = useState<{
+    amount: number;
+    note: string;
+    name: string;
+    isShowcase?: boolean;
+  } | null>(null);
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
   const [goalDraftLevels, setGoalDraftLevels] = useState<
@@ -1270,6 +1277,47 @@ export default function LiveWatchPage() {
               },
             ].slice(-50);
           });
+
+          // Tip + note → center alert for ALL viewers (Twitch/Kick style)
+          const tipMatch = String(row.content || '').match(
+            /^__TIP__:([0-9]+(?:\.[0-9]+)?)\|(.{1,50})$/
+          );
+          if (tipMatch) {
+            const amount = Number(tipMatch[1]);
+            const note = tipMatch[2].trim();
+            if (Number.isFinite(amount) && note) {
+              // Resolve name quickly
+              let tipName = 'A fan';
+              try {
+                const { data: profile } = await supabase
+                  .from('profiles')
+                  .select('username, display_name, avatar_url')
+                  .eq('id', row.user_id)
+                  .single();
+                if (profile) {
+                  tipName =
+                    profile.display_name ||
+                    (profile.username ? `@${profile.username}` : 'A fan');
+                  setChatMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === row.id ? { ...m, profile } : m
+                    )
+                  );
+                }
+              } catch {
+                /* ignore */
+              }
+              setTipAlert({
+                amount,
+                note,
+                name: tipName,
+              });
+              playTipChime();
+              setTimeout(() => setTipAlert(null), 4500);
+              return;
+            }
+          }
+
           // Enrich profile in background
           const { data: profile } = await supabase
             .from('profiles')
@@ -2252,14 +2300,27 @@ export default function LiveWatchPage() {
         typeof data.message === 'string' && data.message.trim()
           ? data.message.trim()
           : note;
-      const flash = data.is_showcase
-        ? `£${Number(data.amount).toFixed(2)} · You're top tipper 👑`
-        : noteFlash
-          ? `£${Number(data.amount).toFixed(2)} · ${noteFlash}`
+      const tipperName =
+        (typeof data.from_name === 'string' && data.from_name) ||
+        'A fan';
+      if (noteFlash) {
+        // Premium center overlay only when there is a note
+        setTipAlert({
+          amount: Number(data.amount),
+          note: noteFlash,
+          name: tipperName,
+          isShowcase: !!data.is_showcase,
+        });
+        playTipChime();
+        setTimeout(() => setTipAlert(null), 4500);
+      } else {
+        const flash = data.is_showcase
+          ? `£${Number(data.amount).toFixed(2)} · You're top tipper 👑`
           : `£${Number(data.amount).toFixed(2)} tipped`;
-      setTipFlash(flash);
-      playTipChime();
-      setTimeout(() => setTipFlash(null), 3200);
+        setTipFlash(flash);
+        playTipChime();
+        setTimeout(() => setTipFlash(null), 2800);
+      }
       setShowTip(false);
       setCustomTip('');
       setTipNote('');
@@ -3066,10 +3127,52 @@ export default function LiveWatchPage() {
                 </div>
               )}
 
-            {tipFlash && (
+            {/* Simple tip flash (no note) */}
+            {tipFlash && !tipAlert && (
               <div className="absolute top-[28%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
                 <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-bold px-6 py-3.5 rounded-2xl shadow-2xl shadow-pink-900/50 border border-white/20 animate-in zoom-in-95 fade-in duration-300">
                   {tipFlash}
+                </div>
+              </div>
+            )}
+
+            {/* Tip + note — center screen (Twitch / Kick style) */}
+            {tipAlert && (
+              <div className="absolute inset-0 z-[45] flex items-center justify-center pointer-events-none px-4">
+                <div
+                  className="w-full max-w-[min(92vw,380px)] relative"
+                  style={{
+                    animation:
+                      'wod-tip-alert-in 0.5s cubic-bezier(0.22,1,0.36,1) both',
+                  }}
+                >
+                  {/* Soft glow behind card */}
+                  <div className="absolute -inset-3 rounded-[2rem] bg-pink-600/25 blur-2xl" />
+                  <div className="relative overflow-hidden rounded-3xl border border-white/20 shadow-[0_20px_60px_rgba(190,24,93,0.55)]">
+                    <div className="bg-gradient-to-br from-pink-500 via-pink-600 to-rose-700 px-5 pt-5 pb-4 text-center relative">
+                      {/* Shine */}
+                      <div className="absolute inset-0 bg-[linear-gradient(115deg,transparent_0%,rgba(255,255,255,0.2)_42%,transparent_58%)] pointer-events-none" />
+                      <p className="relative text-[10px] font-bold uppercase tracking-[0.18em] text-pink-100/90 mb-2">
+                        {tipAlert.isShowcase ? 'Top tipper' : 'Tip'}
+                      </p>
+                      <p className="relative text-4xl sm:text-5xl font-black tabular-nums text-white drop-shadow-md leading-none">
+                        £{tipAlert.amount.toFixed(2)}
+                      </p>
+                      <p className="relative mt-2.5 text-sm font-semibold text-white/95 truncate">
+                        {tipAlert.name}
+                        {tipAlert.isShowcase && (
+                          <span className="ml-1.5" aria-hidden>
+                            👑
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="bg-zinc-950/95 backdrop-blur-md px-5 py-4 border-t border-white/10">
+                      <p className="text-center text-[15px] sm:text-base font-medium text-white leading-snug break-words">
+                        “{tipAlert.note}”
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
