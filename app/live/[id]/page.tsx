@@ -275,6 +275,18 @@ export default function LiveWatchPage() {
   const [hideEmojis, setHideEmojis] = useState(false);
   const [compactChat, setCompactChat] = useState(false);
   const [hideTopTipper, setHideTopTipper] = useState(false);
+  /** Live mini leaderboard (this stream only) */
+  type LiveTipper = {
+    user_id: string;
+    total_gbp: number;
+    display_name: string | null;
+    username: string | null;
+    avatar_url: string | null;
+    rank: number;
+  };
+  const [topTippers, setTopTippers] = useState<LiveTipper[]>([]);
+  const [myTipRank, setMyTipRank] = useState<number | null>(null);
+  const [leaderboardHidden, setLeaderboardHidden] = useState(false);
 
   useEffect(() => {
     try {
@@ -288,6 +300,7 @@ export default function LiveWatchPage() {
       if (typeof p.compactChat === 'boolean') setCompactChat(p.compactChat);
       if (typeof p.hideTopTipper === 'boolean') setHideTopTipper(p.hideTopTipper);
       if (typeof p.goalMeterHidden === 'boolean') setGoalMeterHidden(p.goalMeterHidden);
+      if (typeof p.leaderboardHidden === 'boolean') setLeaderboardHidden(p.leaderboardHidden);
     } catch {
       /* ignore */
     }
@@ -303,12 +316,13 @@ export default function LiveWatchPage() {
           compactChat,
           hideTopTipper,
           goalMeterHidden,
+          leaderboardHidden,
         })
       );
     } catch {
       /* ignore */
     }
-  }, [chatTextSize, hideEmojis, compactChat, hideTopTipper, goalMeterHidden]);
+  }, [chatTextSize, hideEmojis, compactChat, hideTopTipper, goalMeterHidden, leaderboardHidden]);
   const [announceExiting, setAnnounceExiting] = useState(false);
   const [showAnnounceEditor, setShowAnnounceEditor] = useState(false);
   const [announceDraft, setAnnounceDraft] = useState('');
@@ -1155,6 +1169,17 @@ export default function LiveWatchPage() {
           if (data.stream.slow_mode_seconds != null) {
             setSlowModeSeconds(Number(data.stream.slow_mode_seconds || 0));
           }
+        }
+        if (Array.isArray(data.top_tippers)) {
+          setTopTippers(data.top_tippers);
+        }
+        if (data.my_rank != null) {
+          setMyTipRank(Number(data.my_rank));
+        } else if (data.my_rank === null) {
+          setMyTipRank(null);
+        }
+        if (typeof data.my_tip_gbp === 'number') {
+          setMyTipTotal(Number(data.my_tip_gbp));
         }
         if (data.status === 'ended' || data.stream?.status === 'ended') {
           void finalizeRef.current(data.stream);
@@ -2268,6 +2293,19 @@ export default function LiveWatchPage() {
           Math.round((prev + Number(data.amount || 0)) * 100) / 100
         );
       }
+      // Refresh mini leaderboard after tip
+      try {
+        const boardRes = await fetch(`/api/live/status?id=${stream.id}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+        });
+        const board = await boardRes.json().catch(() => ({}));
+        if (Array.isArray(board.top_tippers)) setTopTippers(board.top_tippers);
+        if (board.my_rank != null) setMyTipRank(Number(board.my_rank));
+        else if (board.my_rank === null) setMyTipRank(null);
+      } catch {
+        /* ignore */
+      }
       const newRaised = Number(data.tip_raised_gbp || 0);
       const goalAmt = Number(data.tip_goal_gbp || stream.tip_goal_gbp || 0);
       if (goalAmt > 0) {
@@ -3022,45 +3060,134 @@ export default function LiveWatchPage() {
               );
             })()}
 
-            {/* Top tipper — compact on mobile */}
-            {!ended &&
-              !hideTopTipper &&
-              !showMore &&
-              stream?.showcase_user_id &&
-              Number(stream.showcase_amount_gbp || 0) > 0 && (
-                <div className="absolute top-[3.75rem] sm:top-20 right-3 z-20 pointer-events-none max-w-[46%] sm:max-w-[180px]">
-                  <div className="bg-gradient-to-br from-pink-600/95 to-rose-700/95 backdrop-blur border border-pink-400/30 rounded-xl sm:rounded-2xl px-2 py-1.5 sm:px-3 sm:py-2.5 shadow-lg">
-                    <div className="flex items-center gap-1 mb-0.5 sm:mb-1.5">
-                      <Crown size={10} className="text-yellow-300 flex-shrink-0" />
-                      <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide text-pink-100">
-                        Top tipper
+            {/* Mini leaderboard — Top 3 this live · tap to hide/show */}
+            {!ended && !hideTopTipper && !showMore && (topTippers.length > 0 || Number(stream?.tip_raised_gbp || 0) > 0) && (
+              <div className="absolute top-[3.75rem] sm:top-20 right-2.5 sm:right-3 z-20 pointer-events-auto max-w-[48%] sm:max-w-[200px]">
+                {leaderboardHidden ? (
+                  <button
+                    type="button"
+                    onClick={() => setLeaderboardHidden(false)}
+                    className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-pink-500/40 rounded-full pl-2 pr-2.5 py-1.5 shadow-lg active:scale-95 transition"
+                    title="Show top tippers"
+                  >
+                    <Crown size={12} className="text-yellow-300 flex-shrink-0" />
+                    <span className="text-[10px] font-bold text-pink-100 uppercase tracking-wide">
+                      Top 3
+                    </span>
+                    {topTippers[0] && (
+                      <span className="text-[10px] font-semibold text-white tabular-nums">
+                        £{Number(topTippers[0].total_gbp).toFixed(0)}
                       </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      {stream.showcase_avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={stream.showcase_avatar_url}
-                          alt=""
-                          className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover border border-white/30 flex-shrink-0"
-                        />
+                    )}
+                  </button>
+                ) : (
+                  <div className="bg-zinc-950/85 backdrop-blur-md border border-white/12 rounded-2xl shadow-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardHidden(true)}
+                      className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 sm:px-3 sm:py-2 border-b border-white/10 active:bg-white/5 transition"
+                      title="Tap to hide"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Crown size={12} className="text-yellow-300 flex-shrink-0" />
+                        <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wide text-zinc-100 truncate">
+                          This live
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-zinc-500 flex-shrink-0">hide</span>
+                    </button>
+                    <div className="px-1.5 py-1.5 sm:px-2 sm:py-2 space-y-1">
+                      {topTippers.length === 0 ? (
+                        <p className="text-[10px] text-zinc-500 px-2 py-1.5 text-center">
+                          Be the first to tip
+                        </p>
                       ) : (
-                        <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-pink-800 flex items-center justify-center text-[10px] sm:text-xs font-bold flex-shrink-0">
-                          {(stream.showcase_name || '?')[0]?.toUpperCase()}
+                        topTippers.map((t) => {
+                          const name =
+                            t.display_name || t.username || 'Fan';
+                          const isMe = userId && t.user_id === userId;
+                          const medal =
+                            t.rank === 1
+                              ? 'text-yellow-300'
+                              : t.rank === 2
+                                ? 'text-zinc-300'
+                                : 'text-amber-700';
+                          const rankBg =
+                            t.rank === 1
+                              ? 'bg-gradient-to-r from-pink-600/40 to-rose-600/25 border-pink-500/35'
+                              : isMe
+                                ? 'bg-pink-500/15 border-pink-500/25'
+                                : 'bg-white/[0.04] border-transparent';
+                          return (
+                            <Link
+                              key={t.user_id}
+                              href={t.username ? `/${t.username}` : '#'}
+                              className={`flex items-center gap-1.5 sm:gap-2 rounded-xl px-1.5 py-1 sm:px-2 sm:py-1.5 border ${rankBg} transition hover:bg-white/10`}
+                              onClick={(e) => {
+                                if (!t.username) e.preventDefault();
+                              }}
+                            >
+                              <span
+                                className={`w-4 text-center text-[11px] sm:text-xs font-bold tabular-nums ${medal}`}
+                              >
+                                {t.rank}
+                              </span>
+                              {t.avatar_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={t.avatar_url}
+                                  alt=""
+                                  className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-white/20 flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-zinc-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                                  {name[0]?.toUpperCase()}
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] sm:text-xs font-semibold text-white truncate leading-tight">
+                                  {name}
+                                  {isMe ? (
+                                    <span className="text-pink-300 font-medium"> · you</span>
+                                  ) : null}
+                                </p>
+                              </div>
+                              <span className="text-[11px] sm:text-xs font-bold text-pink-300 tabular-nums flex-shrink-0">
+                                £{Number(t.total_gbp).toFixed(2)}
+                              </span>
+                            </Link>
+                          );
+                        })
+                      )}
+                    </div>
+                    {/* Your rank if not in top 3 */}
+                    {userId &&
+                      !isOwner &&
+                      myTipTotal > 0 &&
+                      myTipRank != null &&
+                      myTipRank > 3 && (
+                        <div className="px-2.5 pb-2 pt-0.5 border-t border-white/10">
+                          <p className="text-[10px] sm:text-[11px] text-zinc-300 text-center">
+                            You’re{' '}
+                            <span className="font-bold text-pink-300">#{myTipRank}</span>
+                            {' · '}
+                            <span className="font-semibold text-white tabular-nums">
+                              £{myTipTotal.toFixed(2)}
+                            </span>
+                          </p>
                         </div>
                       )}
-                      <div className="min-w-0">
-                        <p className="text-xs sm:text-sm font-semibold truncate text-white leading-tight">
-                          {stream.showcase_name || 'Fan'}
-                        </p>
-                        <p className="text-[10px] sm:text-xs text-pink-100/90 font-medium tabular-nums">
-                          £{Number(stream.showcase_amount_gbp).toFixed(2)}
+                    {userId && !isOwner && myTipTotal <= 0 && topTippers.length > 0 && (
+                      <div className="px-2.5 pb-2 pt-0.5 border-t border-white/10">
+                        <p className="text-[10px] text-zinc-500 text-center">
+                          Tip to join the board
                         </p>
                       </div>
-                    </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+            )}
 
             {/* Simple tip flash */}
             {tipFlash && (
