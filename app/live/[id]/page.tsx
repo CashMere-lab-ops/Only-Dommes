@@ -271,6 +271,14 @@ export default function LiveWatchPage() {
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
+  /** Center gift celebration — visible to everyone on the live */
+  const [giftAlert, setGiftAlert] = useState<{
+    emoji: string;
+    label: string;
+    amount: number;
+    fromName: string;
+  } | null>(null);
+  const giftAlertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
@@ -1322,12 +1330,32 @@ export default function LiveWatchPage() {
               )
             );
           }
+
+          // Gift center flash for all viewers (step 2)
+          const giftMatch = String(row.content || '').match(
+            /^__GIFT__:([a-z0-9_]+)\|([0-9]+(?:\.[0-9]+)?)\|([^|]{1,40})\|(.{1,8})$/u
+          );
+          if (giftMatch) {
+            const fromName =
+              profile?.display_name ||
+              (profile?.username ? `@${profile.username}` : 'A fan');
+            if (giftAlertTimer.current) clearTimeout(giftAlertTimer.current);
+            setGiftAlert({
+              emoji: giftMatch[4],
+              label: giftMatch[3],
+              amount: Number(giftMatch[2]),
+              fromName,
+            });
+            playTipChime();
+            giftAlertTimer.current = setTimeout(() => setGiftAlert(null), 3200);
+          }
         }
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
+      if (giftAlertTimer.current) clearTimeout(giftAlertTimer.current);
     };
   }, [id, supabase]);
 
@@ -2418,12 +2446,23 @@ export default function LiveWatchPage() {
       );
       const emoji = data.gift_emoji || gift.emoji;
       const label = data.gift_label || gift.label;
-      const flash = data.is_showcase
-        ? `${emoji} ${label} · You're top tipper 👑`
-        : `${emoji} ${label} · £${Number(data.amount).toFixed(2)}`;
-      setTipFlash(flash);
+      const fromName =
+        myProfile?.display_name ||
+        (myProfile?.username ? `@${myProfile.username}` : 'You');
+      // Local center celebration (realtime chat also notifies other viewers)
+      if (giftAlertTimer.current) clearTimeout(giftAlertTimer.current);
+      setGiftAlert({
+        emoji,
+        label,
+        amount: Number(data.amount),
+        fromName,
+      });
       playTipChime();
-      setTimeout(() => setTipFlash(null), 2800);
+      giftAlertTimer.current = setTimeout(() => setGiftAlert(null), 3200);
+      if (data.is_showcase) {
+        setTipFlash(`You're top tipper 👑`);
+        setTimeout(() => setTipFlash(null), 2800);
+      }
       setShowTip(false);
       setTipSheetTab('tip');
 
@@ -2751,6 +2790,30 @@ export default function LiveWatchPage() {
     <AuthGuard>
       <div className="bg-black text-white flex lg:min-h-screen">
         <style dangerouslySetInnerHTML={{ __html: `
+@keyframes wod-gift-in {
+  from {
+    opacity: 0;
+    transform: scale(0.72) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes wod-gift-bounce {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
 @keyframes wod-float-react {
   0% { transform: translateY(0) scale(0.3); opacity: 0; }
   12% { transform: translateY(-20px) scale(1.15); opacity: 1; }
@@ -3418,10 +3481,52 @@ export default function LiveWatchPage() {
             )}
 
             {/* Simple tip flash */}
-            {tipFlash && (
+            {tipFlash && !giftAlert && (
               <div className="absolute top-[28%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
                 <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-bold px-6 py-3.5 rounded-2xl shadow-2xl shadow-pink-900/50 border border-white/20 animate-in zoom-in-95 fade-in duration-300">
                   {tipFlash}
+                </div>
+              </div>
+            )}
+
+            {/* Gift center celebration (everyone on the live) */}
+            {giftAlert && (
+              <div className="absolute inset-0 z-[35] flex items-center justify-center pointer-events-none px-6">
+                <div
+                  className="relative flex flex-col items-center text-center max-w-[280px] sm:max-w-[320px]"
+                  style={{
+                    animation:
+                      'wod-gift-in 0.45s cubic-bezier(0.22,1,0.36,1) both',
+                  }}
+                >
+                  {/* Soft glow behind card */}
+                  <div className="absolute -inset-8 rounded-full bg-pink-500/25 blur-3xl pointer-events-none" />
+                  <div className="relative rounded-3xl bg-black/75 backdrop-blur-xl border border-white/20 shadow-[0_20px_60px_rgba(190,24,93,0.55)] px-8 py-6 sm:px-10 sm:py-7">
+                    <p
+                      className="text-5xl sm:text-6xl leading-none mb-3 drop-shadow-lg"
+                      style={{
+                        animation:
+                          'wod-gift-bounce 0.7s cubic-bezier(0.34,1.56,0.64,1) both',
+                      }}
+                    >
+                      {giftAlert.emoji}
+                    </p>
+                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.16em] text-pink-200/90 mb-1">
+                      Gift
+                    </p>
+                    <p className="text-lg sm:text-xl font-bold text-white leading-tight">
+                      {giftAlert.label}
+                    </p>
+                    <p className="text-pink-300 font-bold tabular-nums text-base sm:text-lg mt-1">
+                      £{giftAlert.amount.toFixed(2)}
+                    </p>
+                    <p className="text-xs sm:text-sm text-zinc-300 mt-2.5 truncate max-w-[220px]">
+                      from{' '}
+                      <span className="text-white font-semibold">
+                        {giftAlert.fromName}
+                      </span>
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
