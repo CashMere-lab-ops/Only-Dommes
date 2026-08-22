@@ -253,6 +253,7 @@ export default function LiveWatchPage() {
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipAmount, setTipAmount] = useState(5);
+  const [tipNote, setTipNote] = useState('');
   const [creatorMinTip, setCreatorMinTip] = useState(2);
   const [customTip, setCustomTip] = useState('');
   const [tipping, setTipping] = useState(false);
@@ -2186,6 +2187,13 @@ export default function LiveWatchPage() {
       setTipError(`Minimum tip is £${minT.toFixed(2)}`);
       return;
     }
+    // Optional note — max 50 chars, no links
+    let note = tipNote.replace(/\s+/g, ' ').trim().slice(0, 50);
+    if (/https?:\/\/|www\.|\.[a-z]{2,}\//i.test(note)) {
+      setTipError('Tip notes cannot include links');
+      return;
+    }
+    note = note.replace(/[\u0000-\u001F\u007F]/g, '');
     setTipping(true);
     setTipError('');
     try {
@@ -2200,7 +2208,11 @@ export default function LiveWatchPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ stream_id: stream.id, amount }),
+        body: JSON.stringify({
+          stream_id: stream.id,
+          amount,
+          message: note || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -2236,14 +2248,21 @@ export default function LiveWatchPage() {
             }
           : s
       );
+      const noteFlash =
+        typeof data.message === 'string' && data.message.trim()
+          ? data.message.trim()
+          : note;
       const flash = data.is_showcase
         ? `£${Number(data.amount).toFixed(2)} · You're top tipper 👑`
-        : `£${Number(data.amount).toFixed(2)} tipped`;
+        : noteFlash
+          ? `£${Number(data.amount).toFixed(2)} · ${noteFlash}`
+          : `£${Number(data.amount).toFixed(2)} tipped`;
       setTipFlash(flash);
       playTipChime();
       setTimeout(() => setTipFlash(null), 3200);
       setShowTip(false);
       setCustomTip('');
+      setTipNote('');
 
       if (typeof data.user_total === 'number') {
         setMyTipTotal(Number(data.user_total));
@@ -2275,7 +2294,13 @@ export default function LiveWatchPage() {
       prevRaised.current = newRaised;
 
       // Highlighted tip line in chat (parsed as pink pill)
-      const tipLine = `__TIP__:${Number(data.amount).toFixed(2)}`;
+      // Format: __TIP__:12.50 or __TIP__:12.50|optional note
+      const serverNote =
+        typeof data.message === 'string' ? String(data.message).trim() : '';
+      const noteForChat = serverNote || note;
+      const tipLine = noteForChat
+        ? `__TIP__:${Number(data.amount).toFixed(2)}|${noteForChat}`
+        : `__TIP__:${Number(data.amount).toFixed(2)}`;
       try {
         await supabase.from('live_chat_messages').insert({
           stream_id: stream.id,
@@ -2400,15 +2425,20 @@ export default function LiveWatchPage() {
   const isCreatorMsg = (m: ChatMsg) =>
     !!stream && m.user_id === stream.creator_id;
 
-  /** Parse tip chat lines: __TIP__:12.50 or legacy "tipped £12.50" */
+  /** Parse tip chat lines: __TIP__:12.50 or __TIP__:12.50|note or legacy */
   const parseTipMessage = (content: string) => {
-    const structured = content.match(/^__TIP__:([0-9]+(?:\.[0-9]+)?)$/);
-    if (structured) {
-      return { amount: Number(structured[1]) };
+    const withNote = content.match(
+      /^__TIP__:([0-9]+(?:\.[0-9]+)?)(?:\|(.{1,50}))?$/
+    );
+    if (withNote) {
+      return {
+        amount: Number(withNote[1]),
+        note: (withNote[2] || '').trim() || null,
+      };
     }
     const legacy = content.match(/^tipped £([0-9]+(?:\.[0-9]+)?)/i);
     if (legacy) {
-      return { amount: Number(legacy[1]) };
+      return { amount: Number(legacy[1]), note: null as string | null };
     }
     return null;
   };
@@ -3239,8 +3269,8 @@ export default function LiveWatchPage() {
                     const tip = parseTipMessage(m.content);
                     if (tip) {
                       return (
-                        <div key={m.id} className="flex items-center">
-                          <div className="inline-flex items-center gap-1.5 max-w-[92%] rounded-full px-2.5 py-1 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
+                        <div key={m.id} className="flex flex-col items-start gap-0.5 max-w-[92%]">
+                          <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
                             <DollarSign size={12} className="text-white/95 flex-shrink-0" />
                             <span
                               className={`font-semibold text-pink-50 truncate max-w-[6.5rem] ${
@@ -3265,6 +3295,19 @@ export default function LiveWatchPage() {
                               £{tip.amount.toFixed(2)}
                             </span>
                           </div>
+                          {tip.note && (
+                            <p
+                              className={`ml-1 max-w-full rounded-xl bg-pink-950/70 border border-pink-500/25 px-2.5 py-1 text-pink-50/95 leading-snug break-words ${
+                                chatTextSize === 's'
+                                  ? 'text-[11px]'
+                                  : chatTextSize === 'l'
+                                    ? 'text-[13px]'
+                                    : 'text-[12px]'
+                              }`}
+                            >
+                              {tip.note}
+                            </p>
+                          )}
                         </div>
                       );
                     }
@@ -4007,7 +4050,12 @@ export default function LiveWatchPage() {
                 </h3>
                 <button
                   type="button"
-                  onClick={() => !tipping && setShowTip(false)}
+                  onClick={() => {
+                    if (tipping) return;
+                    setShowTip(false);
+                    setTipNote('');
+                    setTipError('');
+                  }}
                   className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
                 >
                   <X size={18} />
@@ -4075,6 +4123,32 @@ export default function LiveWatchPage() {
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
                     />
                   </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-zinc-500">
+                      Add a note{' '}
+                      <span className="text-zinc-600">(optional)</span>
+                    </label>
+                    <span className="text-[10px] text-zinc-600 tabular-nums">
+                      {tipNote.length}/50
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={tipNote}
+                    maxLength={50}
+                    disabled={tipping}
+                    onChange={(e) => {
+                      setTipNote(e.target.value.slice(0, 50));
+                      setTipError('');
+                    }}
+                    placeholder="e.g. do X · love this · keep going"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 placeholder:text-zinc-600"
+                  />
+                  <p className="text-[10px] text-zinc-600 mt-1">
+                    Short message only · no links · visible in live chat
+                  </p>
                 </div>
                 {tipError && (
                   <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
