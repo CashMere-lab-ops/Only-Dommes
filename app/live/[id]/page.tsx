@@ -109,6 +109,15 @@ type ChatMsg = {
 
 const TIP_PRESETS = [5, 10, 20, 50];
 
+/** Default live gifts (step 1). Creator-custom list later. */
+const DEFAULT_GIFTS = [
+  { id: 'rose', label: 'Rose', emoji: '🌹', amount_gbp: 5 },
+  { id: 'kiss', label: 'Kiss', emoji: '💋', amount_gbp: 10 },
+  { id: 'crown', label: 'Crown', emoji: '👑', amount_gbp: 20 },
+  { id: 'champagne', label: 'Champagne', emoji: '🥂', amount_gbp: 50 },
+  { id: 'diamond', label: 'Diamond', emoji: '💎', amount_gbp: 100 },
+] as const;
+
 
 function playPrivateChime() {
   try {
@@ -253,6 +262,8 @@ export default function LiveWatchPage() {
   const joinAnnouncedRef = useRef(false);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTip, setShowTip] = useState(false);
+  const [tipSheetTab, setTipSheetTab] = useState<'tip' | 'gifts'>('tip');
+  const [giftingId, setGiftingId] = useState<string | null>(null);
   const [tipAmount, setTipAmount] = useState(5);
   const [tipNote, setTipNote] = useState('');
   const [creatorMinTip, setCreatorMinTip] = useState(2);
@@ -2351,6 +2362,129 @@ export default function LiveWatchPage() {
     }
   };
 
+  const sendGift = async (giftId: string) => {
+    if (!stream || isOwner) return;
+    const gift = DEFAULT_GIFTS.find((g) => g.id === giftId);
+    if (!gift) return;
+    setGiftingId(giftId);
+    setTipError('');
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Please log in again');
+
+      const res = await fetch('/api/live/gift', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          stream_id: stream.id,
+          gift_id: gift.id,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'INSUFFICIENT_BALANCE') {
+          const go = confirm(
+            `Not enough balance (need £${Number(data.needed || gift.amount_gbp).toFixed(2)}). Open wallet?`
+          );
+          if (go) window.location.href = '/wallet';
+          return;
+        }
+        throw new Error(data.error || 'Gift failed');
+      }
+      if (typeof data.balance === 'number') {
+        notifyBalanceUpdated(data.balance);
+      }
+      setStream((s) =>
+        s
+          ? {
+              ...s,
+              tip_raised_gbp: data.tip_raised_gbp,
+              tip_goal_gbp: data.tip_goal_gbp ?? s.tip_goal_gbp,
+              tip_goals:
+                data.tip_goals !== undefined ? data.tip_goals : s.tip_goals,
+              showcase_user_id: data.showcase?.user_id ?? s.showcase_user_id,
+              showcase_amount_gbp:
+                data.showcase?.amount_gbp ?? s.showcase_amount_gbp,
+              showcase_name: data.showcase?.name ?? s.showcase_name,
+              showcase_avatar_url:
+                data.showcase?.avatar_url ?? s.showcase_avatar_url,
+            }
+          : s
+      );
+      const emoji = data.gift_emoji || gift.emoji;
+      const label = data.gift_label || gift.label;
+      const flash = data.is_showcase
+        ? `${emoji} ${label} · You're top tipper 👑`
+        : `${emoji} ${label} · £${Number(data.amount).toFixed(2)}`;
+      setTipFlash(flash);
+      playTipChime();
+      setTimeout(() => setTipFlash(null), 2800);
+      setShowTip(false);
+      setTipSheetTab('tip');
+
+      if (typeof data.user_total === 'number') {
+        setMyTipTotal(Number(data.user_total));
+      } else {
+        setMyTipTotal(
+          (prev) => Math.round((prev + Number(data.amount || 0)) * 100) / 100
+        );
+      }
+      try {
+        const boardRes = await fetch(`/api/live/status?id=${stream.id}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+        });
+        const board = await boardRes.json().catch(() => ({}));
+        if (Array.isArray(board.top_tippers)) setTopTippers(board.top_tippers);
+        if (board.my_rank != null) setMyTipRank(Number(board.my_rank));
+        else if (board.my_rank === null) setMyTipRank(null);
+      } catch {
+        /* ignore */
+      }
+      const newRaised = Number(data.tip_raised_gbp || 0);
+      const goalAmt = Number(data.tip_goal_gbp || stream.tip_goal_gbp || 0);
+      if (goalAmt > 0) {
+        const newPct = Math.min(100, (newRaised / goalAmt) * 100);
+        const prevPct = prevGoalPct.current;
+        for (const m of [25, 50, 75, 100]) {
+          if (prevPct < m && newPct >= m) {
+            if (m === 100) {
+              setGoalReachedFlash(true);
+              playGoalChime();
+              setTimeout(() => setGoalReachedFlash(false), 4500);
+            } else {
+              setMilestoneFlash(m);
+              setTimeout(() => setMilestoneFlash(null), 2800);
+            }
+            break;
+          }
+        }
+        prevGoalPct.current = newPct;
+      }
+      prevRaised.current = newRaised;
+
+      // Chat: __GIFT__:rose|5.00|Rose|🌹
+      const giftLine = `__GIFT__:${gift.id}|${Number(data.amount).toFixed(2)}|${label}|${emoji}`;
+      try {
+        await supabase.from('live_chat_messages').insert({
+          stream_id: stream.id,
+          user_id: userId!,
+          content: giftLine,
+        });
+      } catch {
+        /* ignore */
+      }
+    } catch (e: any) {
+      setTipError(e.message || 'Gift failed');
+    } finally {
+      setGiftingId(null);
+    }
+  };
 
   const endLive = async () => {
     if (!confirm('End this live stream? It will not be saved.')) return;
@@ -2466,13 +2600,35 @@ export default function LiveWatchPage() {
     );
     if (withNote) {
       return {
+        kind: 'tip' as const,
         amount: Number(withNote[1]),
         note: (withNote[2] || '').trim() || null,
+        giftLabel: null as string | null,
+        giftEmoji: null as string | null,
       };
     }
     const legacy = content.match(/^tipped £([0-9]+(?:\.[0-9]+)?)/i);
     if (legacy) {
-      return { amount: Number(legacy[1]), note: null as string | null };
+      return {
+        kind: 'tip' as const,
+        amount: Number(legacy[1]),
+        note: null as string | null,
+        giftLabel: null as string | null,
+        giftEmoji: null as string | null,
+      };
+    }
+    // __GIFT__:rose|5.00|Rose|🌹
+    const gift = content.match(
+      /^__GIFT__:([a-z0-9_]+)\|([0-9]+(?:\.[0-9]+)?)\|([^|]{1,40})\|(.{1,8})$/u
+    );
+    if (gift) {
+      return {
+        kind: 'gift' as const,
+        amount: Number(gift[2]),
+        note: null as string | null,
+        giftLabel: gift[3],
+        giftEmoji: gift[4],
+      };
     }
     return null;
   };
@@ -3464,13 +3620,26 @@ export default function LiveWatchPage() {
                     }
                     const tip = parseTipMessage(m.content);
                     if (tip) {
+                      const isGift = tip.kind === 'gift';
                       return (
                         <div key={m.id} className="flex items-start max-w-[92%]">
-                          <div className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 rounded-2xl px-2.5 py-1.5 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
-                            <DollarSign
-                              size={12}
-                              className="text-white/95 flex-shrink-0 relative top-[1px]"
-                            />
+                          <div
+                            className={`inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 rounded-2xl px-2.5 py-1.5 shadow-sm backdrop-blur-sm border ${
+                              isGift
+                                ? 'bg-gradient-to-r from-amber-600/90 to-pink-600/90 border-amber-300/30'
+                                : 'bg-pink-600/90 border-pink-400/30'
+                            }`}
+                          >
+                            {isGift ? (
+                              <span className="text-sm leading-none flex-shrink-0">
+                                {tip.giftEmoji || '🎁'}
+                              </span>
+                            ) : (
+                              <DollarSign
+                                size={12}
+                                className="text-white/95 flex-shrink-0 relative top-[1px]"
+                              />
+                            )}
                             <span
                               className={`font-semibold text-pink-50 ${
                                 chatTextSize === 's'
@@ -3482,6 +3651,19 @@ export default function LiveWatchPage() {
                             >
                               {displayName(m)}
                             </span>
+                            {isGift && tip.giftLabel ? (
+                              <span
+                                className={`font-semibold text-white ${
+                                  chatTextSize === 's'
+                                    ? 'text-[12px]'
+                                    : chatTextSize === 'l'
+                                      ? 'text-[14px]'
+                                      : 'text-[13px]'
+                                }`}
+                              >
+                                {tip.giftLabel}
+                              </span>
+                            ) : null}
                             <span
                               className={`font-bold text-white tabular-nums ${
                                 chatTextSize === 's'
@@ -3671,10 +3853,11 @@ export default function LiveWatchPage() {
                         type="button"
                         onClick={() => {
                           setTipError('');
+                          setTipSheetTab('tip');
                           setShowTip(true);
                         }}
                         className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
-                        title="Tip"
+                        title="Tip / Gifts"
                       >
                         <DollarSign size={20} />
                       </button>
@@ -4246,151 +4429,248 @@ export default function LiveWatchPage() {
             >
               <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
                 <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <DollarSign className="text-pink-500" size={20} /> Tip {name}
+                  <DollarSign className="text-pink-500" size={20} /> Support {name}
                 </h3>
                 <button
                   type="button"
                   onClick={() => {
-                    if (tipping) return;
+                    if (tipping || giftingId) return;
                     setShowTip(false);
                     setTipNote('');
                     setTipError('');
+                    setTipSheetTab('tip');
                   }}
                   className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
                 >
                   <X size={18} />
                 </button>
               </div>
-              <div className="px-5 py-5 space-y-4">
-                <div className="grid grid-cols-4 gap-2">
-                  {TIP_PRESETS.map((a) => {
-                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
-                    const tooLow = a < minT;
-                    return (
-                      <button
-                        key={a}
-                        type="button"
-                        disabled={tipping || tooLow}
-                        onClick={() => {
-                          if (tooLow) return;
-                          setTipAmount(a);
-                          setCustomTip('');
-                          setTipError('');
-                        }}
-                        className={`py-3 rounded-xl text-sm font-semibold border transition ${
-                          tooLow
-                            ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed'
-                            : tipAmount === a && !customTip
-                              ? 'bg-pink-600 border-pink-500 text-white'
-                              : 'bg-zinc-800 border-zinc-700 text-zinc-200'
-                        }`}
-                        title={
-                          tooLow
-                            ? `Below this creator's minimum (£${minT})`
-                            : undefined
-                        }
-                      >
-                        £{a}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-zinc-500 -mt-1">
-                  Minimum tip £{(creatorMinTip > 2 ? creatorMinTip : 2).toFixed(2)}
-                </p>
-                <div>
-                  <label className="text-xs text-zinc-500 mb-1 block">
-                    Custom amount
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
-                      £
-                    </span>
-                    <input
-                      type="number"
-                      min={creatorMinTip > 2 ? creatorMinTip : 2}
-                      step={1}
-                      value={customTip}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setCustomTip(v);
-                        setTipError('');
-                        const n = Number(v);
-                        // Do NOT auto-bump to minimum — keep exact typed amount
-                        if (v !== '' && Number.isFinite(n)) setTipAmount(n);
-                      }}
-                      placeholder="Other"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs text-zinc-500">
-                      Add a note{' '}
-                      <span className="text-zinc-600">(optional)</span>
-                    </label>
-                    <span className="text-[10px] text-zinc-600 tabular-nums">
-                      {tipNote.length}/50
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    value={tipNote}
-                    maxLength={50}
-                    disabled={tipping}
-                    onChange={(e) => {
-                      setTipNote(e.target.value.slice(0, 50));
+
+              {/* Tips | Gifts tabs */}
+              <div className="px-5 pt-3">
+                <div className="flex rounded-xl bg-zinc-800/80 p-1 border border-zinc-700/80">
+                  <button
+                    type="button"
+                    disabled={!!giftingId || tipping}
+                    onClick={() => {
+                      setTipSheetTab('tip');
                       setTipError('');
                     }}
-                    placeholder="e.g. do X · love this · keep going"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 placeholder:text-zinc-600"
-                  />
-                  <p className="text-[10px] text-zinc-600 mt-1">
-                    Short message only · no links · visible in live chat
-                  </p>
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+                      tipSheetTab === 'tip'
+                        ? 'bg-pink-600 text-white shadow'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Tip
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!giftingId || tipping}
+                    onClick={() => {
+                      setTipSheetTab('gifts');
+                      setTipError('');
+                    }}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+                      tipSheetTab === 'gifts'
+                        ? 'bg-pink-600 text-white shadow'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Gifts
+                  </button>
                 </div>
-                {tipError && (
-                  <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-                    {tipError}
-                  </p>
+              </div>
+
+              <div className="px-5 py-5 space-y-4">
+                {tipSheetTab === 'tip' ? (
+                  <>
+                    <div className="grid grid-cols-4 gap-2">
+                      {TIP_PRESETS.map((a) => {
+                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                        const tooLow = a < minT;
+                        return (
+                          <button
+                            key={a}
+                            type="button"
+                            disabled={tipping || tooLow}
+                            onClick={() => {
+                              if (tooLow) return;
+                              setTipAmount(a);
+                              setCustomTip('');
+                              setTipError('');
+                            }}
+                            className={`py-3 rounded-xl text-sm font-semibold border transition ${
+                              tooLow
+                                ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed'
+                                : tipAmount === a && !customTip
+                                  ? 'bg-pink-600 border-pink-500 text-white'
+                                  : 'bg-zinc-800 border-zinc-700 text-zinc-200'
+                            }`}
+                            title={
+                              tooLow
+                                ? `Below this creator's minimum (£${minT})`
+                                : undefined
+                            }
+                          >
+                            £{a}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-zinc-500 -mt-1">
+                      Minimum tip £
+                      {(creatorMinTip > 2 ? creatorMinTip : 2).toFixed(2)}
+                    </p>
+                    <div>
+                      <label className="text-xs text-zinc-500 mb-1 block">
+                        Custom amount
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
+                          £
+                        </span>
+                        <input
+                          type="number"
+                          min={creatorMinTip > 2 ? creatorMinTip : 2}
+                          step={1}
+                          value={customTip}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setCustomTip(v);
+                            setTipError('');
+                            const n = Number(v);
+                            if (v !== '' && Number.isFinite(n)) setTipAmount(n);
+                          }}
+                          placeholder="Other"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs text-zinc-500">
+                          Add a note{' '}
+                          <span className="text-zinc-600">(optional)</span>
+                        </label>
+                        <span className="text-[10px] text-zinc-600 tabular-nums">
+                          {tipNote.length}/50
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={tipNote}
+                        maxLength={50}
+                        disabled={tipping}
+                        onChange={(e) => {
+                          setTipNote(e.target.value.slice(0, 50));
+                          setTipError('');
+                        }}
+                        placeholder="e.g. do X · love this · keep going"
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 placeholder:text-zinc-600"
+                      />
+                      <p className="text-[10px] text-zinc-600 mt-1">
+                        Short message only · no links · visible in live chat
+                      </p>
+                    </div>
+                    {tipError && (
+                      <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                        {tipError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={(() => {
+                        if (tipping || giftingId) return true;
+                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                        const amt =
+                          customTip !== ''
+                            ? Number(customTip)
+                            : Number(tipAmount);
+                        return !Number.isFinite(amt) || amt < minT;
+                      })()}
+                      onClick={() => {
+                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                        const amt =
+                          customTip !== ''
+                            ? Number(customTip)
+                            : Number(tipAmount);
+                        if (!Number.isFinite(amt) || amt < minT) {
+                          setTipError(
+                            `Minimum tip is £${minT.toFixed(2)} — enter at least that amount`
+                          );
+                          return;
+                        }
+                        void sendTip(amt);
+                      }}
+                      className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {tipping ? (
+                        <>
+                          <Loader2 size={18} className="animate-spin" />{' '}
+                          Sending…
+                        </>
+                      ) : (
+                        <>
+                          Send £
+                          {(
+                            customTip !== ''
+                              ? Number(customTip)
+                              : Number(tipAmount)
+                          ).toFixed(2)}
+                        </>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-zinc-400">
+                      Fixed-price gifts · count toward tip goal &amp; Top 3
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {DEFAULT_GIFTS.map((g) => {
+                        const busy = giftingId === g.id;
+                        const anyBusy = !!giftingId || tipping;
+                        return (
+                          <button
+                            key={g.id}
+                            type="button"
+                            disabled={anyBusy}
+                            onClick={() => void sendGift(g.id)}
+                            className="flex items-center gap-3 w-full rounded-2xl bg-zinc-800/90 border border-zinc-700 hover:border-pink-500/50 px-4 py-3.5 text-left transition disabled:opacity-50 active:scale-[0.99]"
+                          >
+                            <span className="text-2xl w-10 text-center flex-shrink-0">
+                              {g.emoji}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-white">
+                                {g.label}
+                              </p>
+                              <p className="text-xs text-zinc-400">
+                                Send to {name}
+                              </p>
+                            </div>
+                            <span className="font-bold text-pink-300 tabular-nums flex-shrink-0">
+                              {busy ? (
+                                <Loader2
+                                  size={18}
+                                  className="animate-spin text-pink-400"
+                                />
+                              ) : (
+                                `£${g.amount_gbp}`
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {tipError && (
+                      <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                        {tipError}
+                      </p>
+                    )}
+                  </>
                 )}
-                <button
-                  type="button"
-                  disabled={(() => {
-                    if (tipping) return true;
-                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
-                    const amt =
-                      customTip !== '' ? Number(customTip) : Number(tipAmount);
-                    return !Number.isFinite(amt) || amt < minT;
-                  })()}
-                  onClick={() => {
-                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
-                    const amt =
-                      customTip !== '' ? Number(customTip) : Number(tipAmount);
-                    if (!Number.isFinite(amt) || amt < minT) {
-                      setTipError(
-                        `Minimum tip is £${minT.toFixed(2)} — enter at least that amount`
-                      );
-                      return;
-                    }
-                    void sendTip(amt);
-                  }}
-                  className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {tipping ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" /> Sending…
-                    </>
-                  ) : (
-                    <>
-                      Send £
-                      {(
-                        customTip !== '' ? Number(customTip) : Number(tipAmount)
-                      ).toFixed(2)}
-                    </>
-                  )}
-                </button>
                 <p className="text-center text-xs text-zinc-500">
                   Paid from your wallet balance
                 </p>
