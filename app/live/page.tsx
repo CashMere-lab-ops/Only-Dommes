@@ -1,9 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Radio, Loader2, Users, Video, X, ImagePlus } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  Radio,
+  Loader2,
+  Users,
+  Video,
+  X,
+  ImagePlus,
+  ZoomIn,
+  ZoomOut,
+  Check,
+} from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
@@ -23,31 +33,67 @@ type LiveCard = {
   } | null;
 };
 
-async function compressThumb(file: File): Promise<Blob> {
+const OUT_W = 1280;
+const OUT_H = 720; // 16:9 card cover
+
+/**
+ * Export a 16:9 JPEG from an image + pan/zoom framing.
+ * scale = how much the image is zoomed (1 = cover the frame tightly).
+ * offsetX/Y = normalised pan of the image centre (-1..1-ish).
+ */
+async function exportCroppedCover(
+  file: File,
+  zoom: number,
+  offsetX: number,
+  offsetY: number
+): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
-  const maxW = 1280;
-  const scale = Math.min(1, maxW / bitmap.width);
-  const w = Math.round(bitmap.width * scale);
-  const h = Math.round(bitmap.height * scale);
+  const imgW = bitmap.width;
+  const imgH = bitmap.height;
+
+  // Base scale so image covers 16:9 (object-cover)
+  const coverScale = Math.max(OUT_W / imgW, OUT_H / imgH);
+  const scale = coverScale * Math.max(1, Math.min(3, zoom));
+
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+
+  // Max pan so edges stay covered
+  const maxPanX = Math.max(0, (drawW - OUT_W) / 2);
+  const maxPanY = Math.max(0, (drawH - OUT_H) / 2);
+  const panX = Math.max(-1, Math.min(1, offsetX)) * maxPanX;
+  const panY = Math.max(-1, Math.min(1, offsetY)) * maxPanY;
+
+  const dx = (OUT_W - drawW) / 2 + panX;
+  const dy = (OUT_H - drawH) / 2 + panY;
+
   const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = OUT_W;
+  canvas.height = OUT_H;
   const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(bitmap, 0, 0, w, h);
+  ctx.fillStyle = '#09090b';
+  ctx.fillRect(0, 0, OUT_W, OUT_H);
+  ctx.drawImage(bitmap, dx, dy, drawW, drawH);
   bitmap.close();
+
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error('Could not process image'))),
       'image/jpeg',
-      0.82
+      0.85
     );
   });
 }
 
-export default function LiveIndexPage() {
+function LiveIndexInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const cropDrag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(
+    null
+  );
+
   const [loading, setLoading] = useState(true);
   const [streams, setStreams] = useState<LiveCard[]>([]);
   const [error, setError] = useState('');
@@ -59,6 +105,24 @@ export default function LiveIndexPage() {
   const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+
+  // Crop framing
+  const [showCrop, setShowCrop] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    const go = searchParams.get('goLive') || searchParams.get('golive');
+    if (go === '1' || go === 'true') {
+      setShowSetup(true);
+      // Clean URL without losing path
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', '/live');
+      }
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     (async () => {
@@ -76,17 +140,20 @@ export default function LiveIndexPage() {
       if (data?.display_name || data?.username) {
         setLiveTitle(`${data.display_name || data.username} is live`);
       }
-      // Cover must be chosen deliberately — no avatar auto-fill
     })();
   }, []);
 
-  const onPickThumb = (file: File | null) => {
+  const clearThumb = () => {
     if (thumbPreview && thumbPreview.startsWith('blob:')) {
       URL.revokeObjectURL(thumbPreview);
     }
+    setThumbFile(null);
+    setThumbPreview(null);
+  };
+
+  const onPickThumb = (file: File | null) => {
     if (!file) {
-      setThumbFile(null);
-      setThumbPreview(null);
+      clearThumb();
       return;
     }
     if (!file.type.startsWith('image/')) {
@@ -98,8 +165,73 @@ export default function LiveIndexPage() {
       return;
     }
     setError('');
-    setThumbFile(file);
-    setThumbPreview(URL.createObjectURL(file));
+    if (cropSrc && cropSrc.startsWith('blob:')) {
+      URL.revokeObjectURL(cropSrc);
+    }
+    const url = URL.createObjectURL(file);
+    setPendingFile(file);
+    setCropSrc(url);
+    setCropZoom(1);
+    setCropOffset({ x: 0, y: 0 });
+    setShowCrop(true);
+  };
+
+  const applyCrop = async () => {
+    if (!pendingFile) return;
+    try {
+      const blob = await exportCroppedCover(
+        pendingFile,
+        cropZoom,
+        cropOffset.x,
+        cropOffset.y
+      );
+      const file = new File([blob], 'live-cover.jpg', { type: 'image/jpeg' });
+      if (thumbPreview && thumbPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(thumbPreview);
+      }
+      const preview = URL.createObjectURL(blob);
+      setThumbFile(file);
+      setThumbPreview(preview);
+      setShowCrop(false);
+      if (cropSrc && cropSrc.startsWith('blob:')) {
+        URL.revokeObjectURL(cropSrc);
+      }
+      setCropSrc(null);
+      setPendingFile(null);
+    } catch {
+      setError('Could not crop image — try another photo');
+    }
+  };
+
+  const cancelCrop = () => {
+    setShowCrop(false);
+    if (cropSrc && cropSrc.startsWith('blob:')) {
+      URL.revokeObjectURL(cropSrc);
+    }
+    setCropSrc(null);
+    setPendingFile(null);
+  };
+
+  const onCropPointerDown = (e: React.PointerEvent) => {
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    cropDrag.current = {
+      x: e.clientX,
+      y: e.clientY,
+      ox: cropOffset.x,
+      oy: cropOffset.y,
+    };
+  };
+  const onCropPointerMove = (e: React.PointerEvent) => {
+    if (!cropDrag.current) return;
+    const dx = (e.clientX - cropDrag.current.x) / 120;
+    const dy = (e.clientY - cropDrag.current.y) / 120;
+    setCropOffset({
+      x: Math.max(-1, Math.min(1, cropDrag.current.ox + dx)),
+      y: Math.max(-1, Math.min(1, cropDrag.current.oy + dy)),
+    });
+  };
+  const onCropPointerUp = () => {
+    cropDrag.current = null;
   };
 
   const goLive = async () => {
@@ -122,12 +254,9 @@ export default function LiveIndexPage() {
         throw new Error('Please log in again');
       }
 
-      const blob = await compressThumb(thumbFile);
+      // Already cropped + compressed to 1280×720
       const form = new FormData();
-      form.append(
-        'file',
-        new File([blob], 'live-thumb.jpg', { type: 'image/jpeg' })
-      );
+      form.append('file', thumbFile);
       const upRes = await fetch('/api/live/upload-thumb', {
         method: 'POST',
         headers: {
@@ -331,7 +460,6 @@ export default function LiveIndexPage() {
                 </button>
               </div>
               <div className="px-5 py-5 space-y-4 max-h-[80vh] overflow-y-auto">
-                {/* Thumbnail — required */}
                 <div>
                   <label className="text-sm text-zinc-300 mb-1.5 flex items-center gap-2">
                     Cover image
@@ -340,8 +468,8 @@ export default function LiveIndexPage() {
                     </span>
                   </label>
                   <p className="text-[11px] text-zinc-500 mb-2">
-                    Shown on the homepage and Live page. Use a clear photo —
-                    profile picture is not enough.
+                    Drag to frame · zoom · we save a clean 16:9 cover for the
+                    homepage and Live page.
                   </p>
                   <input
                     ref={fileRef}
@@ -380,15 +508,15 @@ export default function LiveIndexPage() {
                       </div>
                     )}
                     {thumbPreview && (
-                      <span className="absolute bottom-2 right-2 text-[11px] bg-black/70 px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition">
-                        Change
+                      <span className="absolute bottom-2 right-2 text-[11px] bg-black/70 px-2 py-1 rounded-lg">
+                        Change / reframe
                       </span>
                     )}
                   </button>
                   {thumbFile && (
                     <button
                       type="button"
-                      onClick={() => onPickThumb(null)}
+                      onClick={clearThumb}
                       className="mt-2 text-xs text-zinc-400 hover:text-white"
                     >
                       Remove photo
@@ -466,8 +594,109 @@ export default function LiveIndexPage() {
             </div>
           </div>
         )}
+
+        {/* 16:9 crop / frame tool */}
+        {showCrop && cropSrc && (
+          <div className="fixed inset-0 z-[220] bg-black/90 flex flex-col items-center justify-center p-4">
+            <div className="w-full max-w-lg">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-white">Frame your cover</h3>
+                <button
+                  type="button"
+                  onClick={cancelCrop}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-xs text-zinc-400 mb-3">
+                Drag to reposition · use zoom so faces sit in the centre of the
+                16:9 card
+              </p>
+              <div
+                className="relative w-full aspect-video rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-950 touch-none cursor-grab active:cursor-grabbing select-none"
+                onPointerDown={onCropPointerDown}
+                onPointerMove={onCropPointerMove}
+                onPointerUp={onCropPointerUp}
+                onPointerCancel={onCropPointerUp}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={cropSrc}
+                  alt=""
+                  draggable={false}
+                  className="absolute max-w-none pointer-events-none"
+                  style={{
+                    width: `${100 * cropZoom}%`,
+                    height: `${100 * cropZoom}%`,
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(calc(-50% + ${cropOffset.x * 40}%), calc(-50% + ${cropOffset.y * 40}%))`,
+                    objectFit: 'cover',
+                  }}
+                />
+                <div className="absolute inset-0 pointer-events-none border-2 border-pink-500/40 rounded-2xl" />
+                <div className="absolute inset-x-0 top-1/3 h-px bg-white/10 pointer-events-none" />
+                <div className="absolute inset-x-0 top-2/3 h-px bg-white/10 pointer-events-none" />
+                <div className="absolute inset-y-0 left-1/3 w-px bg-white/10 pointer-events-none" />
+                <div className="absolute inset-y-0 left-2/3 w-px bg-white/10 pointer-events-none" />
+              </div>
+              <div className="flex items-center gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCropZoom((z) => Math.max(1, Math.round((z - 0.15) * 100) / 100))
+                  }
+                  className="w-11 h-11 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300"
+                >
+                  <ZoomOut size={18} />
+                </button>
+                <input
+                  type="range"
+                  min={1}
+                  max={2.5}
+                  step={0.05}
+                  value={cropZoom}
+                  onChange={(e) => setCropZoom(Number(e.target.value))}
+                  className="flex-1 accent-pink-500"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCropZoom((z) => Math.min(2.5, Math.round((z + 0.15) * 100) / 100))
+                  }
+                  className="w-11 h-11 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300"
+                >
+                  <ZoomIn size={18} />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => void applyCrop()}
+                className="mt-4 w-full min-h-[48px] rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold flex items-center justify-center gap-2"
+              >
+                <Check size={18} /> Use this frame
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </AuthGuard>
   );
 }
+
+export default function LiveIndexPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+          <Loader2 className="animate-spin text-pink-500" size={28} />
+        </div>
+      }
+    >
+      <LiveIndexInner />
+    </Suspense>
+  );
+}
+
 
