@@ -136,29 +136,6 @@ function playPrivateChime() {
 }
 
 
-/** Speak tip note aloud (browser TTS). Safe no-op if unsupported / muted. */
-function speakTipNote(name: string, amount: number, note: string) {
-  try {
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
-    const text = `${name} tipped ${amount.toFixed(2)} pounds. ${note}`;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.05;
-    u.pitch = 1;
-    u.volume = 1;
-    // Prefer a clear English voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const en =
-      voices.find((v) => /en-GB/i.test(v.lang) && /female|samantha|google/i.test(v.name)) ||
-      voices.find((v) => /en-GB/i.test(v.lang)) ||
-      voices.find((v) => /^en/i.test(v.lang));
-    if (en) u.voice = en;
-    window.speechSynthesis.speak(u);
-  } catch {
-    /* ignore */
-  }
-}
-
 function playTipChime() {
   try {
     const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -283,13 +260,6 @@ export default function LiveWatchPage() {
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
-  /** Center-screen tip+note alert (Twitch/Kick style) — only when note present */
-  const [tipAlert, setTipAlert] = useState<{
-    amount: number;
-    note: string;
-    name: string;
-    isShowcase?: boolean;
-  } | null>(null);
 
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
@@ -303,21 +273,6 @@ export default function LiveWatchPage() {
   // Personal live view prefs (this device only)
   const [chatTextSize, setChatTextSize] = useState<'s' | 'm' | 'l'>('m');
   const [hideEmojis, setHideEmojis] = useState(false);
-  /** Read tip notes aloud (Kick-style) — this device only */
-  const [tipVoiceEnabled, setTipVoiceEnabled] = useState(true);
-  // Read tip notes aloud when center alert shows (unless muted in Live settings)
-  useEffect(() => {
-    if (!tipAlert || !tipVoiceEnabled) return;
-    speakTipNote(tipAlert.name, tipAlert.amount, tipAlert.note);
-    return () => {
-      try {
-        window.speechSynthesis?.cancel();
-      } catch {
-        /* ignore */
-      }
-    };
-  }, [tipAlert, tipVoiceEnabled]);
-
   const [compactChat, setCompactChat] = useState(false);
   const [hideTopTipper, setHideTopTipper] = useState(false);
 
@@ -333,7 +288,6 @@ export default function LiveWatchPage() {
       if (typeof p.compactChat === 'boolean') setCompactChat(p.compactChat);
       if (typeof p.hideTopTipper === 'boolean') setHideTopTipper(p.hideTopTipper);
       if (typeof p.goalMeterHidden === 'boolean') setGoalMeterHidden(p.goalMeterHidden);
-      if (typeof p.tipVoiceEnabled === 'boolean') setTipVoiceEnabled(p.tipVoiceEnabled);
     } catch {
       /* ignore */
     }
@@ -349,13 +303,12 @@ export default function LiveWatchPage() {
           compactChat,
           hideTopTipper,
           goalMeterHidden,
-          tipVoiceEnabled,
         })
       );
     } catch {
       /* ignore */
     }
-  }, [chatTextSize, hideEmojis, compactChat, hideTopTipper, goalMeterHidden, tipVoiceEnabled]);
+  }, [chatTextSize, hideEmojis, compactChat, hideTopTipper, goalMeterHidden]);
   const [announceExiting, setAnnounceExiting] = useState(false);
   const [showAnnounceEditor, setShowAnnounceEditor] = useState(false);
   const [announceDraft, setAnnounceDraft] = useState('');
@@ -866,22 +819,6 @@ export default function LiveWatchPage() {
                 }, ms);
               }
             }
-          }
-          if (msg?.type === 'tip_alert') {
-            const amount = Number(msg.amount);
-            const note = String(msg.note || '').trim().slice(0, 50);
-            const tipName = String(msg.name || 'A fan').slice(0, 40);
-            if (Number.isFinite(amount) && note) {
-              setTipAlert({
-                amount,
-                note,
-                name: tipName,
-                isShowcase: !!msg.isShowcase,
-              });
-              playTipChime();
-              setTimeout(() => setTipAlert(null), 4500);
-            }
-            return;
           }
           if (msg?.type === 'tip_goal') {
             const g = Number(msg.tip_goal_gbp);
@@ -2314,51 +2251,12 @@ export default function LiveWatchPage() {
             }
           : s
       );
-      const noteFlash =
-        typeof data.message === 'string' && data.message.trim()
-          ? data.message.trim()
-          : note;
-      const tipperName =
-        (typeof data.from_name === 'string' && data.from_name) ||
-        'A fan';
-      if (noteFlash) {
-        // Premium center overlay only when there is a note (not shown in chat)
-        setTipAlert({
-          amount: Number(data.amount),
-          note: noteFlash,
-          name: tipperName,
-          isShowcase: !!data.is_showcase,
-        });
-        playTipChime();
-        setTimeout(() => setTipAlert(null), 4500);
-        // Broadcast to other viewers via LiveKit (chat stays amount-only)
-        try {
-          const room = roomRef.current;
-          if (room?.localParticipant) {
-            const payload = new TextEncoder().encode(
-              JSON.stringify({
-                type: 'tip_alert',
-                amount: Number(data.amount),
-                note: noteFlash,
-                name: tipperName,
-                isShowcase: !!data.is_showcase,
-              })
-            );
-            await room.localParticipant.publishData(payload, {
-              reliable: true,
-            });
-          }
-        } catch {
-          /* ignore */
-        }
-      } else {
-        const flash = data.is_showcase
-          ? `£${Number(data.amount).toFixed(2)} · You're top tipper 👑`
-          : `£${Number(data.amount).toFixed(2)} tipped`;
-        setTipFlash(flash);
-        playTipChime();
-        setTimeout(() => setTipFlash(null), 2800);
-      }
+      const flash = data.is_showcase
+        ? `£${Number(data.amount).toFixed(2)} · You're top tipper 👑`
+        : `£${Number(data.amount).toFixed(2)} tipped`;
+      setTipFlash(flash);
+      playTipChime();
+      setTimeout(() => setTipFlash(null), 2800);
       setShowTip(false);
       setCustomTip('');
       setTipNote('');
@@ -2392,8 +2290,13 @@ export default function LiveWatchPage() {
       }
       prevRaised.current = newRaised;
 
-      // Chat: amount only (note is center-card only, not in chat)
-      const tipLine = `__TIP__:${Number(data.amount).toFixed(2)}`;
+      // Chat: tip amount + optional note in same message
+      const serverNote =
+        typeof data.message === 'string' ? String(data.message).trim() : '';
+      const noteForChat = (serverNote || note || '').slice(0, 50);
+      const tipLine = noteForChat
+        ? `__TIP__:${Number(data.amount).toFixed(2)}|${noteForChat}`
+        : `__TIP__:${Number(data.amount).toFixed(2)}`;
       try {
         await supabase.from('live_chat_messages').insert({
           stream_id: stream.id,
@@ -3159,52 +3062,11 @@ export default function LiveWatchPage() {
                 </div>
               )}
 
-            {/* Simple tip flash (no note) */}
-            {tipFlash && !tipAlert && (
+            {/* Simple tip flash */}
+            {tipFlash && (
               <div className="absolute top-[28%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
                 <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-bold px-6 py-3.5 rounded-2xl shadow-2xl shadow-pink-900/50 border border-white/20 animate-in zoom-in-95 fade-in duration-300">
                   {tipFlash}
-                </div>
-              </div>
-            )}
-
-            {/* Tip + note — center screen (Twitch / Kick style) */}
-            {tipAlert && (
-              <div className="absolute inset-0 z-[45] flex items-center justify-center pointer-events-none px-4">
-                <div
-                  className="w-full max-w-[min(92vw,380px)] relative"
-                  style={{
-                    animation:
-                      'wod-tip-alert-in 0.5s cubic-bezier(0.22,1,0.36,1) both',
-                  }}
-                >
-                  {/* Soft glow behind card */}
-                  <div className="absolute -inset-3 rounded-[2rem] bg-pink-600/25 blur-2xl" />
-                  <div className="relative overflow-hidden rounded-3xl border border-white/20 shadow-[0_20px_60px_rgba(190,24,93,0.55)]">
-                    <div className="bg-gradient-to-br from-pink-500 via-pink-600 to-rose-700 px-5 pt-5 pb-4 text-center relative">
-                      {/* Shine */}
-                      <div className="absolute inset-0 bg-[linear-gradient(115deg,transparent_0%,rgba(255,255,255,0.2)_42%,transparent_58%)] pointer-events-none" />
-                      <p className="relative text-[10px] font-bold uppercase tracking-[0.18em] text-pink-100/90 mb-2">
-                        {tipAlert.isShowcase ? 'Top tipper' : 'Tip'}
-                      </p>
-                      <p className="relative text-4xl sm:text-5xl font-black tabular-nums text-white drop-shadow-md leading-none">
-                        £{tipAlert.amount.toFixed(2)}
-                      </p>
-                      <p className="relative mt-2.5 text-sm font-semibold text-white/95 truncate">
-                        {tipAlert.name}
-                        {tipAlert.isShowcase && (
-                          <span className="ml-1.5" aria-hidden>
-                            👑
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="bg-zinc-950/95 backdrop-blur-md px-5 py-4 border-t border-white/10">
-                      <p className="text-center text-[15px] sm:text-base font-medium text-white leading-snug break-words">
-                        “{tipAlert.note}”
-                      </p>
-                    </div>
-                  </div>
                 </div>
               </div>
             )}
@@ -3404,11 +3266,14 @@ export default function LiveWatchPage() {
                     const tip = parseTipMessage(m.content);
                     if (tip) {
                       return (
-                        <div key={m.id} className="flex items-center">
-                          <div className="inline-flex items-center gap-1.5 max-w-[92%] rounded-full px-2.5 py-1 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
-                            <DollarSign size={12} className="text-white/95 flex-shrink-0" />
+                        <div key={m.id} className="flex items-start max-w-[92%]">
+                          <div className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 rounded-2xl px-2.5 py-1.5 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
+                            <DollarSign
+                              size={12}
+                              className="text-white/95 flex-shrink-0 relative top-[1px]"
+                            />
                             <span
-                              className={`font-semibold text-pink-50 truncate max-w-[6.5rem] ${
+                              className={`font-semibold text-pink-50 ${
                                 chatTextSize === 's'
                                   ? 'text-[12px]'
                                   : chatTextSize === 'l'
@@ -3419,7 +3284,7 @@ export default function LiveWatchPage() {
                               {displayName(m)}
                             </span>
                             <span
-                              className={`font-bold text-white tabular-nums flex-shrink-0 ${
+                              className={`font-bold text-white tabular-nums ${
                                 chatTextSize === 's'
                                   ? 'text-[12px]'
                                   : chatTextSize === 'l'
@@ -3429,8 +3294,20 @@ export default function LiveWatchPage() {
                             >
                               £{tip.amount.toFixed(2)}
                             </span>
+                            {tip.note ? (
+                              <span
+                                className={`w-full text-pink-50/95 leading-snug break-words ${
+                                  chatTextSize === 's'
+                                    ? 'text-[11px]'
+                                    : chatTextSize === 'l'
+                                      ? 'text-[13px]'
+                                      : 'text-[12px]'
+                                }`}
+                              >
+                                {tip.note}
+                              </span>
+                            ) : null}
                           </div>
-
                         </div>
                       );
                     }
@@ -3939,37 +3816,6 @@ export default function LiveWatchPage() {
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between py-2 border-t border-zinc-800">
-                  <div>
-                    <p className="text-sm font-medium">Read tip notes aloud</p>
-                    <p className="text-xs text-zinc-500">
-                      Voice reads name, amount &amp; note (this device)
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTipVoiceEnabled((v) => {
-                        const next = !v;
-                        if (!next) {
-                          try {
-                            window.speechSynthesis?.cancel();
-                          } catch {
-                            /* ignore */
-                          }
-                        }
-                        return next;
-                      });
-                    }}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
-                      tipVoiceEnabled
-                        ? 'bg-pink-600/20 border-pink-500 text-pink-300'
-                        : 'bg-zinc-800 border-zinc-700 text-zinc-400'
-                    }`}
-                  >
-                    {tipVoiceEnabled ? 'On' : 'Off'}
-                  </button>
-                </div>
 
                 <div className="flex items-center justify-between py-2 border-t border-zinc-800">
                   <div>
