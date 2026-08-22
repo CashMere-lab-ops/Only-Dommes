@@ -24,6 +24,8 @@ import {
   UserPlus,
   Sparkles,
   MoreHorizontal,
+  Settings,
+  Type,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
@@ -232,6 +234,7 @@ export default function LiveWatchPage() {
   useEffect(() => {
     userIdRef.current = userId;
   }, [userId]);
+
   const [myProfile, setMyProfile] = useState<any>(null);
   const [error, setError] = useState('');
   const [ending, setEnding] = useState(false);
@@ -263,6 +266,46 @@ export default function LiveWatchPage() {
   const [savingGoal, setSavingGoal] = useState(false);
   const [announceBanner, setAnnounceBanner] = useState<string | null>(null);
   const [goalMeterHidden, setGoalMeterHidden] = useState(false);
+  const [showLiveSettings, setShowLiveSettings] = useState(false);
+  // Personal live view prefs (this device only)
+  const [chatTextSize, setChatTextSize] = useState<'s' | 'm' | 'l'>('m');
+  const [hideEmojis, setHideEmojis] = useState(false);
+  const [compactChat, setCompactChat] = useState(false);
+  const [hideTopTipper, setHideTopTipper] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('wod-live-view-prefs');
+      if (!raw) return;
+      const p = JSON.parse(raw);
+      if (p.chatTextSize === 's' || p.chatTextSize === 'm' || p.chatTextSize === 'l') {
+        setChatTextSize(p.chatTextSize);
+      }
+      if (typeof p.hideEmojis === 'boolean') setHideEmojis(p.hideEmojis);
+      if (typeof p.compactChat === 'boolean') setCompactChat(p.compactChat);
+      if (typeof p.hideTopTipper === 'boolean') setHideTopTipper(p.hideTopTipper);
+      if (typeof p.goalMeterHidden === 'boolean') setGoalMeterHidden(p.goalMeterHidden);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'wod-live-view-prefs',
+        JSON.stringify({
+          chatTextSize,
+          hideEmojis,
+          compactChat,
+          hideTopTipper,
+          goalMeterHidden,
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [chatTextSize, hideEmojis, compactChat, hideTopTipper, goalMeterHidden]);
   const [announceExiting, setAnnounceExiting] = useState(false);
   const [showAnnounceEditor, setShowAnnounceEditor] = useState(false);
   const [announceDraft, setAnnounceDraft] = useState('');
@@ -2770,9 +2813,17 @@ export default function LiveWatchPage() {
                         <Share2 size={14} />
                       )}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowLiveSettings(true)}
+                      className="h-8 w-8 rounded-full bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center"
+                      title="Live settings"
+                    >
+                      <Settings size={14} />
+                    </button>
                   </div>
                   {/* Mobile: overflow menu */}
-                  <div className="relative sm:hidden">
+                  <div className="relative sm:hidden z-50">
                     <button
                       type="button"
                       onClick={() => setShowMore((v) => !v)}
@@ -2781,39 +2832,64 @@ export default function LiveWatchPage() {
                       <MoreHorizontal size={16} />
                     </button>
                     {showMore && (
-                      <div className="absolute right-0 top-9 w-40 bg-zinc-900/95 backdrop-blur border border-zinc-700 rounded-xl shadow-xl overflow-hidden z-40">
-                        {!isOwner && userId && (
+                      <>
+                        {/* Tap anywhere to close — covers top tipper too */}
+                        <button
+                          type="button"
+                          className="fixed inset-0 z-[60] bg-black/40"
+                          aria-label="Close menu"
+                          onClick={() => setShowMore(false)}
+                        />
+                        <div className="absolute right-0 top-9 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden z-[70]">
+                          {!isOwner && userId && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowMore(false);
+                                void toggleFollow();
+                              }}
+                              className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2"
+                            >
+                              <UserPlus size={14} className="text-pink-400" />
+                              {isFollowing ? 'Unfollow' : 'Follow'}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
                               setShowMore(false);
-                              void toggleFollow();
+                              void shareLive();
                             }}
                             className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2"
                           >
-                            <UserPlus size={14} className="text-pink-400" />
-                            {isFollowing ? 'Unfollow' : 'Follow'}
+                            <Share2 size={14} className="text-pink-400" />
+                            {linkCopied ? 'Copied!' : 'Share'}
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowMore(false);
-                            void shareLive();
-                          }}
-                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2"
-                        >
-                          <Share2 size={14} className="text-pink-400" />
-                          {linkCopied ? 'Copied!' : 'Share'}
-                        </button>
-                        <Link
-                          href={creator?.username ? `/${creator.username}` : '/live'}
-                          onClick={() => setShowMore(false)}
-                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 block"
-                        >
-                          View profile
-                        </Link>
-                      </div>
+                          <Link
+                            href={
+                              creator?.username
+                                ? `/${creator.username}`
+                                : '/live'
+                            }
+                            onClick={() => setShowMore(false)}
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2"
+                          >
+                            <Users size={14} className="text-pink-400" />
+                            View profile
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowMore(false);
+                              setShowLiveSettings(true);
+                            }}
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2 border-t border-zinc-800"
+                          >
+                            <Settings size={14} className="text-pink-400" />
+                            Live settings
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -2874,19 +2950,17 @@ export default function LiveWatchPage() {
                           <div className="absolute inset-y-0 left-0 w-[35%] bg-white/10 pointer-events-none rounded-full" />
                         </div>
                         {/* Amount under meter */}
-                        <div className="mt-1.5 max-w-[4.5rem] text-center">
-                          <p className="text-[9px] sm:text-[10px] font-semibold text-white/95 tabular-nums leading-tight drop-shadow-md">
-                            {goal > 0
-                              ? `£${raised.toFixed(0)}`
-                              : `£${raised.toFixed(0)}`}
+                        <div className="mt-1.5 min-w-[3.25rem] max-w-[4.75rem] text-center rounded-lg bg-black/70 border border-white/15 px-1.5 py-1 shadow-lg backdrop-blur-sm">
+                          <p className="text-[11px] sm:text-xs font-bold text-white tabular-nums leading-tight">
+                            £{raised.toFixed(0)}
                           </p>
                           {goal > 0 && (
-                            <p className="text-[8px] sm:text-[9px] text-zinc-300/90 tabular-nums leading-tight">
+                            <p className="text-[10px] sm:text-[11px] text-pink-200 font-semibold tabular-nums leading-tight">
                               / £{goal.toFixed(0)}
                             </p>
                           )}
                           {levels.length > 0 && (
-                            <p className="text-[8px] text-pink-200/90 truncate mt-0.5 max-w-[4.25rem]">
+                            <p className="text-[9px] text-zinc-200 truncate mt-0.5 max-w-[4.25rem] font-medium">
                               {activeLabel}
                             </p>
                           )}
@@ -2924,6 +2998,8 @@ export default function LiveWatchPage() {
 
             {/* Top tipper — compact on mobile */}
             {!ended &&
+              !hideTopTipper &&
+              !showMore &&
               stream?.showcase_user_id &&
               Number(stream.showcase_amount_gbp || 0) > 0 && (
                 <div className="absolute top-[3.75rem] sm:top-20 right-3 z-20 pointer-events-none max-w-[46%] sm:max-w-[180px]">
@@ -3102,18 +3178,19 @@ export default function LiveWatchPage() {
                   sm:right-3 sm:w-[40%]
                   lg:right-8 lg:w-[34%] lg:max-w-[340px]"
               >
-                {floatingReacts.map((r) => (
-                  <span
-                    key={r.id}
-                    className="wod-float-react"
-                    style={{
-                      left: `${r.left}%`,
-                      ['--drift' as any]: r.drift || '-24px',
-                    }}
-                  >
-                    {r.emoji}
-                  </span>
-                ))}
+                {!hideEmojis &&
+                  floatingReacts.map((r) => (
+                    <span
+                      key={r.id}
+                      className="wod-float-react"
+                      style={{
+                        left: `${r.left}%`,
+                        ['--drift' as any]: r.drift || '-24px',
+                      }}
+                    >
+                      {r.emoji}
+                    </span>
+                  ))}
               </div>
             )}
 
@@ -3163,12 +3240,28 @@ export default function LiveWatchPage() {
                     if (tip) {
                       return (
                         <div key={m.id} className="flex items-center">
-                          <div className="inline-flex items-center gap-1 max-w-[90%] rounded-full px-2 py-0.5 bg-pink-600/85 border border-pink-400/25 shadow-sm backdrop-blur-sm">
-                            <DollarSign size={11} className="text-white/95 flex-shrink-0" />
-                            <span className="text-[11px] font-semibold text-pink-50 truncate max-w-[5.5rem]">
+                          <div className="inline-flex items-center gap-1.5 max-w-[92%] rounded-full px-2.5 py-1 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
+                            <DollarSign size={12} className="text-white/95 flex-shrink-0" />
+                            <span
+                              className={`font-semibold text-pink-50 truncate max-w-[6.5rem] ${
+                                chatTextSize === 's'
+                                  ? 'text-[12px]'
+                                  : chatTextSize === 'l'
+                                    ? 'text-[14px]'
+                                    : 'text-[13px]'
+                              }`}
+                            >
                               {displayName(m)}
                             </span>
-                            <span className="text-[11px] font-bold text-white tabular-nums flex-shrink-0">
+                            <span
+                              className={`font-bold text-white tabular-nums flex-shrink-0 ${
+                                chatTextSize === 's'
+                                  ? 'text-[12px]'
+                                  : chatTextSize === 'l'
+                                    ? 'text-[14px]'
+                                    : 'text-[13px]'
+                              }`}
+                            >
                               £{tip.amount.toFixed(2)}
                             </span>
                           </div>
@@ -3177,12 +3270,22 @@ export default function LiveWatchPage() {
                     }
                     return (
                       <div key={m.id} className="flex items-start gap-2 group relative">
-                        <div className="bg-black/55 backdrop-blur-md rounded-2xl px-2.5 py-1.5 max-w-[92%] border border-white/5 shadow-sm">
+                        <div
+                          className={`bg-black/55 backdrop-blur-md rounded-2xl max-w-[92%] border border-white/5 shadow-sm ${
+                            compactChat ? 'px-2 py-1' : 'px-2.5 py-1.5'
+                          }`}
+                        >
                           <span
-                            className={`text-xs font-semibold mr-1.5 ${
+                            className={`font-semibold mr-1.5 ${
                               isCreatorMsg(m)
                                 ? 'text-pink-300'
                                 : 'text-zinc-200/90'
+                            } ${
+                              chatTextSize === 's'
+                                ? 'text-[12px]'
+                                : chatTextSize === 'l'
+                                  ? 'text-[15px]'
+                                  : 'text-[13px]'
                             }`}
                           >
                             {displayName(m)}
@@ -3192,7 +3295,15 @@ export default function LiveWatchPage() {
                               </span>
                             )}
                           </span>
-                          <span className="text-sm text-white/95 break-words">
+                          <span
+                            className={`text-white/95 break-words ${
+                              chatTextSize === 's'
+                                ? 'text-[13px]'
+                                : chatTextSize === 'l'
+                                  ? 'text-[16px]'
+                                  : 'text-[14px]'
+                            }`}
+                          >
                             {m.content}
                           </span>
                         </div>
@@ -3554,6 +3665,139 @@ export default function LiveWatchPage() {
                 className="w-full py-3 mt-1 text-sm text-zinc-500"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        
+        {/* Personal live view settings */}
+        {showLiveSettings && (
+          <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/70"
+              aria-label="Close"
+              onClick={() => setShowLiveSettings(false)}
+            />
+            <div className="relative w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
+              <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-4 sm:hidden" />
+              <h3 className="text-lg font-semibold text-center mb-1 flex items-center justify-center gap-2">
+                <Settings size={18} className="text-pink-400" />
+                Live settings
+              </h3>
+              <p className="text-sm text-zinc-400 text-center mb-5">
+                Only affects how you see this live on this device
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold text-zinc-400 mb-2 flex items-center gap-1.5">
+                    <Type size={14} /> Chat text size
+                  </p>
+                  <div className="flex gap-2">
+                    {(
+                      [
+                        { id: 's' as const, label: 'S' },
+                        { id: 'm' as const, label: 'M' },
+                        { id: 'l' as const, label: 'L' },
+                      ]
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setChatTextSize(opt.id)}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border ${
+                          chatTextSize === opt.id
+                            ? 'bg-pink-600 border-pink-500 text-white'
+                            : 'bg-zinc-800 border-zinc-700 text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-zinc-800">
+                  <div>
+                    <p className="text-sm font-medium">Tip goal meter</p>
+                    <p className="text-xs text-zinc-500">Vertical bar on the left</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGoalMeterHidden((v) => !v)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      !goalMeterHidden
+                        ? 'bg-pink-600/20 border-pink-500 text-pink-300'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    {!goalMeterHidden ? 'On' : 'Off'}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-zinc-800">
+                  <div>
+                    <p className="text-sm font-medium">Top tipper card</p>
+                    <p className="text-xs text-zinc-500">Crown badge top-right</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHideTopTipper((v) => !v)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      !hideTopTipper
+                        ? 'bg-pink-600/20 border-pink-500 text-pink-300'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    {!hideTopTipper ? 'On' : 'Off'}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-zinc-800">
+                  <div>
+                    <p className="text-sm font-medium">Floating emojis</p>
+                    <p className="text-xs text-zinc-500">Reactions on the stream</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHideEmojis((v) => !v)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      !hideEmojis
+                        ? 'bg-pink-600/20 border-pink-500 text-pink-300'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    {!hideEmojis ? 'On' : 'Off'}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-zinc-800">
+                  <div>
+                    <p className="text-sm font-medium">Compact chat</p>
+                    <p className="text-xs text-zinc-500">Tighter message spacing</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCompactChat((v) => !v)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      compactChat
+                        ? 'bg-pink-600/20 border-pink-500 text-pink-300'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    {compactChat ? 'On' : 'Off'}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowLiveSettings(false)}
+                className="w-full mt-6 py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold"
+              >
+                Done
               </button>
             </div>
           </div>
