@@ -2960,7 +2960,7 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Tip goal — vertical left meter (LoyalFans-style), tap to hide/show */}
+            {/* Tip goal — vertical left meter (premium), higher on desktop, tap to hide/show */}
             {!ended && (goal > 0 || raised > 0 || isOwner) && (() => {
               const pct =
                 goal > 0 ? Math.min(100, (raised / goal) * 100) : 0;
@@ -2974,19 +2974,27 @@ export default function LiveWatchPage() {
                   levels[levels.length - 1];
                 return active?.label || 'Goal';
               })();
+              const hitGoal = goal > 0 && raised >= goal;
               return (
-                <div className="absolute left-1.5 sm:left-3 top-[26%] sm:top-[22%] z-20 pointer-events-auto flex flex-col items-center gap-1.5">
+                <div
+                  className="absolute left-1.5 sm:left-3 z-20 pointer-events-auto flex flex-col items-center gap-1.5
+                    top-[24%] sm:top-[18%] lg:top-24 xl:top-28"
+                >
                   {goalMeterHidden ? (
                     <button
                       type="button"
                       onClick={() => setGoalMeterHidden(false)}
-                      className="w-8 h-14 sm:w-9 sm:h-16 rounded-full bg-black/55 backdrop-blur-md border border-pink-500/40 flex flex-col items-center justify-center shadow-lg active:scale-95 transition"
+                      className="w-9 h-16 sm:w-10 sm:h-[4.5rem] rounded-full bg-black/60 backdrop-blur-md border border-pink-500/50
+                        flex flex-col items-center justify-center shadow-[0_0_20px_rgba(236,72,153,0.25)]
+                        active:scale-95 transition hover:border-pink-400/70"
                       title="Show tip goal"
                     >
-                      <span className="text-[10px] font-bold text-pink-300 tabular-nums leading-none">
+                      <span className="text-[10px] sm:text-[11px] font-bold text-pink-300 tabular-nums leading-none">
                         {goal > 0 ? `${Math.round(pct)}%` : '£'}
                       </span>
-                      <span className="text-[8px] text-zinc-400 mt-0.5">show</span>
+                      <span className="text-[8px] text-zinc-400 mt-1 uppercase tracking-wider">
+                        show
+                      </span>
                     </button>
                   ) : (
                     <>
@@ -2996,60 +3004,124 @@ export default function LiveWatchPage() {
                         className="group relative flex flex-col items-center active:scale-[0.98] transition"
                         title="Tap to hide"
                       >
-                        {/* Vertical meter */}
-                        <div className="relative h-[9.5rem] sm:h-[11rem] w-9 sm:w-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 overflow-hidden shadow-xl flex flex-col justify-end">
+                        {/* Soft outer glow */}
+                        <div
+                          className={`absolute -inset-1 rounded-full blur-md transition-opacity duration-500 pointer-events-none ${
+                            hitGoal
+                              ? 'bg-pink-500/40 opacity-100'
+                              : pct >= 75
+                                ? 'bg-pink-500/25 opacity-80'
+                                : 'bg-pink-500/10 opacity-60'
+                          }`}
+                        />
+
+                        {/* Vertical meter shell */}
+                        <div
+                          className={`relative h-[10rem] sm:h-[12rem] lg:h-[13.5rem] w-9 sm:w-10 lg:w-11
+                            rounded-full bg-zinc-950/80 backdrop-blur-md overflow-hidden shadow-2xl
+                            border ${
+                              hitGoal
+                                ? 'border-pink-400/80 shadow-[0_0_24px_rgba(236,72,153,0.45)]'
+                                : 'border-white/20'
+                            }
+                            flex flex-col justify-end`}
+                        >
+                          {/* Track gradient background */}
+                          <div className="absolute inset-0 bg-gradient-to-b from-zinc-800/40 via-transparent to-black/40 pointer-events-none" />
+
+                          {/* Fill */}
                           <div
-                            className="w-full bg-gradient-to-t from-pink-700 via-pink-500 to-rose-400 transition-all duration-700 ease-out rounded-full"
+                            className={`relative w-full transition-all duration-700 ease-out rounded-full ${
+                              hitGoal
+                                ? 'bg-gradient-to-t from-amber-500 via-pink-500 to-rose-300'
+                                : 'bg-gradient-to-t from-pink-800 via-pink-500 to-rose-400'
+                            }`}
                             style={{
-                              height: goal > 0 ? `${Math.max(pct, pct > 0 ? 6 : 0)}%` : '0%',
+                              height:
+                                goal > 0
+                                  ? `${Math.max(pct, pct > 0 ? 8 : 0)}%`
+                                  : '0%',
                             }}
-                          />
-                          {/* Top labels inside bar */}
-                          <div className="absolute inset-x-0 top-1.5 flex flex-col items-center pointer-events-none px-0.5">
-                            <span className="text-[9px] sm:text-[10px] font-bold text-white tabular-nums drop-shadow">
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent opacity-60" />
+                          </div>
+
+                          {/* % at top of tube */}
+                          <div className="absolute inset-x-0 top-2 flex flex-col items-center pointer-events-none px-0.5 z-10">
+                            <span
+                              className={`text-[10px] sm:text-[11px] font-bold tabular-nums drop-shadow-md ${
+                                hitGoal ? 'text-amber-200' : 'text-white'
+                              }`}
+                            >
                               {goal > 0 ? `${Math.round(pct)}%` : '—'}
                             </span>
                           </div>
-                          {/* Shine */}
-                          <div className="absolute inset-y-0 left-0 w-[35%] bg-white/10 pointer-events-none rounded-full" />
+
+                          {/* Left edge glass shine */}
+                          <div className="absolute inset-y-0 left-0 w-[38%] bg-gradient-to-r from-white/15 to-transparent pointer-events-none rounded-full" />
+
+                          {/* Milestone ticks 25 / 50 / 75 */}
+                          {goal > 0 &&
+                            [25, 50, 75].map((m) => (
+                              <div
+                                key={m}
+                                className="absolute right-0.5 w-1.5 h-px rounded-full bg-white/40 pointer-events-none"
+                                style={{ bottom: `${m}%` }}
+                              />
+                            ))}
                         </div>
-                        {/* Amount under meter */}
-                        <div className="mt-1.5 min-w-[3.25rem] max-w-[4.75rem] text-center rounded-lg bg-black/70 border border-white/15 px-1.5 py-1 shadow-lg backdrop-blur-sm">
-                          <p className="text-[11px] sm:text-xs font-bold text-white tabular-nums leading-tight">
+
+                        {/* Amount chip under meter */}
+                        <div
+                          className={`mt-2 min-w-[3.5rem] max-w-[5.25rem] text-center rounded-xl px-2 py-1.5 shadow-xl backdrop-blur-md border ${
+                            hitGoal
+                              ? 'bg-gradient-to-b from-pink-600/40 to-black/80 border-pink-400/50'
+                              : 'bg-black/75 border-white/15'
+                          }`}
+                        >
+                          <p className="text-[11px] sm:text-xs lg:text-sm font-bold text-white tabular-nums leading-tight tracking-tight">
                             £{raised.toFixed(0)}
                           </p>
                           {goal > 0 && (
-                            <p className="text-[10px] sm:text-[11px] text-pink-200 font-semibold tabular-nums leading-tight">
-                              / £{goal.toFixed(0)}
+                            <p className="text-[10px] sm:text-[11px] text-pink-200/95 font-semibold tabular-nums leading-tight mt-0.5">
+                              of £{goal.toFixed(0)}
                             </p>
                           )}
-                          {levels.length > 0 && (
-                            <p className="text-[9px] text-zinc-200 truncate mt-0.5 max-w-[4.25rem] font-medium">
-                              {activeLabel}
+                          {(levels.length > 0 || activeLabel) && (
+                            <p className="text-[9px] sm:text-[10px] text-zinc-200 truncate mt-1 max-w-[4.75rem] font-medium opacity-90">
+                              {hitGoal ? 'Goal hit' : activeLabel}
                             </p>
                           )}
                         </div>
-                        {/* Multi-level ticks */}
+
+                        {/* Multi-level dots */}
                         {levels.length > 1 && (
-                          <div className="flex gap-0.5 mt-1">
-                            {levels.map((lvl, i) => (
-                              <div
-                                key={i}
-                                className={`h-1 w-1.5 rounded-full ${
-                                  raised >= Number(lvl.amount)
-                                    ? 'bg-pink-400'
-                                    : 'bg-zinc-600'
-                                }`}
-                              />
-                            ))}
+                          <div className="flex gap-1 mt-1.5">
+                            {levels.map((lvl, i) => {
+                              const done = raised >= Number(lvl.amount);
+                              return (
+                                <div
+                                  key={i}
+                                  title={lvl.label || `Level ${i + 1}`}
+                                  className={`h-1.5 w-1.5 rounded-full transition-colors ${
+                                    done
+                                      ? 'bg-pink-400 shadow-[0_0_6px_rgba(244,114,182,0.8)]'
+                                      : 'bg-zinc-600'
+                                  }`}
+                                />
+                              );
+                            })}
                           </div>
                         )}
                       </button>
+
                       {isOwner && (
                         <button
                           type="button"
                           onClick={() => openGoalEditor()}
-                          className="text-[9px] font-semibold text-zinc-300 hover:text-pink-300 bg-black/50 border border-white/10 rounded-full px-2 py-0.5 backdrop-blur"
+                          className="text-[9px] sm:text-[10px] font-semibold text-zinc-200 hover:text-white
+                            bg-black/55 hover:bg-black/70 border border-white/15 hover:border-pink-500/40
+                            rounded-full px-2.5 py-1 backdrop-blur transition"
                         >
                           Edit
                         </button>
