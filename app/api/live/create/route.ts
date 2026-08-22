@@ -1,102 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { notifyFollowersLive } from '../../../../lib/live-notify';
 
 export const dynamic = 'force-dynamic';
 
-async function notifyFollowersLive(
-  admin: any,
-  creatorId: string,
-  creatorName: string,
-  streamId: string,
-  title: string
-) {
-  try {
-    const { data: followers, error: fErr } = await admin
-      .from('follows')
-      .select('follower_id')
-      .eq('following_id', creatorId)
-      .limit(800);
-
-    if (fErr) {
-      console.error('live notify follows', fErr);
-      return;
-    }
-
-    const raw: any[] = Array.isArray(followers) ? followers : [];
-    const seen: Record<string, true> = {};
-    const ids: string[] = [];
-    for (let i = 0; i < raw.length; i++) {
-      const id = String(raw[i]?.follower_id || '');
-      if (!id || id === creatorId || seen[id]) continue;
-      seen[id] = true;
-      ids.push(id);
-    }
-    if (ids.length === 0) return;
-
-    // Avoid spam: skip if we already notified this follower for this stream
-    const { data: existing } = await admin
-      .from('notifications')
-      .select('user_id')
-      .eq('actor_id', creatorId)
-      .eq('type', 'live')
-      .eq('link', `/live/${streamId}`)
-      .in('user_id', ids.slice(0, 200));
-
-    const already: Record<string, true> = {};
-    const existingRows: any[] = Array.isArray(existing) ? existing : [];
-    for (let i = 0; i < existingRows.length; i++) {
-      const uid = String(existingRows[i]?.user_id || '');
-      if (uid) already[uid] = true;
-    }
-
-    const targets: string[] = [];
-    for (let i = 0; i < ids.length && targets.length < 500; i++) {
-      if (!already[ids[i]]) targets.push(ids[i]);
-    }
-    if (targets.length === 0) return;
-
-    const rows: any[] = [];
-    for (let i = 0; i < targets.length; i++) {
-      rows.push({
-        user_id: targets[i],
-        actor_id: creatorId,
-        type: 'live',
-        title: `${creatorName} is live`,
-        body: title,
-        link: `/live/${streamId}`,
-        is_read: false,
-      });
-    }
-
-    for (let i = 0; i < rows.length; i += 80) {
-      const chunk = rows.slice(i, i + 80);
-      const { error: insErr } = await admin
-        .from('notifications')
-        .insert(chunk);
-      if (insErr) {
-        console.error('live notify insert', insErr);
-        const slim: any[] = [];
-        for (let j = 0; j < chunk.length; j++) {
-          slim.push({
-            user_id: chunk[j].user_id,
-            actor_id: chunk[j].actor_id,
-            type: chunk[j].type,
-            title: chunk[j].title,
-            body: chunk[j].body,
-            link: chunk[j].link,
-          });
-        }
-        await admin.from('notifications').insert(slim);
-      }
-    }
-  } catch (e) {
-    console.error('live notifyFollowersLive', e);
-  }
-}
-
 /**
  * Creator starts an in-platform live (LiveKit room).
- * Thumbnail required. Notifies followers (new + resume if not yet notified for this stream).
+ * Thumbnail required.
+ * Soft-notifies followers here; primary notify also runs when stream goes active (token).
  */
 export async function POST(request: Request) {
   try {
@@ -153,9 +64,6 @@ export async function POST(request: Request) {
         ? body.thumbnail_url.trim().slice(0, 500)
         : null;
 
-    const creatorName =
-      profile.display_name || profile.username || 'A creator';
-
     if (existing) {
       const nextThumb = thumbnailUrl || existing.thumbnail_url || null;
       if (!nextThumb) {
@@ -180,10 +88,10 @@ export async function POST(request: Request) {
         .eq('id', existing.id)
         .single();
 
-      await notifyFollowersLive(
+      // Pre-notify (token will also try when active — deduped)
+      const notify = await notifyFollowersLive(
         admin,
         user.id,
-        creatorName,
         existing.id,
         title
       );
@@ -193,6 +101,7 @@ export async function POST(request: Request) {
         resumed: true,
         stream: updated || { ...existing, ...patch },
         watchPath: `/live/${existing.id}`,
+        notify,
       });
     }
 
@@ -238,13 +147,14 @@ export async function POST(request: Request) {
       })
       .eq('id', row.id);
 
-    await notifyFollowersLive(admin, user.id, creatorName, row.id, title);
+    const notify = await notifyFollowersLive(admin, user.id, row.id, title);
 
     return NextResponse.json({
       ok: true,
       resumed: false,
       stream: { ...row, livekit_room: livekitRoom },
       watchPath: `/live/${row.id}`,
+      notify,
     });
   } catch (e: any) {
     console.error('live create', e);
@@ -254,6 +164,7 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 
 

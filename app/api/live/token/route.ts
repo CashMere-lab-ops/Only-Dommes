@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { AccessToken } from 'livekit-server-sdk';
 import { createClient } from '@supabase/supabase-js';
+import { notifyFollowersLive } from '../../../../lib/live-notify';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * LiveKit token for a live stream room.
  * Creator → publish; viewers → subscribe
- * Private session → only creator + paid fan
+ * When creator first goes active → notify followers
  */
 export async function POST(request: Request) {
   try {
@@ -72,7 +73,6 @@ export async function POST(request: Request) {
     const isPrivateFan =
       !!stream.private_active && stream.private_user_id === user.id;
 
-    // Private session: lock out everyone else
     if (stream.private_active && !isCreator && !isPrivateFan) {
       return NextResponse.json(
         {
@@ -130,6 +130,7 @@ export async function POST(request: Request) {
 
     const token = await at.toJwt();
 
+    // First time this stream becomes active → notify followers
     if (isCreator && stream.status !== 'active') {
       await admin
         .from('live_streams')
@@ -139,6 +140,14 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', stream.id);
+
+      // Fire-and-forget notify (deduped inside helper)
+      void notifyFollowersLive(
+        admin,
+        stream.creator_id,
+        stream.id,
+        stream.title || 'Live now'
+      );
     }
 
     return NextResponse.json({
@@ -158,4 +167,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
