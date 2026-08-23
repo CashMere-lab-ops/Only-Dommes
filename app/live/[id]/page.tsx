@@ -2173,26 +2173,46 @@ export default function LiveWatchPage() {
 
 
   const shareLive = async () => {
-    const url =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/live/${id}`
-        : '';
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : '';
+    const url = `${origin}/live/${id}`;
+    const creatorName =
+      creator?.display_name ||
+      (creator?.username ? `@${creator.username}` : 'Creator');
+    const title = stream?.title || `${creatorName} is live`;
+    const text = `Watch ${creatorName} live on World Of Dommes`;
+
+    const markCopied = () => {
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2500);
+    };
+
+    // Always try clipboard first so the deep link is ready to paste
+    let copied = false;
     try {
-      if (navigator.share) {
-        await navigator.share({
-          title: stream?.title || 'Live on World Of Dommes',
-          url,
-        });
-      } else {
-        await navigator.clipboard.writeText(url);
-        setLinkCopied(true);
-        setTimeout(() => setLinkCopied(false), 2000);
+      await navigator.clipboard.writeText(url);
+      copied = true;
+      markCopied();
+    } catch {
+      /* clipboard may be blocked */
+    }
+
+    // Native share sheet on mobile (after copy) — best of both worlds
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ title, text, url });
+        if (!copied) markCopied();
+        return;
       }
     } catch {
+      // User cancelled share sheet — still fine if we copied
+    }
+
+    if (!copied) {
+      // Last resort: prompt
       try {
-        await navigator.clipboard.writeText(url);
-        setLinkCopied(true);
-        setTimeout(() => setLinkCopied(false), 2000);
+        window.prompt('Copy this live link:', url);
+        markCopied();
       } catch {
         /* ignore */
       }
@@ -2884,11 +2904,15 @@ export default function LiveWatchPage() {
                     <button
                       type="button"
                       onClick={() => void shareLive()}
-                      className="h-8 w-8 rounded-full bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center"
-                      title="Share"
+                      className={`h-8 w-8 rounded-full backdrop-blur border flex items-center justify-center transition ${
+                        linkCopied
+                          ? 'bg-pink-600/90 border-pink-400/50 text-white'
+                          : 'bg-black/50 border-white/15'
+                      }`}
+                      title="Share live link"
                     >
                       {linkCopied ? (
-                        <Check size={14} className="text-green-400" />
+                        <Check size={14} />
                       ) : (
                         <Share2 size={14} />
                       )}
@@ -2942,8 +2966,12 @@ export default function LiveWatchPage() {
                             }}
                             className="w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2"
                           >
-                            <Share2 size={14} className="text-pink-400" />
-                            {linkCopied ? 'Copied!' : 'Share'}
+                            {linkCopied ? (
+                              <Check size={14} className="text-pink-400" />
+                            ) : (
+                              <Share2 size={14} className="text-pink-400" />
+                            )}
+                            {linkCopied ? 'Link copied' : 'Share live'}
                           </button>
                           <Link
                             href={
@@ -3226,7 +3254,25 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            
+            {/* Share success toast */}
+            {linkCopied && !ended && (
+              <div className="absolute z-[80] left-1/2 -translate-x-1/2 bottom-28 sm:bottom-24 pointer-events-none px-4 w-full max-w-sm">
+                <div className="rounded-2xl bg-zinc-900/95 border border-pink-500/40 shadow-xl shadow-pink-900/20 backdrop-blur-md px-4 py-3 flex items-center gap-3 animate-[wod-announce-in_0.3s_ease-out]">
+                  <div className="w-9 h-9 rounded-full bg-pink-600/20 flex items-center justify-center flex-shrink-0">
+                    <Check size={18} className="text-pink-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-white">Link copied</p>
+                    <p className="text-[11px] text-zinc-400 truncate">
+                      {typeof window !== 'undefined'
+                        ? `${window.location.origin}/live/${id}`
+                        : `/live/${id}`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Host announce banner — phone: goal slot; tip goal slides under */}
             {announceBanner && !ended && (
               <div
