@@ -8,8 +8,9 @@ import { Crown } from 'lucide-react';
 
 function safeNext(raw: string | null): string {
   if (!raw) return '/';
-  // Only allow same-site relative paths
+  // Only allow same-site relative paths (block open redirects)
   if (!raw.startsWith('/') || raw.startsWith('//')) return '/';
+  if (raw.startsWith('/login') || raw.startsWith('/signup')) return '/';
   return raw;
 }
 
@@ -36,8 +37,14 @@ function LoginForm() {
     if (error) {
       setMessage(error.message);
       setLoading(false);
+      return;
+    }
+
+    setMessage('Login successful! Redirecting...');
+    // Full navigation so session cookie is applied before live page loads
+    if (typeof window !== 'undefined') {
+      window.location.href = next;
     } else {
-      setMessage('Login successful! Redirecting...');
       router.push(next);
     }
   };
@@ -59,7 +66,14 @@ function LoginForm() {
         <h1 className="text-3xl font-bold text-center mb-2">
           World Of <span className="gradient-text">Dommes</span>
         </h1>
-        <p className="text-zinc-400 text-center mb-8">Log in to your account</p>
+        <p className="text-zinc-400 text-center mb-2">Log in to your account</p>
+        {next.startsWith('/live/') ? (
+          <p className="text-center text-sm text-pink-400/90 mb-6">
+            You&apos;ll return to the live after login
+          </p>
+        ) : (
+          <div className="mb-6" />
+        )}
 
         <div className="bg-zinc-900 p-8 rounded-3xl">
           <label className="block text-sm font-medium mb-2">Email</label>
@@ -133,3 +147,4 @@ export default function LoginPage() {
     </Suspense>
   );
 }
+
