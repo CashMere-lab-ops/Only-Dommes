@@ -242,6 +242,18 @@ export default function LiveWatchPage() {
   const [liveStatus, setLiveStatus] = useState<
     'idle' | 'connecting' | 'live' | 'ended' | 'error'
   >('idle');
+  const [reconnecting, setReconnecting] = useState(false);
+  const intentionalLeaveRef = useRef(false);
+  const endFinalized = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectMetaRef = useRef<{ streamId: string; asCreator: boolean } | null>(
+    null
+  );
+  const connectLiveRef = useRef<
+    (streamRow: StreamRow, asCreator: boolean, isRetry?: boolean) => Promise<void>
+  >(async () => {});
+  const scheduleReconnectRef = useRef<() => void>(() => {});
   const [camOn, setCamOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
   const [viewerCount, setViewerCount] = useState(0); // displayed (smoothed)
@@ -724,10 +736,61 @@ export default function LiveWatchPage() {
     return { stream: data, userId: user?.id || null };
   };
 
-  const connectLive = async (streamRow: StreamRow, asCreator: boolean) => {
-    setConnecting(true);
+  const scheduleReconnect = () => {
+    if (intentionalLeaveRef.current || endFinalized.current) return;
+    if (reconnectAttemptsRef.current >= 8) {
+      setReconnecting(false);
+      setError('Connection lost. Refresh the page to rejoin.');
+      return;
+    }
+    const attempt = reconnectAttemptsRef.current;
+    reconnectAttemptsRef.current += 1;
+    const delay = Math.min(1200 * Math.pow(1.4, attempt), 12000);
+    setReconnecting(true);
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = setTimeout(() => {
+      const meta = connectMetaRef.current;
+      if (!meta) {
+        setReconnecting(false);
+        return;
+      }
+      void (async () => {
+        try {
+          const { data: row } = await supabase
+            .from('live_streams')
+            .select('*')
+            .eq('id', meta.streamId)
+            .maybeSingle();
+          if (!row || row.status === 'ended') {
+            setReconnecting(false);
+            void finalizeRef.current(row || undefined);
+            return;
+          }
+          await connectLiveRef.current(row as StreamRow, meta.asCreator, true);
+        } catch {
+          scheduleReconnectRef.current();
+        }
+      })();
+    }, delay);
+  };
+  scheduleReconnectRef.current = scheduleReconnect;
+
+  const connectLive = async (
+    streamRow: StreamRow,
+    asCreator: boolean,
+    isRetry = false
+  ) => {
+    if (!isRetry) {
+      intentionalLeaveRef.current = false;
+      reconnectAttemptsRef.current = 0;
+      setReconnecting(false);
+      setConnecting(true);
+      setLiveStatus('connecting');
+    } else {
+      setReconnecting(true);
+    }
     setError('');
-    setLiveStatus('connecting');
+    connectMetaRef.current = { streamId: streamRow.id, asCreator };
     try {
       const {
         data: { session },
@@ -748,6 +811,11 @@ export default function LiveWatchPage() {
           setPrivateLockedOut(true);
           setLiveStatus('idle');
           setConnecting(false);
+          setReconnecting(false);
+          return;
+        }
+        if (isRetry) {
+          scheduleReconnect();
           return;
         }
         throw new Error(data.error || 'Could not join live');
@@ -761,7 +829,9 @@ export default function LiveWatchPage() {
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
-      });
+        // LiveKit will try to recover from brief network blips
+        disconnectOnPageLeave: false,
+      } as any);
       roomRef.current = room;
 
       room.on(RoomEvent.TrackSubscribed, (track) => {
@@ -785,17 +855,39 @@ export default function LiveWatchPage() {
       });
       room.on(RoomEvent.ParticipantDisconnected, () => {
         bumpViewers(Math.max(0, room.numParticipants - 1));
-        if (!asCreator && room.remoteParticipants.size === 0) {
-          setTimeout(() => {
-            void finalizeRef.current();
-          }, 300);
-        }
+        // Don't end live on brief host blip — status poll / reconnect handles real end
       });
+
+      // LiveKit built-in reconnect signals
+      room.on(RoomEvent.Reconnecting, () => {
+        if (!intentionalLeaveRef.current) setReconnecting(true);
+      });
+      room.on(RoomEvent.Reconnected, () => {
+        setReconnecting(false);
+        reconnectAttemptsRef.current = 0;
+        setLiveStatus('live');
+        bumpViewers(Math.max(0, room.numParticipants - 1));
+      });
+
       room.on(RoomEvent.Disconnected, () => {
-        // Room closed / host ended → show end screen for viewers immediately
-        if (!asCreator) {
-          void finalizeRef.current();
-        }
+        if (intentionalLeaveRef.current || endFinalized.current) return;
+        // Host ended or hard network drop — check DB then reconnect or end
+        void (async () => {
+          try {
+            const { data: row } = await supabase
+              .from('live_streams')
+              .select('status')
+              .eq('id', streamRow.id)
+              .maybeSingle();
+            if (row?.status === 'ended') {
+              void finalizeRef.current();
+              return;
+            }
+          } catch {
+            /* ignore */
+          }
+          scheduleReconnect();
+        })();
       });
 
       // Live settings broadcast (slow mode, etc.)
@@ -1000,6 +1092,8 @@ export default function LiveWatchPage() {
 
       bumpViewers(Math.max(0, room.numParticipants - 1));
       setLiveStatus('live');
+      setReconnecting(false);
+      reconnectAttemptsRef.current = 0;
       setLiveStartedAt((prev) => {
         const v = prev || Date.now();
         liveStartedAtRef.current = v;
@@ -1008,15 +1102,20 @@ export default function LiveWatchPage() {
       setStream((s) => (s ? { ...s, status: 'active' } : s));
     } catch (e: any) {
       console.error(e);
+      if (isRetry) {
+        scheduleReconnectRef.current();
+        return;
+      }
       setError(e?.message || 'Could not connect');
       setLiveStatus('error');
+      setReconnecting(false);
       await cleanupRoom();
     } finally {
       setConnecting(false);
     }
   };
+  connectLiveRef.current = connectLive;
 
-  const endFinalized = useRef(false);
   const finalizeRef = useRef<(partial?: Partial<StreamRow>) => Promise<void>>(
     async () => {}
   );
@@ -1025,6 +1124,12 @@ export default function LiveWatchPage() {
     async (_partial?: Partial<StreamRow>) => {
       if (endFinalized.current) return;
       endFinalized.current = true;
+      intentionalLeaveRef.current = true;
+      setReconnecting(false);
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       // Flip UI immediately so viewers never stay on a black LIVE screen
       setLiveStatus('ended');
       setStream((s) => (s ? { ...s, status: 'ended' } : s));
@@ -2438,6 +2543,12 @@ export default function LiveWatchPage() {
 
   const endLive = async () => {
     if (!confirm('End this live stream? It will not be saved.')) return;
+    intentionalLeaveRef.current = true;
+    setReconnecting(false);
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     setEnding(true);
     try {
       const {
@@ -3298,6 +3409,21 @@ export default function LiveWatchPage() {
                     Tip goal{' '}
                     <span className="text-pink-300">{milestoneFlash}%</span>
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Reconnecting banner */}
+            {reconnecting && !ended && (
+              <div className="absolute z-[85] left-1/2 -translate-x-1/2 top-16 sm:top-20 pointer-events-none px-4 w-full max-w-sm">
+                <div className="rounded-2xl bg-zinc-900/95 border border-amber-500/40 shadow-xl backdrop-blur-md px-4 py-2.5 flex items-center gap-3">
+                  <Loader2 size={18} className="text-amber-400 animate-spin flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white">Reconnecting…</p>
+                    <p className="text-[11px] text-zinc-400">
+                      Weak connection — trying again
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
