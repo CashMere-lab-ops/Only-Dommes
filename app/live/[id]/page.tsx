@@ -244,7 +244,9 @@ export default function LiveWatchPage() {
   >('idle');
   const [camOn, setCamOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
-  const [viewerCount, setViewerCount] = useState(0);
+  const [viewerCount, setViewerCount] = useState(0); // displayed (smoothed)
+  const trueViewerRef = useRef(0); // real room count
+  const viewerLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [peakViewers, setPeakViewers] = useState(0);
   const [endSummary, setEndSummary] = useState<any>(null);
   const [myTipTotal, setMyTipTotal] = useState(0);
@@ -394,11 +396,37 @@ export default function LiveWatchPage() {
   );
   const inPrivate = !!(stream?.private_active && (isOwner || isPrivateFan));
 
-  const bumpViewers = (n: number) => {
-    const v = Math.max(0, n);
-    setViewerCount(v);
+  /**
+   * Smooth viewer count:
+   * - Joins apply quickly (small delay)
+   * - Leaves are delayed so brief disconnects don't flicker
+   * - Display eases toward the true count (no big jumps)
+   */
+  const bumpViewers = useCallback((n: number, opts?: { immediate?: boolean }) => {
+    const v = Math.max(0, Math.floor(n));
+    const prev = trueViewerRef.current;
+    trueViewerRef.current = v;
     setPeakViewers((p) => Math.max(p, v));
-  };
+
+    if (opts?.immediate || v >= prev) {
+      // Going up (or force) — clear pending leave, move target up now
+      if (viewerLeaveTimer.current) {
+        clearTimeout(viewerLeaveTimer.current);
+        viewerLeaveTimer.current = null;
+      }
+      // Display can catch up via the smooth ticker; seed a bit higher sooner
+      setViewerCount((d) => (v > d ? Math.min(v, d + Math.max(1, Math.ceil((v - d) / 2))) : d));
+      return;
+    }
+
+    // Going down — wait briefly in case it's a reconnect blip
+    if (viewerLeaveTimer.current) clearTimeout(viewerLeaveTimer.current);
+    viewerLeaveTimer.current = setTimeout(() => {
+      viewerLeaveTimer.current = null;
+      // trueViewerRef may have recovered; use latest
+      trueViewerRef.current = Math.max(0, trueViewerRef.current);
+    }, 1800);
+  }, []);
 
   const cleanupRoom = useCallback(async () => {
     try {
@@ -476,6 +504,12 @@ export default function LiveWatchPage() {
     }
 
     setStream(data);
+    {
+      const vc = Math.max(0, Number(data.viewer_count || 0));
+      trueViewerRef.current = vc;
+      setViewerCount(vc);
+      setPeakViewers((p) => Math.max(p, vc, Number(data.peak_viewers || 0)));
+    }
     prevRaised.current = Number(data.tip_raised_gbp || 0);
     const g0 = Number(data.tip_goal_gbp || 0);
     const r0 = Number(data.tip_raised_gbp || 0);
@@ -1484,32 +1518,46 @@ export default function LiveWatchPage() {
     return () => clearInterval(t);
   }, [privateEndsAt, stream?.private_active, id, supabase]);
 
+  // Ease displayed count toward true count (premium, no flicker)
+  useEffect(() => {
+    if (liveStatus !== 'live') return;
+    const t = setInterval(() => {
+      setViewerCount((d) => {
+        const target = Math.max(0, trueViewerRef.current);
+        if (d === target) return d;
+        if (d < target) {
+          const step = Math.max(1, Math.ceil((target - d) / 3));
+          return Math.min(target, d + step);
+        }
+        const step = Math.max(1, Math.ceil((d - target) / 3));
+        return Math.max(target, d - step);
+      });
+    }, 450);
+    return () => clearInterval(t);
+  }, [liveStatus]);
+
+  // Sync true count from LiveKit room + persist peak/current for host
   useEffect(() => {
     if (liveStatus !== 'live' || !id) return;
     const push = () => {
-      const n = roomRef.current
-        ? Math.max(0, roomRef.current.numParticipants - (isOwner ? 1 : 0))
-        : viewerCount;
-      // Creator subtracts self; viewers report room size minus 1 (creator)
-      let count = n;
-      if (!isOwner && roomRef.current) {
-        count = Math.max(0, roomRef.current.numParticipants - 1);
-      }
+      if (!roomRef.current) return;
+      // Everyone except the host counts as a viewer
+      const count = Math.max(0, roomRef.current.numParticipants - 1);
       bumpViewers(count);
       if (isOwner) {
         void supabase
           .from('live_streams')
           .update({
-            viewer_count: count,
+            viewer_count: Math.max(0, trueViewerRef.current),
             updated_at: new Date().toISOString(),
           })
           .eq('id', id);
       }
     };
     push();
-    const t = setInterval(push, 5000);
+    const t = setInterval(push, 4000);
     return () => clearInterval(t);
-  }, [isOwner, liveStatus, id, supabase]);
+  }, [isOwner, liveStatus, id, supabase, bumpViewers]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -2879,7 +2927,7 @@ export default function LiveWatchPage() {
                   </span>
                   <span className="bg-black/50 backdrop-blur text-[11px] sm:text-xs px-2 py-1 rounded-full flex items-center gap-1 border border-white/10 tabular-nums">
                     <Users size={12} />
-                    {viewerCount || stream?.viewer_count || 0}
+                    {viewerCount}
                   </span>
                   {/* Desktop: follow + share inline */}
                   <div className="hidden sm:flex items-center gap-1.5">
