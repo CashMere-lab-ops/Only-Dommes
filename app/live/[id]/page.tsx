@@ -109,15 +109,6 @@ type ChatMsg = {
 
 const TIP_PRESETS = [5, 10, 20, 50];
 
-/** Default live gifts (step 1). Creator-custom list later. */
-const DEFAULT_GIFTS = [
-  { id: 'rose', label: 'Rose', emoji: '🌹', amount_gbp: 5 },
-  { id: 'kiss', label: 'Kiss', emoji: '💋', amount_gbp: 10 },
-  { id: 'crown', label: 'Crown', emoji: '👑', amount_gbp: 20 },
-  { id: 'champagne', label: 'Champagne', emoji: '🥂', amount_gbp: 50 },
-  { id: 'diamond', label: 'Diamond', emoji: '💎', amount_gbp: 100 },
-] as const;
-
 
 function playPrivateChime() {
   try {
@@ -262,12 +253,6 @@ export default function LiveWatchPage() {
   const joinAnnouncedRef = useRef(false);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTip, setShowTip] = useState(false);
-  const [tipSheetTab, setTipSheetTab] = useState<'tip' | 'gifts'>('tip');
-  const [giftingId, setGiftingId] = useState<string | null>(null);
-  const [liveGifts, setLiveGifts] = useState<
-    { id: string; label: string; emoji: string; amount_gbp: number }[]
-  >(DEFAULT_GIFTS.map((g) => ({ ...g })));
-  const [giftsEnabled, setGiftsEnabled] = useState(true);
   const [tipAmount, setTipAmount] = useState(5);
   const [tipNote, setTipNote] = useState('');
   const [creatorMinTip, setCreatorMinTip] = useState(2);
@@ -275,14 +260,6 @@ export default function LiveWatchPage() {
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
-  /** Center gift celebration — visible to everyone on the live */
-  const [giftAlert, setGiftAlert] = useState<{
-    emoji: string;
-    label: string;
-    amount: number;
-    fromName: string;
-  } | null>(null);
-  const giftAlertTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
@@ -515,33 +492,15 @@ export default function LiveWatchPage() {
     try {
       const { data: cProf } = await supabase
         .from('profiles')
-        .select('min_tip_gbp, live_gifts, live_gifts_enabled')
+        .select('min_tip_gbp')
         .eq('id', data.creator_id)
         .maybeSingle();
       const mt = Number(cProf?.min_tip_gbp);
       const minT = Number.isFinite(mt) && mt > 2 ? mt : 2;
       setCreatorMinTip(minT);
       setTipAmount((prev) => (prev < minT ? minT : prev));
-      setGiftsEnabled(cProf?.live_gifts_enabled !== false);
-      if (Array.isArray(cProf?.live_gifts) && cProf.live_gifts.length > 0) {
-        setLiveGifts(
-          cProf.live_gifts.slice(0, 8).map((g: any, i: number) => ({
-            id: String(g.id || `gift_${i}`).slice(0, 24),
-            label: String(g.label || 'Gift').slice(0, 24),
-            emoji: String(g.emoji || '🎁').slice(0, 8) || '🎁',
-            amount_gbp: Math.min(
-              500,
-              Math.max(1, Number(g.amount_gbp) || 5)
-            ),
-          }))
-        );
-      } else {
-        setLiveGifts(DEFAULT_GIFTS.map((g) => ({ ...g })));
-      }
     } catch {
       setCreatorMinTip(2);
-      setGiftsEnabled(true);
-      setLiveGifts(DEFAULT_GIFTS.map((g) => ({ ...g })));
     }
     try {
       const { data: { user: u } } = await supabase.auth.getUser();
@@ -963,6 +922,22 @@ export default function LiveWatchPage() {
             updated_at: new Date().toISOString(),
           })
           .eq('id', streamRow.id);
+
+        // Notify followers (explicit + debugable in Network tab)
+        try {
+          const nRes = await fetch('/api/live/notify-followers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ streamId: streamRow.id }),
+          });
+          const nData = await nRes.json().catch(() => ({}));
+          console.log('[live notify]', nData);
+        } catch (ne) {
+          console.error('[live notify] failed', ne);
+        }
       } else {
         room.remoteParticipants.forEach((p) => {
           p.trackPublications.forEach((pub) => {
@@ -1352,32 +1327,12 @@ export default function LiveWatchPage() {
               )
             );
           }
-
-          // Gift center flash for all viewers (step 2)
-          const giftMatch = String(row.content || '').match(
-            /^__GIFT__:([a-z0-9_]+)\|([0-9]+(?:\.[0-9]+)?)\|([^|]{1,40})\|(.{1,8})$/u
-          );
-          if (giftMatch) {
-            const fromName =
-              profile?.display_name ||
-              (profile?.username ? `@${profile.username}` : 'A fan');
-            if (giftAlertTimer.current) clearTimeout(giftAlertTimer.current);
-            setGiftAlert({
-              emoji: giftMatch[4],
-              label: giftMatch[3],
-              amount: Number(giftMatch[2]),
-              fromName,
-            });
-            playTipChime();
-            giftAlertTimer.current = setTimeout(() => setGiftAlert(null), 3200);
-          }
         }
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
-      if (giftAlertTimer.current) clearTimeout(giftAlertTimer.current);
     };
   }, [id, supabase]);
 
@@ -2412,140 +2367,6 @@ export default function LiveWatchPage() {
     }
   };
 
-  const sendGift = async (giftId: string) => {
-    if (!stream || isOwner || !giftsEnabled) return;
-    const gift = liveGifts.find((g) => g.id === giftId);
-    if (!gift) return;
-    setGiftingId(giftId);
-    setTipError('');
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('Please log in again');
-
-      const res = await fetch('/api/live/gift', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          stream_id: stream.id,
-          gift_id: gift.id,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (data.code === 'INSUFFICIENT_BALANCE') {
-          const go = confirm(
-            `Not enough balance (need £${Number(data.needed || gift.amount_gbp).toFixed(2)}). Open wallet?`
-          );
-          if (go) window.location.href = '/wallet';
-          return;
-        }
-        throw new Error(data.error || 'Gift failed');
-      }
-      if (typeof data.balance === 'number') {
-        notifyBalanceUpdated(data.balance);
-      }
-      setStream((s) =>
-        s
-          ? {
-              ...s,
-              tip_raised_gbp: data.tip_raised_gbp,
-              tip_goal_gbp: data.tip_goal_gbp ?? s.tip_goal_gbp,
-              tip_goals:
-                data.tip_goals !== undefined ? data.tip_goals : s.tip_goals,
-              showcase_user_id: data.showcase?.user_id ?? s.showcase_user_id,
-              showcase_amount_gbp:
-                data.showcase?.amount_gbp ?? s.showcase_amount_gbp,
-              showcase_name: data.showcase?.name ?? s.showcase_name,
-              showcase_avatar_url:
-                data.showcase?.avatar_url ?? s.showcase_avatar_url,
-            }
-          : s
-      );
-      const emoji = data.gift_emoji || gift.emoji;
-      const label = data.gift_label || gift.label;
-      const fromName =
-        myProfile?.display_name ||
-        (myProfile?.username ? `@${myProfile.username}` : 'You');
-      // Local center celebration (realtime chat also notifies other viewers)
-      if (giftAlertTimer.current) clearTimeout(giftAlertTimer.current);
-      setGiftAlert({
-        emoji,
-        label,
-        amount: Number(data.amount),
-        fromName,
-      });
-      playTipChime();
-      giftAlertTimer.current = setTimeout(() => setGiftAlert(null), 3200);
-      if (data.is_showcase) {
-        setTipFlash(`You're top tipper 👑`);
-        setTimeout(() => setTipFlash(null), 2800);
-      }
-      setShowTip(false);
-      setTipSheetTab('tip');
-
-      if (typeof data.user_total === 'number') {
-        setMyTipTotal(Number(data.user_total));
-      } else {
-        setMyTipTotal(
-          (prev) => Math.round((prev + Number(data.amount || 0)) * 100) / 100
-        );
-      }
-      try {
-        const boardRes = await fetch(`/api/live/status?id=${stream.id}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          cache: 'no-store',
-        });
-        const board = await boardRes.json().catch(() => ({}));
-        if (Array.isArray(board.top_tippers)) setTopTippers(board.top_tippers);
-        if (board.my_rank != null) setMyTipRank(Number(board.my_rank));
-        else if (board.my_rank === null) setMyTipRank(null);
-      } catch {
-        /* ignore */
-      }
-      const newRaised = Number(data.tip_raised_gbp || 0);
-      const goalAmt = Number(data.tip_goal_gbp || stream.tip_goal_gbp || 0);
-      if (goalAmt > 0) {
-        const newPct = Math.min(100, (newRaised / goalAmt) * 100);
-        const prevPct = prevGoalPct.current;
-        for (const m of [25, 50, 75, 100]) {
-          if (prevPct < m && newPct >= m) {
-            if (m === 100) {
-              setGoalReachedFlash(true);
-              playGoalChime();
-              setTimeout(() => setGoalReachedFlash(false), 4500);
-            } else {
-              setMilestoneFlash(m);
-              setTimeout(() => setMilestoneFlash(null), 2800);
-            }
-            break;
-          }
-        }
-        prevGoalPct.current = newPct;
-      }
-      prevRaised.current = newRaised;
-
-      // Chat: __GIFT__:rose|5.00|Rose|🌹
-      const giftLine = `__GIFT__:${gift.id}|${Number(data.amount).toFixed(2)}|${label}|${emoji}`;
-      try {
-        await supabase.from('live_chat_messages').insert({
-          stream_id: stream.id,
-          user_id: userId!,
-          content: giftLine,
-        });
-      } catch {
-        /* ignore */
-      }
-    } catch (e: any) {
-      setTipError(e.message || 'Gift failed');
-    } finally {
-      setGiftingId(null);
-    }
-  };
 
   const endLive = async () => {
     if (!confirm('End this live stream? It will not be saved.')) return;
@@ -2661,35 +2482,13 @@ export default function LiveWatchPage() {
     );
     if (withNote) {
       return {
-        kind: 'tip' as const,
         amount: Number(withNote[1]),
         note: (withNote[2] || '').trim() || null,
-        giftLabel: null as string | null,
-        giftEmoji: null as string | null,
       };
     }
     const legacy = content.match(/^tipped £([0-9]+(?:\.[0-9]+)?)/i);
     if (legacy) {
-      return {
-        kind: 'tip' as const,
-        amount: Number(legacy[1]),
-        note: null as string | null,
-        giftLabel: null as string | null,
-        giftEmoji: null as string | null,
-      };
-    }
-    // __GIFT__:rose|5.00|Rose|🌹
-    const gift = content.match(
-      /^__GIFT__:([a-z0-9_]+)\|([0-9]+(?:\.[0-9]+)?)\|([^|]{1,40})\|(.{1,8})$/u
-    );
-    if (gift) {
-      return {
-        kind: 'gift' as const,
-        amount: Number(gift[2]),
-        note: null as string | null,
-        giftLabel: gift[3],
-        giftEmoji: gift[4],
-      };
+      return { amount: Number(legacy[1]), note: null as string | null };
     }
     return null;
   };
@@ -2812,30 +2611,6 @@ export default function LiveWatchPage() {
     <AuthGuard>
       <div className="bg-black text-white flex lg:min-h-screen">
         <style dangerouslySetInnerHTML={{ __html: `
-@keyframes wod-gift-in {
-  from {
-    opacity: 0;
-    transform: scale(0.72) translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-@keyframes wod-gift-bounce {
-  0% {
-    transform: scale(0.4);
-    opacity: 0;
-  }
-  55% {
-    transform: scale(1.12);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
 @keyframes wod-float-react {
   0% { transform: translateY(0) scale(0.3); opacity: 0; }
   12% { transform: translateY(-20px) scale(1.15); opacity: 1; }
@@ -3201,7 +2976,7 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Tip goal — vertical left meter (premium), higher on desktop, tap to hide/show */}
+            {/* Tip goal — vertical left meter (LoyalFans-style), tap to hide/show */}
             {!ended && (goal > 0 || raised > 0 || isOwner) && (() => {
               const pct =
                 goal > 0 ? Math.min(100, (raised / goal) * 100) : 0;
@@ -3215,27 +2990,19 @@ export default function LiveWatchPage() {
                   levels[levels.length - 1];
                 return active?.label || 'Goal';
               })();
-              const hitGoal = goal > 0 && raised >= goal;
               return (
-                <div
-                  className="absolute left-1.5 sm:left-3 z-20 pointer-events-auto flex flex-col items-center gap-1.5
-                    top-[24%] sm:top-[18%] lg:top-24 xl:top-28"
-                >
+                <div className="absolute left-1.5 sm:left-3 top-[26%] sm:top-[22%] z-20 pointer-events-auto flex flex-col items-center gap-1.5">
                   {goalMeterHidden ? (
                     <button
                       type="button"
                       onClick={() => setGoalMeterHidden(false)}
-                      className="w-9 h-16 sm:w-10 sm:h-[4.5rem] rounded-full bg-black/60 backdrop-blur-md border border-pink-500/50
-                        flex flex-col items-center justify-center shadow-[0_0_20px_rgba(236,72,153,0.25)]
-                        active:scale-95 transition hover:border-pink-400/70"
+                      className="w-8 h-14 sm:w-9 sm:h-16 rounded-full bg-black/55 backdrop-blur-md border border-pink-500/40 flex flex-col items-center justify-center shadow-lg active:scale-95 transition"
                       title="Show tip goal"
                     >
-                      <span className="text-[10px] sm:text-[11px] font-bold text-pink-300 tabular-nums leading-none">
+                      <span className="text-[10px] font-bold text-pink-300 tabular-nums leading-none">
                         {goal > 0 ? `${Math.round(pct)}%` : '£'}
                       </span>
-                      <span className="text-[8px] text-zinc-400 mt-1 uppercase tracking-wider">
-                        show
-                      </span>
+                      <span className="text-[8px] text-zinc-400 mt-0.5">show</span>
                     </button>
                   ) : (
                     <>
@@ -3245,124 +3012,60 @@ export default function LiveWatchPage() {
                         className="group relative flex flex-col items-center active:scale-[0.98] transition"
                         title="Tap to hide"
                       >
-                        {/* Soft outer glow */}
-                        <div
-                          className={`absolute -inset-1 rounded-full blur-md transition-opacity duration-500 pointer-events-none ${
-                            hitGoal
-                              ? 'bg-pink-500/40 opacity-100'
-                              : pct >= 75
-                                ? 'bg-pink-500/25 opacity-80'
-                                : 'bg-pink-500/10 opacity-60'
-                          }`}
-                        />
-
-                        {/* Vertical meter shell */}
-                        <div
-                          className={`relative h-[10rem] sm:h-[12rem] lg:h-[13.5rem] w-9 sm:w-10 lg:w-11
-                            rounded-full bg-zinc-950/80 backdrop-blur-md overflow-hidden shadow-2xl
-                            border ${
-                              hitGoal
-                                ? 'border-pink-400/80 shadow-[0_0_24px_rgba(236,72,153,0.45)]'
-                                : 'border-white/20'
-                            }
-                            flex flex-col justify-end`}
-                        >
-                          {/* Track gradient background */}
-                          <div className="absolute inset-0 bg-gradient-to-b from-zinc-800/40 via-transparent to-black/40 pointer-events-none" />
-
-                          {/* Fill */}
+                        {/* Vertical meter */}
+                        <div className="relative h-[9.5rem] sm:h-[11rem] w-9 sm:w-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 overflow-hidden shadow-xl flex flex-col justify-end">
                           <div
-                            className={`relative w-full transition-all duration-700 ease-out rounded-full ${
-                              hitGoal
-                                ? 'bg-gradient-to-t from-amber-500 via-pink-500 to-rose-300'
-                                : 'bg-gradient-to-t from-pink-800 via-pink-500 to-rose-400'
-                            }`}
+                            className="w-full bg-gradient-to-t from-pink-700 via-pink-500 to-rose-400 transition-all duration-700 ease-out rounded-full"
                             style={{
-                              height:
-                                goal > 0
-                                  ? `${Math.max(pct, pct > 0 ? 8 : 0)}%`
-                                  : '0%',
+                              height: goal > 0 ? `${Math.max(pct, pct > 0 ? 6 : 0)}%` : '0%',
                             }}
-                          >
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent opacity-60" />
-                          </div>
-
-                          {/* % at top of tube */}
-                          <div className="absolute inset-x-0 top-2 flex flex-col items-center pointer-events-none px-0.5 z-10">
-                            <span
-                              className={`text-[10px] sm:text-[11px] font-bold tabular-nums drop-shadow-md ${
-                                hitGoal ? 'text-amber-200' : 'text-white'
-                              }`}
-                            >
+                          />
+                          {/* Top labels inside bar */}
+                          <div className="absolute inset-x-0 top-1.5 flex flex-col items-center pointer-events-none px-0.5">
+                            <span className="text-[9px] sm:text-[10px] font-bold text-white tabular-nums drop-shadow">
                               {goal > 0 ? `${Math.round(pct)}%` : '—'}
                             </span>
                           </div>
-
-                          {/* Left edge glass shine */}
-                          <div className="absolute inset-y-0 left-0 w-[38%] bg-gradient-to-r from-white/15 to-transparent pointer-events-none rounded-full" />
-
-                          {/* Milestone ticks 25 / 50 / 75 */}
-                          {goal > 0 &&
-                            [25, 50, 75].map((m) => (
-                              <div
-                                key={m}
-                                className="absolute right-0.5 w-1.5 h-px rounded-full bg-white/40 pointer-events-none"
-                                style={{ bottom: `${m}%` }}
-                              />
-                            ))}
+                          {/* Shine */}
+                          <div className="absolute inset-y-0 left-0 w-[35%] bg-white/10 pointer-events-none rounded-full" />
                         </div>
-
-                        {/* Amount chip under meter */}
-                        <div
-                          className={`mt-2 min-w-[3.5rem] max-w-[5.25rem] text-center rounded-xl px-2 py-1.5 shadow-xl backdrop-blur-md border ${
-                            hitGoal
-                              ? 'bg-gradient-to-b from-pink-600/40 to-black/80 border-pink-400/50'
-                              : 'bg-black/75 border-white/15'
-                          }`}
-                        >
-                          <p className="text-[11px] sm:text-xs lg:text-sm font-bold text-white tabular-nums leading-tight tracking-tight">
+                        {/* Amount under meter */}
+                        <div className="mt-1.5 min-w-[3.25rem] max-w-[4.75rem] text-center rounded-lg bg-black/70 border border-white/15 px-1.5 py-1 shadow-lg backdrop-blur-sm">
+                          <p className="text-[11px] sm:text-xs font-bold text-white tabular-nums leading-tight">
                             £{raised.toFixed(0)}
                           </p>
                           {goal > 0 && (
-                            <p className="text-[10px] sm:text-[11px] text-pink-200/95 font-semibold tabular-nums leading-tight mt-0.5">
-                              of £{goal.toFixed(0)}
+                            <p className="text-[10px] sm:text-[11px] text-pink-200 font-semibold tabular-nums leading-tight">
+                              / £{goal.toFixed(0)}
                             </p>
                           )}
-                          {(levels.length > 0 || activeLabel) && (
-                            <p className="text-[9px] sm:text-[10px] text-zinc-200 truncate mt-1 max-w-[4.75rem] font-medium opacity-90">
-                              {hitGoal ? 'Goal hit' : activeLabel}
+                          {levels.length > 0 && (
+                            <p className="text-[9px] text-zinc-200 truncate mt-0.5 max-w-[4.25rem] font-medium">
+                              {activeLabel}
                             </p>
                           )}
                         </div>
-
-                        {/* Multi-level dots */}
+                        {/* Multi-level ticks */}
                         {levels.length > 1 && (
-                          <div className="flex gap-1 mt-1.5">
-                            {levels.map((lvl, i) => {
-                              const done = raised >= Number(lvl.amount);
-                              return (
-                                <div
-                                  key={i}
-                                  title={lvl.label || `Level ${i + 1}`}
-                                  className={`h-1.5 w-1.5 rounded-full transition-colors ${
-                                    done
-                                      ? 'bg-pink-400 shadow-[0_0_6px_rgba(244,114,182,0.8)]'
-                                      : 'bg-zinc-600'
-                                  }`}
-                                />
-                              );
-                            })}
+                          <div className="flex gap-0.5 mt-1">
+                            {levels.map((lvl, i) => (
+                              <div
+                                key={i}
+                                className={`h-1 w-1.5 rounded-full ${
+                                  raised >= Number(lvl.amount)
+                                    ? 'bg-pink-400'
+                                    : 'bg-zinc-600'
+                                }`}
+                              />
+                            ))}
                           </div>
                         )}
                       </button>
-
                       {isOwner && (
                         <button
                           type="button"
                           onClick={() => openGoalEditor()}
-                          className="text-[9px] sm:text-[10px] font-semibold text-zinc-200 hover:text-white
-                            bg-black/55 hover:bg-black/70 border border-white/15 hover:border-pink-500/40
-                            rounded-full px-2.5 py-1 backdrop-blur transition"
+                          className="text-[9px] font-semibold text-zinc-300 hover:text-pink-300 bg-black/50 border border-white/10 rounded-full px-2 py-0.5 backdrop-blur"
                         >
                           Edit
                         </button>
@@ -3503,52 +3206,10 @@ export default function LiveWatchPage() {
             )}
 
             {/* Simple tip flash */}
-            {tipFlash && !giftAlert && (
+            {tipFlash && (
               <div className="absolute top-[28%] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
                 <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-bold px-6 py-3.5 rounded-2xl shadow-2xl shadow-pink-900/50 border border-white/20 animate-in zoom-in-95 fade-in duration-300">
                   {tipFlash}
-                </div>
-              </div>
-            )}
-
-            {/* Gift center celebration (everyone on the live) */}
-            {giftAlert && (
-              <div className="absolute inset-0 z-[35] flex items-center justify-center pointer-events-none px-6">
-                <div
-                  className="relative flex flex-col items-center text-center max-w-[280px] sm:max-w-[320px]"
-                  style={{
-                    animation:
-                      'wod-gift-in 0.45s cubic-bezier(0.22,1,0.36,1) both',
-                  }}
-                >
-                  {/* Soft glow behind card */}
-                  <div className="absolute -inset-8 rounded-full bg-pink-500/25 blur-3xl pointer-events-none" />
-                  <div className="relative rounded-3xl bg-black/75 backdrop-blur-xl border border-white/20 shadow-[0_20px_60px_rgba(190,24,93,0.55)] px-8 py-6 sm:px-10 sm:py-7">
-                    <p
-                      className="text-5xl sm:text-6xl leading-none mb-3 drop-shadow-lg"
-                      style={{
-                        animation:
-                          'wod-gift-bounce 0.7s cubic-bezier(0.34,1.56,0.64,1) both',
-                      }}
-                    >
-                      {giftAlert.emoji}
-                    </p>
-                    <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.16em] text-pink-200/90 mb-1">
-                      Gift
-                    </p>
-                    <p className="text-lg sm:text-xl font-bold text-white leading-tight">
-                      {giftAlert.label}
-                    </p>
-                    <p className="text-pink-300 font-bold tabular-nums text-base sm:text-lg mt-1">
-                      £{giftAlert.amount.toFixed(2)}
-                    </p>
-                    <p className="text-xs sm:text-sm text-zinc-300 mt-2.5 truncate max-w-[220px]">
-                      from{' '}
-                      <span className="text-white font-semibold">
-                        {giftAlert.fromName}
-                      </span>
-                    </p>
-                  </div>
                 </div>
               </div>
             )}
@@ -3747,75 +3408,44 @@ export default function LiveWatchPage() {
                     }
                     const tip = parseTipMessage(m.content);
                     if (tip) {
-                      const isGift = tip.kind === 'gift';
-                      // Pill size follows Live settings → Chat text size (S/M/L)
-                      const pillPad =
-                        chatTextSize === 's'
-                          ? 'px-1.5 py-0.5 gap-x-1 rounded-xl'
-                          : chatTextSize === 'l'
-                            ? 'px-2.5 py-1.5 gap-x-1.5 rounded-2xl'
-                            : 'px-2 py-1 gap-x-1 rounded-xl';
-                      const pillText =
-                        chatTextSize === 's'
-                          ? 'text-[10px]'
-                          : chatTextSize === 'l'
-                            ? 'text-[13px]'
-                            : 'text-[11px]';
-                      const noteText =
-                        chatTextSize === 's'
-                          ? 'text-[9px]'
-                          : chatTextSize === 'l'
-                            ? 'text-[12px]'
-                            : 'text-[10px]';
-                      const emojiSize =
-                        chatTextSize === 's'
-                          ? 'text-[11px]'
-                          : chatTextSize === 'l'
-                            ? 'text-[15px]'
-                            : 'text-[12px]';
-                      const dollarSize =
-                        chatTextSize === 's' ? 10 : chatTextSize === 'l' ? 13 : 11;
                       return (
-                        <div key={m.id} className="flex items-start max-w-[88%]">
-                          <div
-                            className={`inline-flex flex-wrap items-center shadow-sm backdrop-blur-sm border ${pillPad} ${
-                              isGift
-                                ? 'bg-gradient-to-r from-amber-600/85 to-pink-600/85 border-amber-300/25'
-                                : 'bg-pink-600/85 border-pink-400/25'
-                            }`}
-                          >
-                            {isGift ? (
-                              <span
-                                className={`${emojiSize} leading-none flex-shrink-0`}
-                              >
-                                {tip.giftEmoji || '🎁'}
-                              </span>
-                            ) : (
-                              <DollarSign
-                                size={dollarSize}
-                                className="text-white/95 flex-shrink-0"
-                              />
-                            )}
+                        <div key={m.id} className="flex items-start max-w-[92%]">
+                          <div className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 rounded-2xl px-2.5 py-1.5 bg-pink-600/90 border border-pink-400/30 shadow-sm backdrop-blur-sm">
+                            <DollarSign
+                              size={12}
+                              className="text-white/95 flex-shrink-0 relative top-[1px]"
+                            />
                             <span
-                              className={`font-semibold text-pink-50 ${pillText}`}
+                              className={`font-semibold text-pink-50 ${
+                                chatTextSize === 's'
+                                  ? 'text-[12px]'
+                                  : chatTextSize === 'l'
+                                    ? 'text-[14px]'
+                                    : 'text-[13px]'
+                              }`}
                             >
                               {displayName(m)}
                             </span>
-                            {isGift && tip.giftLabel ? (
-                              <span
-                                className={`font-medium text-white/95 ${pillText}`}
-                              >
-                                {tip.giftLabel}
-                              </span>
-                            ) : null}
                             <span
-                              className={`font-bold text-white tabular-nums ${pillText}`}
+                              className={`font-bold text-white tabular-nums ${
+                                chatTextSize === 's'
+                                  ? 'text-[12px]'
+                                  : chatTextSize === 'l'
+                                    ? 'text-[14px]'
+                                    : 'text-[13px]'
+                              }`}
                             >
                               £{tip.amount.toFixed(2)}
                             </span>
                             {tip.note ? (
                               <span
-                                className={`w-full text-pink-50/90 leading-snug break-words ${noteText}`}
+                                className={`w-full text-pink-50/95 leading-snug break-words ${
+                                  chatTextSize === 's'
+                                    ? 'text-[11px]'
+                                    : chatTextSize === 'l'
+                                      ? 'text-[13px]'
+                                      : 'text-[12px]'
+                                }`}
                               >
                                 {tip.note}
                               </span>
@@ -3985,11 +3615,10 @@ export default function LiveWatchPage() {
                         type="button"
                         onClick={() => {
                           setTipError('');
-                          setTipSheetTab('tip');
                           setShowTip(true);
                         }}
                         className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
-                        title="Tip / Gifts"
+                        title="Tip"
                       >
                         <DollarSign size={20} />
                       </button>
@@ -4249,11 +3878,8 @@ export default function LiveWatchPage() {
 
               <div className="space-y-4">
                 <div>
-                  <p className="text-xs font-semibold text-zinc-400 mb-1 flex items-center gap-1.5">
-                    <Type size={14} /> Chat &amp; tip / gift size
-                  </p>
-                  <p className="text-[11px] text-zinc-500 mb-2">
-                    Scales normal chat, tip pills and gift pills
+                  <p className="text-xs font-semibold text-zinc-400 mb-2 flex items-center gap-1.5">
+                    <Type size={14} /> Chat text size
                   </p>
                   <div className="flex gap-2">
                     {(
@@ -4564,254 +4190,151 @@ export default function LiveWatchPage() {
             >
               <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
                 <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <DollarSign className="text-pink-500" size={20} /> Support {name}
+                  <DollarSign className="text-pink-500" size={20} /> Tip {name}
                 </h3>
                 <button
                   type="button"
                   onClick={() => {
-                    if (tipping || giftingId) return;
+                    if (tipping) return;
                     setShowTip(false);
                     setTipNote('');
                     setTipError('');
-                    setTipSheetTab('tip');
                   }}
                   className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
                 >
                   <X size={18} />
                 </button>
               </div>
-
-              {/* Tips | Gifts tabs */}
-              <div className="px-5 pt-3">
-                <div className="flex rounded-xl bg-zinc-800/80 p-1 border border-zinc-700/80">
-                  <button
-                    type="button"
-                    disabled={!!giftingId || tipping}
-                    onClick={() => {
-                      setTipSheetTab('tip');
-                      setTipError('');
-                    }}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
-                      tipSheetTab === 'tip'
-                        ? 'bg-pink-600 text-white shadow'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    Tip
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!!giftingId || tipping || !giftsEnabled}
-                    onClick={() => {
-                      if (!giftsEnabled) return;
-                      setTipSheetTab('gifts');
-                      setTipError('');
-                    }}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
-                      tipSheetTab === 'gifts'
-                        ? 'bg-pink-600 text-white shadow'
-                        : 'text-zinc-400 hover:text-white'
-                    } ${!giftsEnabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    title={!giftsEnabled ? 'Gifts off for this creator' : undefined}
-                  >
-                    Gifts
-                  </button>
-                </div>
-              </div>
-
               <div className="px-5 py-5 space-y-4">
-                {tipSheetTab === 'tip' ? (
-                  <>
-                    <div className="grid grid-cols-4 gap-2">
-                      {TIP_PRESETS.map((a) => {
-                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
-                        const tooLow = a < minT;
-                        return (
-                          <button
-                            key={a}
-                            type="button"
-                            disabled={tipping || tooLow}
-                            onClick={() => {
-                              if (tooLow) return;
-                              setTipAmount(a);
-                              setCustomTip('');
-                              setTipError('');
-                            }}
-                            className={`py-3 rounded-xl text-sm font-semibold border transition ${
-                              tooLow
-                                ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed'
-                                : tipAmount === a && !customTip
-                                  ? 'bg-pink-600 border-pink-500 text-white'
-                                  : 'bg-zinc-800 border-zinc-700 text-zinc-200'
-                            }`}
-                            title={
-                              tooLow
-                                ? `Below this creator's minimum (£${minT})`
-                                : undefined
-                            }
-                          >
-                            £{a}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="text-xs text-zinc-500 -mt-1">
-                      Minimum tip £
-                      {(creatorMinTip > 2 ? creatorMinTip : 2).toFixed(2)}
-                    </p>
-                    <div>
-                      <label className="text-xs text-zinc-500 mb-1 block">
-                        Custom amount
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
-                          £
-                        </span>
-                        <input
-                          type="number"
-                          min={creatorMinTip > 2 ? creatorMinTip : 2}
-                          step={1}
-                          value={customTip}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setCustomTip(v);
-                            setTipError('');
-                            const n = Number(v);
-                            if (v !== '' && Number.isFinite(n)) setTipAmount(n);
-                          }}
-                          placeholder="Other"
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs text-zinc-500">
-                          Add a note{' '}
-                          <span className="text-zinc-600">(optional)</span>
-                        </label>
-                        <span className="text-[10px] text-zinc-600 tabular-nums">
-                          {tipNote.length}/50
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        value={tipNote}
-                        maxLength={50}
-                        disabled={tipping}
-                        onChange={(e) => {
-                          setTipNote(e.target.value.slice(0, 50));
+                <div className="grid grid-cols-4 gap-2">
+                  {TIP_PRESETS.map((a) => {
+                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                    const tooLow = a < minT;
+                    return (
+                      <button
+                        key={a}
+                        type="button"
+                        disabled={tipping || tooLow}
+                        onClick={() => {
+                          if (tooLow) return;
+                          setTipAmount(a);
+                          setCustomTip('');
                           setTipError('');
                         }}
-                        placeholder="e.g. do X · love this · keep going"
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 placeholder:text-zinc-600"
-                      />
-                      <p className="text-[10px] text-zinc-600 mt-1">
-                        Short message only · no links · visible in live chat
-                      </p>
-                    </div>
-                    {tipError && (
-                      <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-                        {tipError}
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      disabled={(() => {
-                        if (tipping || giftingId) return true;
-                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
-                        const amt =
-                          customTip !== ''
-                            ? Number(customTip)
-                            : Number(tipAmount);
-                        return !Number.isFinite(amt) || amt < minT;
-                      })()}
-                      onClick={() => {
-                        const minT = creatorMinTip > 2 ? creatorMinTip : 2;
-                        const amt =
-                          customTip !== ''
-                            ? Number(customTip)
-                            : Number(tipAmount);
-                        if (!Number.isFinite(amt) || amt < minT) {
-                          setTipError(
-                            `Minimum tip is £${minT.toFixed(2)} — enter at least that amount`
-                          );
-                          return;
+                        className={`py-3 rounded-xl text-sm font-semibold border transition ${
+                          tooLow
+                            ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed'
+                            : tipAmount === a && !customTip
+                              ? 'bg-pink-600 border-pink-500 text-white'
+                              : 'bg-zinc-800 border-zinc-700 text-zinc-200'
+                        }`}
+                        title={
+                          tooLow
+                            ? `Below this creator's minimum (£${minT})`
+                            : undefined
                         }
-                        void sendTip(amt);
+                      >
+                        £{a}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-zinc-500 -mt-1">
+                  Minimum tip £{(creatorMinTip > 2 ? creatorMinTip : 2).toFixed(2)}
+                </p>
+                <div>
+                  <label className="text-xs text-zinc-500 mb-1 block">
+                    Custom amount
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
+                      £
+                    </span>
+                    <input
+                      type="number"
+                      min={creatorMinTip > 2 ? creatorMinTip : 2}
+                      step={1}
+                      value={customTip}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCustomTip(v);
+                        setTipError('');
+                        const n = Number(v);
+                        // Do NOT auto-bump to minimum — keep exact typed amount
+                        if (v !== '' && Number.isFinite(n)) setTipAmount(n);
                       }}
-                      className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {tipping ? (
-                        <>
-                          <Loader2 size={18} className="animate-spin" />{' '}
-                          Sending…
-                        </>
-                      ) : (
-                        <>
-                          Send £
-                          {(
-                            customTip !== ''
-                              ? Number(customTip)
-                              : Number(tipAmount)
-                          ).toFixed(2)}
-                        </>
-                      )}
-                    </button>
-                  </>
-                ) : !giftsEnabled ? (
-                  <p className="text-sm text-zinc-400 text-center py-6">
-                    This creator has gifts turned off
+                      placeholder="Other"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-zinc-500">
+                      Add a note{' '}
+                      <span className="text-zinc-600">(optional)</span>
+                    </label>
+                    <span className="text-[10px] text-zinc-600 tabular-nums">
+                      {tipNote.length}/50
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={tipNote}
+                    maxLength={50}
+                    disabled={tipping}
+                    onChange={(e) => {
+                      setTipNote(e.target.value.slice(0, 50));
+                      setTipError('');
+                    }}
+                    placeholder="e.g. do X · love this · keep going"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-pink-500 placeholder:text-zinc-600"
+                  />
+                  <p className="text-[10px] text-zinc-600 mt-1">
+                    Short message only · no links · visible in live chat
                   </p>
-                ) : (
-                  <>
-                    <p className="text-xs text-zinc-400">
-                      Fixed-price gifts · count toward tip goal &amp; Top 3
-                    </p>
-                    <div className="grid grid-cols-1 gap-2">
-                      {liveGifts.map((g) => {
-                        const busy = giftingId === g.id;
-                        const anyBusy = !!giftingId || tipping;
-                        return (
-                          <button
-                            key={g.id}
-                            type="button"
-                            disabled={anyBusy}
-                            onClick={() => void sendGift(g.id)}
-                            className="flex items-center gap-3 w-full rounded-2xl bg-zinc-800/90 border border-zinc-700 hover:border-pink-500/50 px-4 py-3.5 text-left transition disabled:opacity-50 active:scale-[0.99]"
-                          >
-                            <span className="text-2xl w-10 text-center flex-shrink-0">
-                              {g.emoji}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold text-white">
-                                {g.label}
-                              </p>
-                              <p className="text-xs text-zinc-400">
-                                Send to {name}
-                              </p>
-                            </div>
-                            <span className="font-bold text-pink-300 tabular-nums flex-shrink-0">
-                              {busy ? (
-                                <Loader2
-                                  size={18}
-                                  className="animate-spin text-pink-400"
-                                />
-                              ) : (
-                                `£${g.amount_gbp}`
-                              )}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {tipError && (
-                      <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-                        {tipError}
-                      </p>
-                    )}
-                  </>
+                </div>
+                {tipError && (
+                  <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                    {tipError}
+                  </p>
                 )}
+                <button
+                  type="button"
+                  disabled={(() => {
+                    if (tipping) return true;
+                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                    const amt =
+                      customTip !== '' ? Number(customTip) : Number(tipAmount);
+                    return !Number.isFinite(amt) || amt < minT;
+                  })()}
+                  onClick={() => {
+                    const minT = creatorMinTip > 2 ? creatorMinTip : 2;
+                    const amt =
+                      customTip !== '' ? Number(customTip) : Number(tipAmount);
+                    if (!Number.isFinite(amt) || amt < minT) {
+                      setTipError(
+                        `Minimum tip is £${minT.toFixed(2)} — enter at least that amount`
+                      );
+                      return;
+                    }
+                    void sendTip(amt);
+                  }}
+                  className="w-full min-h-[48px] py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {tipping ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" /> Sending…
+                    </>
+                  ) : (
+                    <>
+                      Send £
+                      {(
+                        customTip !== '' ? Number(customTip) : Number(tipAmount)
+                      ).toFixed(2)}
+                    </>
+                  )}
+                </button>
                 <p className="text-center text-xs text-zinc-500">
                   Paid from your wallet balance
                 </p>

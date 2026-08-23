@@ -1,13 +1,20 @@
 /**
  * Notify followers that a creator went live.
  * Safe to call multiple times for the same stream — skips users already notified.
+ * Returns detailed status for debugging.
  */
 export async function notifyFollowersLive(
   admin: any,
   creatorId: string,
   streamId: string,
   title: string
-): Promise<{ ok: boolean; notified: number; error?: string }> {
+): Promise<{
+  ok: boolean;
+  notified: number;
+  followerCount: number;
+  error?: string;
+  insertError?: string;
+}> {
   try {
     const { data: profile } = await admin
       .from('profiles')
@@ -26,7 +33,12 @@ export async function notifyFollowersLive(
 
     if (fErr) {
       console.error('live notify follows', fErr);
-      return { ok: false, notified: 0, error: fErr.message };
+      return {
+        ok: false,
+        notified: 0,
+        followerCount: 0,
+        error: `follows: ${fErr.message}`,
+      };
     }
 
     const raw: any[] = Array.isArray(followers) ? followers : [];
@@ -40,24 +52,33 @@ export async function notifyFollowersLive(
     }
 
     if (ids.length === 0) {
-      return { ok: true, notified: 0, error: 'no_followers' };
+      return {
+        ok: true,
+        notified: 0,
+        followerCount: 0,
+        error: 'no_followers',
+      };
     }
 
     const link = `/live/${streamId}`;
+    const notifTitle = `${creatorName} is live`;
+    const notifBody = title || 'Live now';
 
-    // Skip users who already got a live notify for this stream
-    const { data: existing } = await admin
-      .from('notifications')
-      .select('user_id')
-      .eq('type', 'live')
-      .eq('link', link)
-      .in('user_id', ids.slice(0, 300));
-
-    const already: Record<string, true> = {};
-    const existingRows: any[] = Array.isArray(existing) ? existing : [];
-    for (let i = 0; i < existingRows.length; i++) {
-      const uid = String(existingRows[i]?.user_id || '');
-      if (uid) already[uid] = true;
+    let already: Record<string, true> = {};
+    try {
+      const { data: existing } = await admin
+        .from('notifications')
+        .select('user_id')
+        .eq('type', 'live')
+        .eq('link', link)
+        .in('user_id', ids.slice(0, 300));
+      const existingRows: any[] = Array.isArray(existing) ? existing : [];
+      for (let i = 0; i < existingRows.length; i++) {
+        const uid = String(existingRows[i]?.user_id || '');
+        if (uid) already[uid] = true;
+      }
+    } catch {
+      already = {};
     }
 
     const targets: string[] = [];
@@ -66,44 +87,79 @@ export async function notifyFollowersLive(
     }
 
     if (targets.length === 0) {
-      return { ok: true, notified: 0, error: 'already_notified' };
-    }
-
-    // Minimal columns — matches createNotification() client inserts
-    const rows: any[] = [];
-    for (let i = 0; i < targets.length; i++) {
-      rows.push({
-        user_id: targets[i],
-        actor_id: creatorId,
-        type: 'live',
-        title: `${creatorName} is live`,
-        body: title || 'Live now',
-        link,
-      });
+      return {
+        ok: true,
+        notified: 0,
+        followerCount: ids.length,
+        error: 'already_notified',
+      };
     }
 
     let notified = 0;
-    for (let i = 0; i < rows.length; i += 50) {
-      const chunk = rows.slice(i, i + 50);
-      const { error: insErr } = await admin.from('notifications').insert(chunk);
+    let lastInsertError = '';
+
+    for (let i = 0; i < targets.length; i++) {
+      const row: any = {
+        user_id: targets[i],
+        actor_id: creatorId,
+        type: 'live',
+        title: notifTitle,
+        body: notifBody,
+        link,
+      };
+
+      const { error: insErr } = await admin.from('notifications').insert(row);
+
       if (insErr) {
+        lastInsertError = insErr.message || String(insErr);
         console.error('live notify insert', insErr);
-        // One-by-one fallback so one bad row does not block everyone
-        for (let j = 0; j < chunk.length; j++) {
-          const { error: oneErr } = await admin
-            .from('notifications')
-            .insert(chunk[j]);
-          if (!oneErr) notified += 1;
-          else console.error('live notify one', oneErr);
+
+        const { error: e2 } = await admin.from('notifications').insert({
+          user_id: targets[i],
+          actor_id: creatorId,
+          type: 'live',
+          title: notifTitle,
+          link,
+        });
+        if (!e2) {
+          notified += 1;
+          continue;
         }
+        lastInsertError = e2.message || lastInsertError;
+
+        // Fallback if CHECK constraint blocks type "live"
+        const { error: e3 } = await admin.from('notifications').insert({
+          user_id: targets[i],
+          actor_id: creatorId,
+          type: 'message',
+          title: notifTitle,
+          body: notifBody,
+          link,
+        });
+        if (!e3) {
+          notified += 1;
+          continue;
+        }
+        lastInsertError = e3.message || lastInsertError;
       } else {
-        notified += chunk.length;
+        notified += 1;
       }
     }
 
-    return { ok: true, notified };
+    return {
+      ok: notified > 0,
+      notified,
+      followerCount: ids.length,
+      error: notified === 0 ? 'insert_failed' : undefined,
+      insertError: lastInsertError || undefined,
+    };
   } catch (e: any) {
     console.error('notifyFollowersLive', e);
-    return { ok: false, notified: 0, error: e?.message || 'notify failed' };
+    return {
+      ok: false,
+      notified: 0,
+      followerCount: 0,
+      error: e?.message || 'notify failed',
+    };
   }
 }
