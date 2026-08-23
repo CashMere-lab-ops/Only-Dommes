@@ -243,6 +243,8 @@ export default function LiveWatchPage() {
     'idle' | 'connecting' | 'live' | 'ended' | 'error'
   >('idle');
   const [reconnecting, setReconnecting] = useState(false);
+  /** Host signal: excellent | good | poor | lost | unknown */
+  const [connQuality, setConnQuality] = useState<string>('unknown');
   const intentionalLeaveRef = useRef(false);
   const endFinalized = useRef(false);
   const reconnectAttemptsRef = useRef(0);
@@ -745,7 +747,9 @@ export default function LiveWatchPage() {
     }
     const attempt = reconnectAttemptsRef.current;
     reconnectAttemptsRef.current += 1;
-    const delay = Math.min(1200 * Math.pow(1.4, attempt), 12000);
+    // First retry almost immediately, then gentle backoff
+    const delay =
+      attempt === 0 ? 350 : Math.min(700 * Math.pow(1.35, attempt), 10000);
     setReconnecting(true);
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     reconnectTimerRef.current = setTimeout(() => {
@@ -858,15 +862,35 @@ export default function LiveWatchPage() {
         // Don't end live on brief host blip — status poll / reconnect handles real end
       });
 
-      // LiveKit built-in reconnect signals
+      // LiveKit built-in reconnect signals — show UI immediately
       room.on(RoomEvent.Reconnecting, () => {
-        if (!intentionalLeaveRef.current) setReconnecting(true);
+        if (!intentionalLeaveRef.current) {
+          setReconnecting(true);
+          setConnQuality('poor');
+        }
       });
       room.on(RoomEvent.Reconnected, () => {
         setReconnecting(false);
         reconnectAttemptsRef.current = 0;
         setLiveStatus('live');
+        setConnQuality('good');
         bumpViewers(Math.max(0, room.numParticipants - 1));
+      });
+
+      // Connection quality (especially useful for the host)
+      room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+        try {
+          if (participant && (participant as any).isLocal) {
+            const q = String(quality || 'unknown').toLowerCase();
+            setConnQuality(q);
+            // Soft signal for host: don't end live, just warn
+            if (asCreator && (q === 'poor' || q === 'lost')) {
+              setReconnecting((r) => r); // keep reconnect banner if already on
+            }
+          }
+        } catch {
+          /* ignore */
+        }
       });
 
       room.on(RoomEvent.Disconnected, () => {
@@ -3413,7 +3437,7 @@ export default function LiveWatchPage() {
               </div>
             )}
 
-            {/* Reconnecting banner */}
+            {/* Reconnecting banner — shows as soon as LiveKit reports reconnect */}
             {reconnecting && !ended && (
               <div className="absolute z-[85] left-1/2 -translate-x-1/2 top-16 sm:top-20 pointer-events-none px-4 w-full max-w-sm">
                 <div className="rounded-2xl bg-zinc-900/95 border border-amber-500/40 shadow-xl backdrop-blur-md px-4 py-2.5 flex items-center gap-3">
@@ -3424,6 +3448,64 @@ export default function LiveWatchPage() {
                       Weak connection — trying again
                     </p>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Host weak signal — live stays on, just a soft warning */}
+            {isOwner &&
+              !ended &&
+              !reconnecting &&
+              liveStatus === 'live' &&
+              (connQuality === 'poor' || connQuality === 'lost') && (
+                <div className="absolute z-[84] left-1/2 -translate-x-1/2 top-16 sm:top-20 pointer-events-none px-4 w-full max-w-sm">
+                  <div className="rounded-2xl bg-zinc-900/95 border border-orange-500/35 shadow-xl backdrop-blur-md px-4 py-2.5 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                      <Radio size={16} className="text-orange-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white">
+                        Weak signal
+                      </p>
+                      <p className="text-[11px] text-zinc-400">
+                        Stay on this screen — your live is still on. Move closer
+                        to Wi‑Fi if you can.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            {/* Host quality pill (always subtle while live) */}
+            {isOwner && !ended && liveStatus === 'live' && !reconnecting && (
+              <div className="absolute z-[70] right-3 top-[3.75rem] sm:top-[4.25rem] pointer-events-none">
+                <div
+                  className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold border backdrop-blur ${
+                    connQuality === 'excellent' || connQuality === 'good'
+                      ? 'bg-black/50 border-emerald-500/30 text-emerald-300'
+                      : connQuality === 'poor' || connQuality === 'lost'
+                        ? 'bg-black/50 border-orange-500/40 text-orange-300'
+                        : 'bg-black/50 border-white/15 text-zinc-400'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      connQuality === 'excellent' || connQuality === 'good'
+                        ? 'bg-emerald-400'
+                        : connQuality === 'poor' || connQuality === 'lost'
+                          ? 'bg-orange-400 animate-pulse'
+                          : 'bg-zinc-500'
+                    }`}
+                  />
+                  {connQuality === 'excellent'
+                    ? 'Excellent'
+                    : connQuality === 'good'
+                      ? 'Good'
+                      : connQuality === 'poor'
+                        ? 'Weak'
+                        : connQuality === 'lost'
+                          ? 'Unstable'
+                          : 'Signal'}
                 </div>
               </div>
             )}
