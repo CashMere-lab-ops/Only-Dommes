@@ -17,18 +17,27 @@ const geistMono = Geist_Mono({
 });
 
 export const viewport = {
-  width: 'device-width',
+  width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  viewportFit: 'cover',
-  themeColor: '#09090b',
+  viewportFit: "cover",
+  themeColor: "#09090b",
 };
 
 export const metadata: Metadata = {
-  title: "World Of Dommes | Premium Dominatrix Platform",
+  metadataBase: new URL("https://www.worldofdommes.com"),
+  title: {
+    default: "World Of Dommes | Premium Dominatrix Platform",
+    template: "%s",
+  },
   description:
     "Join World Of Dommes — the exclusive platform for Dominatrices. Go live, sell content, receive tips, and connect with fans in private sessions.",
+  openGraph: {
+    siteName: "World Of Dommes",
+    type: "website",
+    locale: "en_GB",
+  },
 };
 
 export default function RootLayout({
