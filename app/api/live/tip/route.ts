@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
+import { splitCreatorEarn } from '../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Tip a creator during a live stream.
- * Debits tipper, credits creator, updates tip goal + highest tipper showcase.
+ * Debits tipper (full amount), credits creator (80% net after platform fee),
+ * updates tip goal + highest tipper showcase using gross tip amounts.
  */
 export async function POST(request: Request) {
   try {
@@ -33,6 +35,15 @@ export async function POST(request: Request) {
     const streamId = String(body?.stream_id || '');
     const amount = Number(body?.amount);
 
+    let tipNote = String(body?.message || body?.note || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 50);
+    if (/https?:\/\/|www\.|\.[a-z]{2,}\//i.test(tipNote)) {
+      tipNote = '';
+    }
+    tipNote = tipNote.replace(/[\u0000-\u001F\u007F]/g, '');
+
     if (!streamId) {
       return NextResponse.json({ error: 'stream_id required' }, { status: 400 });
     }
@@ -44,6 +55,7 @@ export async function POST(request: Request) {
     }
 
     const rounded = Math.round(amount * 100) / 100;
+    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(rounded);
 
     const { data: stream, error: stErr } = await admin
       .from('live_streams')
@@ -108,6 +120,7 @@ export async function POST(request: Request) {
       Number.isFinite(creatorMin) && creatorMin > platformMin
         ? creatorMin
         : platformMin;
+
     if (rounded < minTip) {
       return NextResponse.json(
         {
@@ -121,13 +134,11 @@ export async function POST(request: Request) {
 
     const newSenderBal = Math.round((senderBal - rounded) * 100) / 100;
     const newCreatorBal =
-      Math.round((Number(creator.balance_gbp || 0) + rounded) * 100) / 100;
+      Math.round((Number(creator.balance_gbp || 0) + net_gbp) * 100) / 100;
     const newRaised =
       Math.round((Number(stream.tip_raised_gbp || 0) + rounded) * 100) / 100;
 
-    const tipRef = randomUUID();
-    const fromName =
-      sender.display_name || sender.username || 'A fan';
+    const fromName = sender.display_name || sender.username || 'A fan';
 
     await admin
       .from('profiles')
@@ -148,21 +159,30 @@ export async function POST(request: Request) {
         counterparty_id: stream.creator_id,
         reference_type: 'live_stream',
         reference_id: streamId,
-        description: `Live tip · ${stream.title || 'Live'}`,
+        description: tipNote
+          ? `Live tip · ${stream.title || 'Live'} · “${tipNote}”`
+          : `Live tip · ${stream.title || 'Live'}`,
+        gross_gbp: gross_gbp,
+        fee_gbp: 0,
+        net_gbp: -rounded,
       },
       {
         user_id: stream.creator_id,
         type: 'tip_received',
-        amount_gbp: rounded,
+        amount_gbp: net_gbp,
         balance_after: newCreatorBal,
         counterparty_id: user.id,
         reference_type: 'live_stream',
         reference_id: streamId,
-        description: `Live tip from ${fromName}`,
+        description: tipNote
+          ? `Live tip from ${fromName} · “${tipNote}” · £${gross_gbp.toFixed(2)} (you +£${net_gbp.toFixed(2)})`
+          : `Live tip from ${fromName} · £${gross_gbp.toFixed(2)} (you +£${net_gbp.toFixed(2)})`,
+        gross_gbp: gross_gbp,
+        fee_gbp: fee_gbp,
+        net_gbp: net_gbp,
       },
     ]);
 
-    // Upsert this fan's total tips on this stream
     const { data: existingTip } = await admin
       .from('live_stream_tips')
       .select('total_gbp')
@@ -171,9 +191,7 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     const userTotal =
-      Math.round(
-        (Number(existingTip?.total_gbp || 0) + rounded) * 100
-      ) / 100;
+      Math.round((Number(existingTip?.total_gbp || 0) + rounded) * 100) / 100;
 
     await admin.from('live_stream_tips').upsert(
       {
@@ -185,9 +203,8 @@ export async function POST(request: Request) {
       { onConflict: 'stream_id,user_id' }
     );
 
-    // Showcase = highest total tipper on this live
     const currentShowcase = Number(stream.showcase_amount_gbp || 0);
-    // Advance active tip_goal_gbp from multi-level tip_goals
+
     let nextGoal = Number(stream.tip_goal_gbp || 0);
     const levels = Array.isArray((stream as any).tip_goals)
       ? ([...(stream as any).tip_goals] as { label: string; amount: number }[])
@@ -223,9 +240,19 @@ export async function POST(request: Request) {
         user_id: stream.creator_id,
         type: 'tip',
         title: 'Live tip',
-        body: `${fromName} tipped £${rounded.toFixed(2)} on your live`,
+        body: tipNote
+          ? `${fromName} tipped £${rounded.toFixed(2)} · “${tipNote}” · +£${net_gbp.toFixed(2)} to you`
+          : `${fromName} tipped £${rounded.toFixed(2)} · +£${net_gbp.toFixed(2)} to your wallet`,
         link: `/live/${streamId}`,
-        meta: { amount: rounded, stream_id: streamId, from: user.id },
+        meta: {
+          amount: rounded,
+          gross_gbp,
+          fee_gbp,
+          net_gbp,
+          stream_id: streamId,
+          from: user.id,
+          message: tipNote || null,
+        },
       });
     } catch {
       /* non-blocking */
@@ -233,11 +260,15 @@ export async function POST(request: Request) {
 
     const isShowcase =
       userTotal >= currentShowcase ||
-      (showcasePayload.showcase_user_id === user.id);
+      showcasePayload.showcase_user_id === user.id;
 
     return NextResponse.json({
       ok: true,
       amount: rounded,
+      gross_gbp,
+      fee_gbp,
+      net_gbp,
+      message: tipNote || null,
       balance: newSenderBal,
       tip_raised_gbp: newRaised,
       tip_goal_gbp: nextGoal,
@@ -264,5 +295,6 @@ export async function POST(request: Request) {
     );
   }
 }
+
 
 
