@@ -43,7 +43,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       : 'Creator');
 
   const title = `${name} is live right now`;
-  const description = `Come join me on World Of Dommes · 18+`;
+  const description = `Come join me on World of Dommes · 18+`;
 
   const image =
     preview?.creator?.avatar_url ||
