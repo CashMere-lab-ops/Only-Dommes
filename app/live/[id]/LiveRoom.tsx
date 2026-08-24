@@ -50,6 +50,7 @@ type StreamRow = {
   tip_goals?: { label: string; amount: number }[] | null;
   tip_raised_gbp?: number;
   viewer_count?: number;
+  thumbnail_url?: string;
   started_at?: string | null;
   ended_at?: string | null;
   created_at?: string | null;
