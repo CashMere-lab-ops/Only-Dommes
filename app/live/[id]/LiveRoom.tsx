@@ -3956,7 +3956,7 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
 
             {/* Private active badge */}
             {!ended && stream?.private_active && (isOwner || isPrivateFan) && (
-              <div className="absolute top-[7.5rem] sm:top-36 right-3 z-25 pointer-events-none max-w-[70%]">
+              <div className="absolute top-[12.5rem] sm:top-52 right-3 z-25 pointer-events-none max-w-[70%]">
                 <div className="bg-pink-600/90 backdrop-blur text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow flex-wrap">
                   <Lock size={12} />
                   PRIVATE
