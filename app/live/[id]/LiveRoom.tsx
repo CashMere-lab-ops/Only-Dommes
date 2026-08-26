@@ -4248,35 +4248,36 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                     </button>
                   </div>
 
+                  {/* Tip stays available in a paid private for that sub */}
+                  {!isOwner && userId && !privateLockedOut && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTipError('');
+                        setShowTip(true);
+                      }}
+                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
+                      title="Tip"
+                    >
+                      <DollarSign size={20} />
+                    </button>
+                  )}
                   {!isOwner && !stream?.private_active && privateEnabled && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTipError('');
-                          setShowTip(true);
-                        }}
-                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
-                        title="Tip"
-                      >
-                        <DollarSign size={20} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPrivateError('');
-                          setShowPrivate(true);
-                        }}
-                        disabled={!!myPendingPrivate}
-                        className="h-11 w-11 sm:h-12 sm:w-auto sm:px-3 rounded-full bg-zinc-900/90 border border-pink-500/50 text-pink-300 text-xs font-semibold flex items-center justify-center gap-1.5 flex-shrink-0 disabled:opacity-50"
-                        title="Request private"
-                      >
-                        <Lock size={16} className="sm:w-3.5 sm:h-3.5" />
-                        <span className="hidden sm:inline">
-                          {myPendingPrivate ? 'Pending' : 'Private'}
-                        </span>
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrivateError('');
+                        setShowPrivate(true);
+                      }}
+                      disabled={!!myPendingPrivate}
+                      className="h-11 w-11 sm:h-12 sm:w-auto sm:px-3 rounded-full bg-zinc-900/90 border border-pink-500/50 text-pink-300 text-xs font-semibold flex items-center justify-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+                      title="Request private"
+                    >
+                      <Lock size={16} className="sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">
+                        {myPendingPrivate ? 'Pending' : 'Private'}
+                      </span>
+                    </button>
                   )}
 
                   {(isOwner || isPrivateFan) && stream?.private_active && (
