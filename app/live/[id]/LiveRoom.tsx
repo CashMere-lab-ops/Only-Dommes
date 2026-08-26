@@ -26,6 +26,8 @@ import {
   MoreHorizontal,
   Settings,
   Type,
+  Plus,
+  Wallet,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
@@ -282,6 +284,12 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
+  const [showWalletSheet, setShowWalletSheet] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState(25);
+  const [customTopUp, setCustomTopUp] = useState('');
+  const [toppingUp, setToppingUp] = useState(false);
+  const [topUpError, setTopUpError] = useState('');
+  const [topUpFlash, setTopUpFlash] = useState<string | null>(null);
 
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
@@ -1361,6 +1369,53 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
       clearInterval(t);
     };
   }, [userId, isOwner, supabase]);
+
+  // After Stripe mid-live top-up, credit + clean the URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search);
+    const flag = q.get('topup');
+    const sessionId = q.get('session_id');
+    if (flag === 'cancelled') {
+      setShowWalletSheet(true);
+      setTopUpError('Top-up cancelled');
+      window.history.replaceState({}, '', `/live/${id}`);
+      return;
+    }
+    if (flag !== 'success' || !sessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const res = await fetch('/api/wallet/confirm-top-up', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok && typeof data.balance === 'number') {
+          setMyBalance(data.balance);
+          notifyBalanceUpdated(data.balance);
+          setTopUpFlash('Wallet topped up');
+          setTimeout(() => setTopUpFlash(null), 2800);
+        }
+      } catch {
+        /* webhook may still credit */
+      } finally {
+        window.history.replaceState({}, '', `/live/${id}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2493,6 +2548,46 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
     }
   };
 
+  const startLiveTopUp = async () => {
+    const raw = customTopUp !== '' ? Number(customTopUp) : Number(topUpAmount);
+    const amount = Math.round(raw * 100) / 100;
+    if (!Number.isFinite(amount) || amount < 10) {
+      setTopUpError('Minimum top-up is £10');
+      return;
+    }
+    setToppingUp(true);
+    setTopUpError('');
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setTopUpError('Please log in again');
+        return;
+      }
+      const res = await fetch('/api/wallet/top-up', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          amount,
+          from: 'live',
+          return_to: `/live/${id}`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || 'Could not start top-up');
+      }
+      window.location.href = data.url;
+    } catch (e: any) {
+      setTopUpError(e?.message || 'Top-up failed');
+      setToppingUp(false);
+    }
+  };
+
   const sendTip = async (amount: number) => {
     if (!stream || isOwner) return;
     const minT = creatorMinTip > 2 ? creatorMinTip : 2;
@@ -3279,27 +3374,32 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                     <Users size={12} />
                     {viewerCount}
                   </span>
-                  {/* Wallet balance — subs + creators */}
+                  {/* Wallet chip — tap to open compact wallet */}
                   {userId && myBalance != null && (
-                    <span
-                      className="bg-black/50 backdrop-blur text-[11px] sm:text-xs px-2 py-1 rounded-full flex items-center gap-1 border border-pink-500/30 text-pink-100 tabular-nums max-w-[42vw] sm:max-w-none"
-                      title={
-                        isOwner
-                          ? `Wallet · This live £${Number(stream?.tip_raised_gbp || 0).toFixed(2)} tips (you keep ~80%)`
-                          : 'Your wallet balance'
-                      }
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTopUpError('');
+                        setShowWalletSheet(true);
+                      }}
+                      className="h-8 pl-1.5 pr-2 rounded-full bg-black/55 backdrop-blur border border-pink-400/35 text-pink-50 tabular-nums flex items-center gap-1 max-w-[46vw] sm:max-w-none hover:border-pink-400/70 hover:bg-black/70 transition"
+                      title={isOwner ? 'Wallet' : 'Top up wallet'}
                     >
-                      <DollarSign size={11} className="text-pink-400 flex-shrink-0" />
-                      <span className="truncate">
-                        £{Number(myBalance).toFixed(2)}
-                        {isOwner && Number(stream?.tip_raised_gbp || 0) > 0 && (
-                          <span className="text-zinc-400 font-normal hidden sm:inline">
-                            {' '}
-                            · live £{Number(stream?.tip_raised_gbp || 0).toFixed(0)}
-                          </span>
-                        )}
+                      <span className="w-5 h-5 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center flex-shrink-0">
+                        <Wallet size={11} className="text-white" />
                       </span>
-                    </span>
+                      <span className="text-[11px] sm:text-xs font-semibold truncate">
+                        £{Number(myBalance).toFixed(2)}
+                      </span>
+                      {isOwner && Number(stream?.tip_raised_gbp || 0) > 0 && (
+                        <span className="text-[10px] text-zinc-400 font-medium hidden sm:inline">
+                          · £{Number(stream?.tip_raised_gbp || 0).toFixed(0)} live
+                        </span>
+                      )}
+                      {!isOwner && (
+                        <Plus size={11} className="text-pink-300 flex-shrink-0 hidden sm:block" />
+                      )}
+                    </button>
                   )}
                   {/* Desktop: follow + share inline */}
                   <div className="hidden sm:flex items-center gap-1.5">
@@ -4746,12 +4846,21 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
               </div>
               <div className="px-5 py-5 space-y-4">
                 {myBalance != null && (
-                  <div className="flex items-center justify-between rounded-xl bg-zinc-800/80 border border-zinc-700/80 px-3.5 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTip(false);
+                      setTopUpError('');
+                      setShowWalletSheet(true);
+                    }}
+                    className="w-full flex items-center justify-between rounded-xl bg-zinc-800/80 border border-zinc-700/80 px-3.5 py-2.5 hover:border-pink-500/40 transition text-left"
+                  >
                     <span className="text-xs text-zinc-400">Your balance</span>
-                    <span className="text-sm font-semibold text-white tabular-nums">
+                    <span className="text-sm font-semibold text-white tabular-nums flex items-center gap-1.5">
                       £{Number(myBalance).toFixed(2)}
+                      <span className="text-[10px] font-medium text-pink-400">Top up</span>
                     </span>
-                  </div>
+                  </button>
                 )}
                 <div className="grid grid-cols-4 gap-2">
                   {TIP_PRESETS.map((a) => {
@@ -4886,6 +4995,165 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                   Paid from your wallet balance
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {showWalletSheet && (
+          <div className="fixed inset-0 z-[225] bg-black/55 flex items-end sm:items-center justify-center px-0 sm:px-4">
+            <button
+              type="button"
+              className="absolute inset-0"
+              aria-label="Close wallet"
+              onClick={() => {
+                if (toppingUp) return;
+                setShowWalletSheet(false);
+                setTopUpError('');
+              }}
+            />
+            <div
+              className="relative w-full sm:max-w-sm bg-zinc-900 border border-zinc-700 sm:rounded-3xl rounded-t-3xl overflow-hidden shadow-2xl"
+              style={{
+                paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+              }}
+            >
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800">
+                <div>
+                  <p className="text-sm font-semibold">Wallet</p>
+                  <p className="text-[11px] text-zinc-500">
+                    {isOwner ? 'Earnings on this live' : 'Top up without leaving the stream'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={toppingUp}
+                  onClick={() => {
+                    setShowWalletSheet(false);
+                    setTopUpError('');
+                  }}
+                  className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <div className="rounded-2xl bg-gradient-to-br from-pink-600/20 via-zinc-900 to-zinc-900 border border-pink-500/20 px-4 py-3">
+                  <p className="text-[11px] text-zinc-400">
+                    {isOwner ? 'Available to withdraw' : 'Current balance'}
+                  </p>
+                  <p className="text-2xl font-bold tabular-nums mt-0.5">
+                    £{Number(myBalance || 0).toFixed(2)}
+                  </p>
+                  {isOwner && (
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      This live · £{Number(stream?.tip_raised_gbp || 0).toFixed(2)} tips
+                      <span className="text-zinc-600">
+                        {' '}
+                        · you keep ~£
+                        {(Number(stream?.tip_raised_gbp || 0) * 0.8).toFixed(2)}
+                      </span>
+                    </p>
+                  )}
+                </div>
+
+                {!isOwner && (
+                  <>
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-2">Add funds</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[10, 25, 50, 100].map((a) => (
+                          <button
+                            key={a}
+                            type="button"
+                            disabled={toppingUp}
+                            onClick={() => {
+                              setTopUpAmount(a);
+                              setCustomTopUp('');
+                              setTopUpError('');
+                            }}
+                            className={`py-2.5 rounded-xl text-sm font-semibold border transition ${
+                              topUpAmount === a && customTopUp === ''
+                                ? 'bg-pink-600 border-pink-500 text-white'
+                                : 'bg-zinc-800 border-zinc-700 text-zinc-200'
+                            }`}
+                          >
+                            £{a}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500 mb-1 block">
+                        Custom (min £10)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">
+                          £
+                        </span>
+                        <input
+                          type="number"
+                          min={10}
+                          step={1}
+                          disabled={toppingUp}
+                          value={customTopUp}
+                          onChange={(e) => {
+                            setCustomTopUp(e.target.value);
+                            setTopUpError('');
+                          }}
+                          placeholder="Other"
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-7 pr-3 py-2.5 text-sm outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                    {topUpError && (
+                      <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                        {topUpError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={toppingUp}
+                      onClick={() => void startLiveTopUp()}
+                      className="w-full min-h-[46px] rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {toppingUp ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" /> Opening checkout…
+                        </>
+                      ) : (
+                        <>
+                          Add £
+                          {(
+                            customTopUp !== ''
+                              ? Number(customTopUp) || 0
+                              : topUpAmount
+                          ).toFixed(2)}
+                        </>
+                      )}
+                    </button>
+                    <p className="text-[11px] text-zinc-500 text-center">
+                      Secure card payment · you’ll come back to this live
+                    </p>
+                  </>
+                )}
+
+                {isOwner && (
+                  <Link
+                    href="/earnings"
+                    className="block w-full text-center py-3 rounded-2xl border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-800 transition"
+                  >
+                    Open earnings
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {topUpFlash && (
+          <div className="fixed top-16 inset-x-0 z-[230] flex justify-center pointer-events-none px-4">
+            <div className="bg-pink-600 text-white text-sm font-semibold px-4 py-2 rounded-full shadow-lg">
+              {topUpFlash}
             </div>
           </div>
         )}
