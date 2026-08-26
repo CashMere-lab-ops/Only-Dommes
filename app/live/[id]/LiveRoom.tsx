@@ -67,6 +67,8 @@ type StreamRow = {
   showcase_amount_gbp?: number;
   showcase_name?: string | null;
   showcase_avatar_url?: string | null;
+  thumbnail_url?: string | null;
+  peak_viewers?: number;
 };
 
 const LIVE_REACT_EMOJIS = ['🔥', '👏', '👑', '😍', '💎'] as const;
