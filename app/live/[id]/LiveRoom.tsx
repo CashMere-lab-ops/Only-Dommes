@@ -50,7 +50,6 @@ type StreamRow = {
   tip_goals?: { label: string; amount: number }[] | null;
   tip_raised_gbp?: number;
   viewer_count?: number;
-  thumbnail_url?: string;
   started_at?: string | null;
   ended_at?: string | null;
   created_at?: string | null;
@@ -240,6 +239,8 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
   }, [userId]);
 
   const [myProfile, setMyProfile] = useState<any>(null);
+  /** Logged-in wallet balance (subs + creators) — shown on live */
+  const [myBalance, setMyBalance] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [ending, setEnding] = useState(false);
   const [liveStatus, setLiveStatus] = useState<
@@ -502,10 +503,13 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
     if (user) {
       const { data: me } = await supabase
         .from('profiles')
-        .select('username, display_name, avatar_url')
+        .select('username, display_name, avatar_url, balance_gbp')
         .eq('id', user.id)
         .single();
       setMyProfile(me);
+      if (me && me.balance_gbp != null) {
+        setMyBalance(Number(me.balance_gbp) || 0);
+      }
     }
 
     const { data, error: qErr } = await supabase
@@ -1319,6 +1323,42 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
   );
 
   finalizeRef.current = finalizeStreamEnded;
+
+  // Keep wallet balance in sync on live (header + tip sheet)
+  useEffect(() => {
+    const onBal = (e: Event) => {
+      const n = Number((e as CustomEvent).detail);
+      if (Number.isFinite(n)) setMyBalance(n);
+    };
+    window.addEventListener('wod-balance-updated', onBal);
+    return () => window.removeEventListener('wod-balance-updated', onBal);
+  }, []);
+
+  // Creators: refresh wallet while live (tips credit 80% in background)
+  useEffect(() => {
+    if (!userId || !isOwner) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('balance_gbp')
+          .eq('id', userId)
+          .single();
+        if (!cancelled && data && data.balance_gbp != null) {
+          setMyBalance(Number(data.balance_gbp) || 0);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void refresh();
+    const t = setInterval(refresh, 6000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [userId, isOwner, supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2497,6 +2537,7 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
         throw new Error(data.error || 'Tip failed');
       }
       if (typeof data.balance === 'number') {
+        setMyBalance(data.balance);
         notifyBalanceUpdated(data.balance);
       }
       setStream((s) =>
@@ -3236,6 +3277,28 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                     <Users size={12} />
                     {viewerCount}
                   </span>
+                  {/* Wallet balance — subs + creators */}
+                  {userId && myBalance != null && (
+                    <span
+                      className="bg-black/50 backdrop-blur text-[11px] sm:text-xs px-2 py-1 rounded-full flex items-center gap-1 border border-pink-500/30 text-pink-100 tabular-nums max-w-[42vw] sm:max-w-none"
+                      title={
+                        isOwner
+                          ? `Wallet · This live £${Number(stream?.tip_raised_gbp || 0).toFixed(2)} tips (you keep ~80%)`
+                          : 'Your wallet balance'
+                      }
+                    >
+                      <DollarSign size={11} className="text-pink-400 flex-shrink-0" />
+                      <span className="truncate">
+                        £{Number(myBalance).toFixed(2)}
+                        {isOwner && Number(stream?.tip_raised_gbp || 0) > 0 && (
+                          <span className="text-zinc-400 font-normal hidden sm:inline">
+                            {' '}
+                            · live £{Number(stream?.tip_raised_gbp || 0).toFixed(0)}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  )}
                   {/* Desktop: follow + share inline */}
                   <div className="hidden sm:flex items-center gap-1.5">
                     {!isOwner && userId && (
@@ -4680,6 +4743,14 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                 </button>
               </div>
               <div className="px-5 py-5 space-y-4">
+                {myBalance != null && (
+                  <div className="flex items-center justify-between rounded-xl bg-zinc-800/80 border border-zinc-700/80 px-3.5 py-2.5">
+                    <span className="text-xs text-zinc-400">Your balance</span>
+                    <span className="text-sm font-semibold text-white tabular-nums">
+                      £{Number(myBalance).toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="grid grid-cols-4 gap-2">
                   {TIP_PRESETS.map((a) => {
                     const minT = creatorMinTip > 2 ? creatorMinTip : 2;
