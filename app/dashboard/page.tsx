@@ -3070,13 +3070,6 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2 min-w-0">
                   <Settings size={20} className="text-pink-400 flex-shrink-0" />
                   <h2 className="text-lg font-semibold">Pricing</h2>
-                  {!pricingOpen && (
-                    <span className="hidden sm:inline text-xs text-zinc-500 truncate">
-                      Sub £{Number(pricing.subscriptionPrice || 0).toFixed(2)}
-                      {' · '}Tip £{Number(pricing.minTipGbp || 0).toFixed(0)}+
-                      {' · '}Private £{Number(pricing.privatePerMinute || 0).toFixed(0)}/min
-                    </span>
-                  )}
                 </div>
                 <ChevronDown
                   size={20}
@@ -3276,7 +3269,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div>
-                        <label className="text-xs text-zinc-500 mb-1.5 block">Per min</label>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">Per minute</label>
                         <div className="relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">£</span>
                           <input
@@ -3292,7 +3285,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs text-zinc-500 mb-1.5 block">Min</label>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">Min minutes</label>
                         <input
                           type="number"
                           min="1"
@@ -3308,7 +3301,7 @@ export default function DashboardPage() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-zinc-500 mb-1.5 block">Max</label>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">Max minutes</label>
                         <input
                           type="number"
                           min="5"
