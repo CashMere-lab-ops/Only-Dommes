@@ -77,10 +77,21 @@ export default function DashboardPage() {
   });
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [pricing, setPricing] = useState({
+    subscriptionsEnabled: false,
+    subscriptionPrice: 9.99,
+    messagePrice: 0,
+    minTipGbp: 2,
+    livePrivateEnabled: true,
     privatePerMinute: 8,
     minPrivateMinutes: 5,
+    voiceCallsEnabled: false,
+    voiceRate: 3,
+    voiceMinMinutes: 3,
+    voiceMaxMinutes: 30,
     tipMenuEnabled: true,
   });
+  const [pricingSaving, setPricingSaving] = useState(false);
+  const [pricingMsg, setPricingMsg] = useState('');
   const [myClips, setMyClips] = useState<
     {
       id: string;
@@ -325,6 +336,34 @@ export default function DashboardPage() {
     }, 50);
   };
 
+  const savePricing = async () => {
+    if (!profile?.id) return;
+    setPricingSaving(true);
+    setPricingMsg('');
+    const mt = Math.min(500, Math.max(2, Number(pricing.minTipGbp) || 2));
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        subscriptions_enabled: pricing.subscriptionsEnabled,
+        subscription_price: Number(pricing.subscriptionPrice) || 0,
+        message_price: Number(pricing.messagePrice) || 0,
+        min_tip_gbp: mt,
+        live_private_enabled: pricing.livePrivateEnabled,
+        live_private_rate_per_minute: Number(pricing.privatePerMinute) || 0,
+        live_private_min_minutes: Math.max(1, Number(pricing.minPrivateMinutes) || 5),
+        voice_calls_enabled: pricing.voiceCallsEnabled,
+        voice_rate_per_minute: Number(pricing.voiceRate) || 0,
+        voice_min_minutes: Math.min(15, Math.max(1, Number(pricing.voiceMinMinutes) || 3)),
+        voice_max_minutes: Math.min(120, Math.max(5, Number(pricing.voiceMaxMinutes) || 30)),
+      })
+      .eq('id', profile.id);
+    setPricingSaving(false);
+    setPricingMsg(error ? error.message : 'Pricing saved');
+    if (!error) {
+      setTimeout(() => setPricingMsg(''), 2500);
+    }
+  };
+
   const openPayoutModal = () => {
     const bal = Number(profile?.balance_gbp || 0);
     setPayoutAmount(bal >= MIN_PAYOUT ? bal.toFixed(2) : '');
@@ -389,6 +428,26 @@ export default function DashboardPage() {
         .eq('id', user.id)
         .single();
       setProfile(data);
+      if (data?.account_type === 'creator') {
+        setPricing({
+          subscriptionsEnabled: !!data.subscriptions_enabled,
+          subscriptionPrice: Number(data.subscription_price ?? 9.99),
+          messagePrice: Number(data.message_price ?? 0),
+          minTipGbp: Number(data.min_tip_gbp ?? 2),
+          livePrivateEnabled: data.live_private_enabled !== false,
+          privatePerMinute: Number(
+            data.live_private_rate_per_minute ?? data.voice_rate_per_minute ?? 8
+          ),
+          minPrivateMinutes: Number(
+            data.live_private_min_minutes ?? data.voice_min_minutes ?? 5
+          ),
+          voiceCallsEnabled: !!data.voice_calls_enabled,
+          voiceRate: Number(data.voice_rate_per_minute ?? 3),
+          voiceMinMinutes: Number(data.voice_min_minutes ?? 3),
+          voiceMaxMinutes: Number(data.voice_max_minutes ?? 30),
+          tipMenuEnabled: data.tip_menu_enabled !== false,
+        });
+      }
 
       // Creator earnings from wallet ledger (tips, unlocks, calls, shop)
       if (data?.account_type === 'creator') {
@@ -2250,55 +2309,271 @@ export default function DashboardPage() {
             )}
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
-              <div className="flex items-center gap-2 mb-5">
-                <Settings size={20} className="text-pink-400" />
-                <h2 className="text-lg font-semibold">Pricing Settings</h2>
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-2">
+                  <Settings size={20} className="text-pink-400" />
+                  <h2 className="text-lg font-semibold">Pricing</h2>
+                </div>
+                <div className="flex items-center gap-3">
+                  {pricingMsg && (
+                    <span className="text-xs text-emerald-400">{pricingMsg}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={savePricing}
+                    disabled={pricingSaving}
+                    className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-sm font-medium disabled:opacity-50"
+                  >
+                    {pricingSaving ? 'Saving…' : 'Save pricing'}
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+              <div className="space-y-6">
                 <div>
-                  <label className="text-sm text-zinc-400 mb-1.5 block">
-                    Private Session (per minute)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
-                    <input
-                      type="number"
-                      value={pricing.privatePerMinute}
-                      onChange={(e) =>
-                        setPricing({ ...pricing, privatePerMinute: Number(e.target.value) })
-                      }
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
-                    />
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Subscriptions</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                    <label className="flex items-center gap-3 cursor-pointer sm:col-span-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({
+                            ...pricing,
+                            subscriptionsEnabled: !pricing.subscriptionsEnabled,
+                          })
+                        }
+                        className={`w-11 h-6 rounded-full relative transition ${
+                          pricing.subscriptionsEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                            pricing.subscriptionsEnabled ? 'left-[22px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-sm">Enabled</span>
+                    </label>
+                    <div className="sm:col-span-2">
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Monthly price</label>
+                      <div className="relative max-w-xs">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.5"
+                          value={pricing.subscriptionPrice}
+                          onChange={(e) =>
+                            setPricing({
+                              ...pricing,
+                              subscriptionPrice: Number(e.target.value),
+                            })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="text-sm text-zinc-400 mb-1.5 block">
-                    Minimum Private Minutes
-                  </label>
-                  <input
-                    type="number"
-                    value={pricing.minPrivateMinutes}
-                    onChange={(e) =>
-                      setPricing({ ...pricing, minPrivateMinutes: Number(e.target.value) })
-                    }
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
-                  />
+
+                <div className="border-t border-zinc-800 pt-6">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Chat & tips</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Message unlock</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={pricing.messagePrice}
+                          onChange={(e) =>
+                            setPricing({ ...pricing, messagePrice: Number(e.target.value) })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1">0 = free messages</p>
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Minimum tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="2"
+                          max="500"
+                          step="1"
+                          value={pricing.minTipGbp}
+                          onChange={(e) =>
+                            setPricing({ ...pricing, minTipGbp: Number(e.target.value) })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1">Platform floor £2</p>
+                    </div>
+                    <div className="flex items-end pb-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({ ...pricing, tipMenuEnabled: !pricing.tipMenuEnabled })
+                        }
+                        className="flex items-center gap-3"
+                      >
+                        <span
+                          className={`w-11 h-6 rounded-full relative transition ${
+                            pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                              pricing.tipMenuEnabled ? 'left-[22px]' : 'left-0.5'
+                            }`}
+                          />
+                        </span>
+                        <span className="text-sm">Tip menu on lives</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <div
-                      className={`w-11 h-6 rounded-full relative transition ${
-                        pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
-                          pricing.tipMenuEnabled ? 'left-[22px]' : 'left-0.5'
+
+                <div className="border-t border-zinc-800 pt-6">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Live private</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({
+                            ...pricing,
+                            livePrivateEnabled: !pricing.livePrivateEnabled,
+                          })
+                        }
+                        className={`w-11 h-6 rounded-full relative transition ${
+                          pricing.livePrivateEnabled ? 'bg-pink-600' : 'bg-zinc-700'
                         }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                            pricing.livePrivateEnabled ? 'left-[22px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-sm">Enabled</span>
+                    </label>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Per minute</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={pricing.privatePerMinute}
+                          onChange={(e) =>
+                            setPricing({
+                              ...pricing,
+                              privatePerMinute: Number(e.target.value),
+                            })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Min minutes</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={pricing.minPrivateMinutes}
+                        onChange={(e) =>
+                          setPricing({
+                            ...pricing,
+                            minPrivateMinutes: Number(e.target.value),
+                          })
+                        }
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
                       />
                     </div>
-                    <span className="text-sm">Enable Tip Menu</span>
-                  </label>
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-800 pt-6">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Voice calls</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({
+                            ...pricing,
+                            voiceCallsEnabled: !pricing.voiceCallsEnabled,
+                          })
+                        }
+                        className={`w-11 h-6 rounded-full relative transition ${
+                          pricing.voiceCallsEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                            pricing.voiceCallsEnabled ? 'left-[22px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-sm">Enabled</span>
+                    </label>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Per minute</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="0.5"
+                          step="0.5"
+                          value={pricing.voiceRate}
+                          onChange={(e) =>
+                            setPricing({ ...pricing, voiceRate: Number(e.target.value) })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Min minutes</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="15"
+                        value={pricing.voiceMinMinutes}
+                        onChange={(e) =>
+                          setPricing({
+                            ...pricing,
+                            voiceMinMinutes: Number(e.target.value),
+                          })
+                        }
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Max minutes</label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="120"
+                        value={pricing.voiceMaxMinutes}
+                        onChange={(e) =>
+                          setPricing({
+                            ...pricing,
+                            voiceMaxMinutes: Number(e.target.value),
+                          })
+                        }
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
