@@ -2151,51 +2151,44 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center">
-                  <Wallet className="text-pink-400" size={22} />
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="text-pink-400" size={22} />
+                  </div>
+                  <div>
+                    <p className="font-semibold">Wallet</p>
+                    <p className="text-2xl font-bold text-white mt-1 tracking-tight">
+                      {money(Number(profile?.balance_gbp || 0))}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Available · min £{MIN_PAYOUT} on Mondays
+                      {earnAllTime > 0 ? ` · all-time ${money(earnAllTime)}` : ''}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold">Wallet & payouts</p>
-                  <p className="text-sm text-zinc-400">
-                    Available {money(Number(profile?.balance_gbp || 0))}
-                    {' · '}
-                    Pending {money(Number(profile?.pending_gbp || 0))}
-                    <span className="text-zinc-500"> (shop escrow)</span>
-                    {earnAllTime > 0
-                      ? ` · All-time earned ${money(earnAllTime)}`
-                      : ''}
-                    {' · '}Min payout £{MIN_PAYOUT} (Mondays)
-                  </p>
+                <div className="flex gap-2 lg:flex-shrink-0">
+                  <Link
+                    href="/earnings"
+                    className="flex-1 lg:flex-none px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition text-center"
+                  >
+                    Earnings
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={openPayoutModal}
+                    disabled={Number(profile?.balance_gbp || 0) < MIN_PAYOUT}
+                    title={
+                      Number(profile?.balance_gbp || 0) < MIN_PAYOUT
+                        ? `Need at least £${MIN_PAYOUT} available`
+                        : 'Request Monday payout'
+                    }
+                    className="flex-1 lg:flex-none px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-sm font-medium transition disabled:cursor-not-allowed"
+                  >
+                    Withdraw
+                  </button>
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <Link
-                  href="/earnings"
-                  className="px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition text-center"
-                >
-                  View earnings
-                </Link>
-                <Link
-                  href="/wallet?from=dashboard"
-                  className="px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition text-center"
-                >
-                  View wallet
-                </Link>
-                <button
-                  type="button"
-                  onClick={openPayoutModal}
-                  disabled={Number(profile?.balance_gbp || 0) < MIN_PAYOUT}
-                  title={
-                    Number(profile?.balance_gbp || 0) < MIN_PAYOUT
-                      ? `Need at least £${MIN_PAYOUT} available`
-                      : 'Request Monday payout'
-                  }
-                  className="px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-sm font-medium transition disabled:cursor-not-allowed"
-                >
-                  Withdraw
-                </button>
               </div>
             </div>
 
