@@ -6,7 +6,7 @@ import {
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye,
   ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon,
   ChevronLeft, ChevronRight, ChevronDown, Heart, Users, Clock, Search, Phone,
-  Download, ArrowDownLeft, ArrowUpRight, List
+  Download, ArrowDownLeft, ArrowUpRight, List, Inbox
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -243,12 +243,105 @@ export default function DashboardPage() {
   const txSectionRef = useRef<HTMLDivElement | null>(null);
   const [txOpen, setTxOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
+  const [actionOpen, setActionOpen] = useState(false);
 
   const money = (n: number) =>
     `£${Number(n || 0).toLocaleString('en-GB', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+
+  const payoutPending = payoutHistory.some((p) =>
+    ['pending', 'requested', 'processing', 'queued'].includes(
+      String(p.status || '').toLowerCase()
+    )
+  );
+  const actionItems: {
+    id: string;
+    title: string;
+    meta: string;
+    cta: string;
+    tone: 'pink' | 'amber' | 'zinc';
+    onClick?: () => void;
+    href?: string;
+  }[] = [];
+  shopOrders.forEach((o) => {
+    const title = o.item_title || 'Shop order';
+    const price = money(Number(o.item_price || 0));
+    if (o.status === 'requested' && o.funds_status === 'held') {
+      actionItems.push({
+        id: `shop-accept-${o.id}`,
+        title: `Accept order · ${title}`,
+        meta: `${price} held from buyer`,
+        cta: 'Accept',
+        tone: 'pink',
+        onClick: async () => {
+          try {
+            const esc = await shopEscrow(o.id, 'accept');
+            setShopOrders((prev) =>
+              prev.map((x) =>
+                x.id === o.id
+                  ? { ...x, status: 'paid', funds_status: 'pending_creator' }
+                  : x
+              )
+            );
+            if (typeof esc.pending === 'number') {
+              setProfile((p: any) => (p ? { ...p, pending_gbp: esc.pending } : p));
+            }
+          } catch (e: any) {
+            alert(e?.message || 'Could not accept order');
+          }
+        },
+      });
+    } else if (o.status === 'paid') {
+      actionItems.push({
+        id: `shop-label-${o.id}`,
+        title: `Generate label · ${title}`,
+        meta: `${price} · InPost locker`,
+        cta: 'Label',
+        tone: 'amber',
+        onClick: () => generateShippingLabel(o),
+      });
+    } else if (o.status === 'label_ready') {
+      actionItems.push({
+        id: `shop-ship-${o.id}`,
+        title: `Mark shipped · ${title}`,
+        meta: o.tracking_number ? `Tracking ${o.tracking_number}` : 'Label ready',
+        cta: 'Shipped',
+        tone: 'amber',
+        onClick: () => markOrderShipped(o),
+      });
+    }
+  });
+  recentCalls
+    .filter((c) =>
+      ['missed', 'no_answer', 'unanswered', 'timeout'].includes(
+        String(c.status || '').toLowerCase()
+      )
+    )
+    .slice(0, 3)
+    .forEach((c) => {
+      const name =
+        c.other?.display_name || c.other?.username || 'Subscriber';
+      actionItems.push({
+        id: `call-${c.id}`,
+        title: `Missed call · ${name}`,
+        meta: `${money(Number(c.rate_gbp || c.rate_per_minute || 0))}/min`,
+        cta: 'Chat',
+        tone: 'zinc',
+        href: c.other?.username ? `/${c.other.username}` : '/messages',
+      });
+    });
+  if (Number(profile?.balance_gbp || 0) >= MIN_PAYOUT && !payoutPending) {
+    actionItems.push({
+      id: 'payout-ready',
+      title: 'Payout ready',
+      meta: `${money(Number(profile?.balance_gbp || 0))} available · Mondays`,
+      cta: 'Request',
+      tone: 'pink',
+      onClick: () => setShowPayoutModal(true),
+    });
+  }
 
   const txLabel = (type: string) => {
     const map: Record<string, string> = {
@@ -2456,7 +2549,10 @@ export default function DashboardPage() {
             </div>
 
                           {shopOrders.length > 0 && (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+                <div
+                  id="shop-orders"
+                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6 scroll-mt-24"
+                >
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold">Shop orders</h2>
                     {shopOrders.length > 3 && (
@@ -3060,6 +3156,83 @@ export default function DashboardPage() {
                 </Link>
               </div>
             )}
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-4">
+              <button
+                type="button"
+                onClick={() => setActionOpen((v) => !v)}
+                className="w-full flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Inbox size={20} className="text-pink-400 flex-shrink-0" />
+                  <h2 className="text-lg font-semibold">Action</h2>
+                  <span
+                    className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      actionItems.length > 0
+                        ? 'bg-pink-500/15 text-pink-300'
+                        : 'bg-zinc-800 text-zinc-500'
+                    }`}
+                  >
+                    {actionItems.length}
+                  </span>
+                </div>
+                <ChevronDown
+                  size={20}
+                  className={`text-zinc-400 flex-shrink-0 transition ${
+                    actionOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {actionOpen && (
+                <div className="mt-4">
+                  {actionItems.length === 0 ? (
+                    <p className="text-sm text-zinc-500 py-3">You’re all caught up.</p>
+                  ) : (
+                    <div className="divide-y divide-zinc-800">
+                      {actionItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between gap-3 py-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{item.title}</p>
+                            <p className="text-xs text-zinc-500 truncate">{item.meta}</p>
+                          </div>
+                          {item.href && !item.onClick ? (
+                            <Link
+                              href={item.href}
+                              className={`flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg ${
+                                item.tone === 'pink'
+                                  ? 'bg-pink-600 text-white'
+                                  : item.tone === 'amber'
+                                  ? 'bg-amber-500/15 text-amber-300'
+                                  : 'bg-zinc-800 text-zinc-200'
+                              }`}
+                            >
+                              {item.cta}
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={item.onClick}
+                              className={`flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg ${
+                                item.tone === 'pink'
+                                  ? 'bg-pink-600 text-white'
+                                  : item.tone === 'amber'
+                                  ? 'bg-amber-500/15 text-amber-300'
+                                  : 'bg-zinc-800 text-zinc-200'
+                              }`}
+                            >
+                              {item.cta}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-4">
               <button
