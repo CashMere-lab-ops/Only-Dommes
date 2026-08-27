@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   DollarSign, TrendingUp, Film, Plus, Radio, Wallet, Eye,
   ShoppingBag, X, Settings, Package, Pencil, Trash2, Image as ImageIcon,
-  ChevronLeft, ChevronRight, Heart, Users, Clock, Search, Phone,
+  ChevronLeft, ChevronRight, ChevronDown, Heart, Users, Clock, Search, Phone,
   Download, ArrowDownLeft, ArrowUpRight, List
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
@@ -241,6 +241,7 @@ export default function DashboardPage() {
     'all' | 'in' | 'out' | 'tips' | 'clips' | 'topup' | 'payout'
   >('all');
   const txSectionRef = useRef<HTMLDivElement | null>(null);
+  const [txOpen, setTxOpen] = useState(false);
 
   const money = (n: number) =>
     `£${Number(n || 0).toLocaleString('en-GB', {
@@ -331,6 +332,7 @@ export default function DashboardPage() {
 
   const scrollToTransactions = () => {
     setTxFilter('all');
+    setTxOpen(true);
     setTimeout(() => {
       txSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 50);
@@ -1959,16 +1961,28 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Sub full transactions */}
+              {/* Sub transactions dropdown */}
               <div
                 ref={txSectionRef}
                 id="transactions"
                 className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8 scroll-mt-24"
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setTxOpen((v) => !v)}
+                  className="w-full flex items-center justify-between gap-3"
+                >
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <List size={20} className="text-pink-400" /> Transactions
                   </h2>
+                  <ChevronDown
+                    size={20}
+                    className={`text-zinc-400 transition ${txOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {txOpen && (
+                <div className="mt-4">
+                <div className="flex justify-end mb-4">
                   <button
                     type="button"
                     onClick={exportTxCsv}
@@ -2004,12 +2018,12 @@ export default function DashboardPage() {
                   ))}
                 </div>
                 {filteredTxs.length === 0 ? (
-                  <p className="text-sm text-zinc-500 text-center py-10">
-                    No transactions yet — top up or buy content to see history here
+                  <p className="text-sm text-zinc-500 text-center py-8">
+                    No transactions yet
                   </p>
                 ) : (
-                  <div className="space-y-1 max-h-[420px] overflow-y-auto pr-1">
-                    {filteredTxs.map((tx) => {
+                  <div className="space-y-1">
+                    {filteredTxs.slice(0, 5).map((tx) => {
                       const amt = Number(tx.amount_gbp || 0);
                       const isIn = amt > 0;
                       return (
@@ -2068,6 +2082,13 @@ export default function DashboardPage() {
                       );
                     })}
                   </div>
+                )}
+                {filteredTxs.length > 5 && (
+                  <p className="text-[11px] text-zinc-500 mt-3 text-center">
+                    Showing latest 5
+                  </p>
+                )}
+                </div>
                 )}
               </div>
             </div>
@@ -2307,276 +2328,6 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
-              <div className="flex items-center justify-between gap-3 mb-6">
-                <div className="flex items-center gap-2">
-                  <Settings size={20} className="text-pink-400" />
-                  <h2 className="text-lg font-semibold">Pricing</h2>
-                </div>
-                <div className="flex items-center gap-3">
-                  {pricingMsg && (
-                    <span className="text-xs text-emerald-400">{pricingMsg}</span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={savePricing}
-                    disabled={pricingSaving}
-                    className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-sm font-medium disabled:opacity-50"
-                  >
-                    {pricingSaving ? 'Saving…' : 'Save pricing'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Subscriptions</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-                    <label className="flex items-center gap-3 cursor-pointer sm:col-span-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPricing({
-                            ...pricing,
-                            subscriptionsEnabled: !pricing.subscriptionsEnabled,
-                          })
-                        }
-                        className={`w-11 h-6 rounded-full relative transition ${
-                          pricing.subscriptionsEnabled ? 'bg-pink-600' : 'bg-zinc-700'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
-                            pricing.subscriptionsEnabled ? 'left-[22px]' : 'left-0.5'
-                          }`}
-                        />
-                      </button>
-                      <span className="text-sm">Enabled</span>
-                    </label>
-                    <div className="sm:col-span-2">
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Monthly price</label>
-                      <div className="relative max-w-xs">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
-                        <input
-                          type="number"
-                          min="1"
-                          step="0.5"
-                          value={pricing.subscriptionPrice}
-                          onChange={(e) =>
-                            setPricing({
-                              ...pricing,
-                              subscriptionPrice: Number(e.target.value),
-                            })
-                          }
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-zinc-800 pt-6">
-                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Chat & tips</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Message unlock</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={pricing.messagePrice}
-                          onChange={(e) =>
-                            setPricing({ ...pricing, messagePrice: Number(e.target.value) })
-                          }
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
-                        />
-                      </div>
-                      <p className="text-[11px] text-zinc-500 mt-1">0 = free messages</p>
-                    </div>
-                    <div>
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Minimum tip</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
-                        <input
-                          type="number"
-                          min="2"
-                          max="500"
-                          step="1"
-                          value={pricing.minTipGbp}
-                          onChange={(e) =>
-                            setPricing({ ...pricing, minTipGbp: Number(e.target.value) })
-                          }
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
-                        />
-                      </div>
-                      <p className="text-[11px] text-zinc-500 mt-1">Platform floor £2</p>
-                    </div>
-                    <div className="flex items-end pb-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPricing({ ...pricing, tipMenuEnabled: !pricing.tipMenuEnabled })
-                        }
-                        className="flex items-center gap-3"
-                      >
-                        <span
-                          className={`w-11 h-6 rounded-full relative transition ${
-                            pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'
-                          }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
-                              pricing.tipMenuEnabled ? 'left-[22px]' : 'left-0.5'
-                            }`}
-                          />
-                        </span>
-                        <span className="text-sm">Tip menu on lives</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-zinc-800 pt-6">
-                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Live private</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPricing({
-                            ...pricing,
-                            livePrivateEnabled: !pricing.livePrivateEnabled,
-                          })
-                        }
-                        className={`w-11 h-6 rounded-full relative transition ${
-                          pricing.livePrivateEnabled ? 'bg-pink-600' : 'bg-zinc-700'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
-                            pricing.livePrivateEnabled ? 'left-[22px]' : 'left-0.5'
-                          }`}
-                        />
-                      </button>
-                      <span className="text-sm">Enabled</span>
-                    </label>
-                    <div>
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Per minute</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={pricing.privatePerMinute}
-                          onChange={(e) =>
-                            setPricing({
-                              ...pricing,
-                              privatePerMinute: Number(e.target.value),
-                            })
-                          }
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Min minutes</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="30"
-                        value={pricing.minPrivateMinutes}
-                        onChange={(e) =>
-                          setPricing({
-                            ...pricing,
-                            minPrivateMinutes: Number(e.target.value),
-                          })
-                        }
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-zinc-800 pt-6">
-                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Voice calls</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPricing({
-                            ...pricing,
-                            voiceCallsEnabled: !pricing.voiceCallsEnabled,
-                          })
-                        }
-                        className={`w-11 h-6 rounded-full relative transition ${
-                          pricing.voiceCallsEnabled ? 'bg-pink-600' : 'bg-zinc-700'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
-                            pricing.voiceCallsEnabled ? 'left-[22px]' : 'left-0.5'
-                          }`}
-                        />
-                      </button>
-                      <span className="text-sm">Enabled</span>
-                    </label>
-                    <div>
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Per minute</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
-                        <input
-                          type="number"
-                          min="0.5"
-                          step="0.5"
-                          value={pricing.voiceRate}
-                          onChange={(e) =>
-                            setPricing({ ...pricing, voiceRate: Number(e.target.value) })
-                          }
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Min minutes</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="15"
-                        value={pricing.voiceMinMinutes}
-                        onChange={(e) =>
-                          setPricing({
-                            ...pricing,
-                            voiceMinMinutes: Number(e.target.value),
-                          })
-                        }
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-zinc-400 mb-1.5 block">Max minutes</label>
-                      <input
-                        type="number"
-                        min="5"
-                        max="120"
-                        value={pricing.voiceMaxMinutes}
-                        onChange={(e) =>
-                          setPricing({
-                            ...pricing,
-                            voiceMaxMinutes: Number(e.target.value),
-                          })
-                        }
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
@@ -3309,16 +3060,298 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Full transactions ledger — bottom of dashboard */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-2">
+                  <Settings size={20} className="text-pink-400" />
+                  <h2 className="text-lg font-semibold">Pricing</h2>
+                </div>
+                <div className="flex items-center gap-3">
+                  {pricingMsg && (
+                    <span className="text-xs text-emerald-400">{pricingMsg}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={savePricing}
+                    disabled={pricingSaving}
+                    className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-sm font-medium disabled:opacity-50"
+                  >
+                    {pricingSaving ? 'Saving…' : 'Save pricing'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Subscriptions</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                    <label className="flex items-center gap-3 cursor-pointer sm:col-span-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({
+                            ...pricing,
+                            subscriptionsEnabled: !pricing.subscriptionsEnabled,
+                          })
+                        }
+                        className={`w-11 h-6 rounded-full relative transition ${
+                          pricing.subscriptionsEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                            pricing.subscriptionsEnabled ? 'left-[22px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-sm">Enabled</span>
+                    </label>
+                    <div className="sm:col-span-2">
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Monthly price</label>
+                      <div className="relative max-w-xs">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.5"
+                          value={pricing.subscriptionPrice}
+                          onChange={(e) =>
+                            setPricing({
+                              ...pricing,
+                              subscriptionPrice: Number(e.target.value),
+                            })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-800 pt-6">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Chat & tips</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Message unlock</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={pricing.messagePrice}
+                          onChange={(e) =>
+                            setPricing({ ...pricing, messagePrice: Number(e.target.value) })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1">0 = free messages</p>
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Minimum tip</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="2"
+                          max="500"
+                          step="1"
+                          value={pricing.minTipGbp}
+                          onChange={(e) =>
+                            setPricing({ ...pricing, minTipGbp: Number(e.target.value) })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1">Platform floor £2</p>
+                    </div>
+                    <div className="flex items-end pb-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({ ...pricing, tipMenuEnabled: !pricing.tipMenuEnabled })
+                        }
+                        className="flex items-center gap-3"
+                      >
+                        <span
+                          className={`w-11 h-6 rounded-full relative transition ${
+                            pricing.tipMenuEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                              pricing.tipMenuEnabled ? 'left-[22px]' : 'left-0.5'
+                            }`}
+                          />
+                        </span>
+                        <span className="text-sm">Tip menu on lives</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-800 pt-6">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Live private</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({
+                            ...pricing,
+                            livePrivateEnabled: !pricing.livePrivateEnabled,
+                          })
+                        }
+                        className={`w-11 h-6 rounded-full relative transition ${
+                          pricing.livePrivateEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                            pricing.livePrivateEnabled ? 'left-[22px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-sm">Enabled</span>
+                    </label>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Per minute</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={pricing.privatePerMinute}
+                          onChange={(e) =>
+                            setPricing({
+                              ...pricing,
+                              privatePerMinute: Number(e.target.value),
+                            })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Min minutes</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={pricing.minPrivateMinutes}
+                        onChange={(e) =>
+                          setPricing({
+                            ...pricing,
+                            minPrivateMinutes: Number(e.target.value),
+                          })
+                        }
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-800 pt-6">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500 mb-3">Voice calls</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({
+                            ...pricing,
+                            voiceCallsEnabled: !pricing.voiceCallsEnabled,
+                          })
+                        }
+                        className={`w-11 h-6 rounded-full relative transition ${
+                          pricing.voiceCallsEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                            pricing.voiceCallsEnabled ? 'left-[22px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-sm">Enabled</span>
+                    </label>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Per minute</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">£</span>
+                        <input
+                          type="number"
+                          min="0.5"
+                          step="0.5"
+                          value={pricing.voiceRate}
+                          onChange={(e) =>
+                            setPricing({ ...pricing, voiceRate: Number(e.target.value) })
+                          }
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-8 pr-4 outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Min minutes</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="15"
+                        value={pricing.voiceMinMinutes}
+                        onChange={(e) =>
+                          setPricing({
+                            ...pricing,
+                            voiceMinMinutes: Number(e.target.value),
+                          })
+                        }
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Max minutes</label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="120"
+                        value={pricing.voiceMaxMinutes}
+                        onChange={(e) =>
+                          setPricing({
+                            ...pricing,
+                            voiceMaxMinutes: Number(e.target.value),
+                          })
+                        }
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 outline-none focus:border-pink-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Transactions dropdown */}
             <div
               ref={txSectionRef}
               id="transactions"
               className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-4 scroll-mt-24"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setTxOpen((v) => !v)}
+                className="w-full flex items-center justify-between gap-3"
+              >
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <List size={20} className="text-pink-400" /> Transactions
                 </h2>
+                <ChevronDown
+                  size={20}
+                  className={`text-zinc-400 transition ${txOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {txOpen && (
+              <div className="mt-4">
+              <div className="flex justify-end mb-4">
                 <button
                   type="button"
                   onClick={exportTxCsv}
@@ -3359,8 +3392,8 @@ export default function DashboardPage() {
                   No transactions yet
                 </p>
               ) : (
-                <div className="space-y-1 max-h-[480px] overflow-y-auto pr-1">
-                  {filteredTxs.map((tx) => {
+                <div className="space-y-1">
+                  {filteredTxs.slice(0, 5).map((tx) => {
                     const amt = Number(tx.amount_gbp || 0);
                     const isIn = amt > 0;
                     return (
@@ -3417,10 +3450,11 @@ export default function DashboardPage() {
                   })}
                 </div>
               )}
-              <p className="text-[11px] text-zinc-600 mt-3">
-                Showing up to 300 most recent movements. Export CSV for records /
-                tax.
+              <p className="text-[11px] text-zinc-500 mt-3 text-center">
+                Showing latest 5 · export CSV for the full history
               </p>
+              </div>
+              )}
             </div>
           </div>
         </main>
