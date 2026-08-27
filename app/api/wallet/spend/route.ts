@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { splitCreatorEarn } from '../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -149,8 +150,9 @@ export async function POST(request: Request) {
     }
 
     const recipientBal = Number(recipient.balance_gbp || 0);
-    const senderNext = Math.round((senderBal - rounded) * 100) / 100;
-    const recipientNext = Math.round((recipientBal + rounded) * 100) / 100;
+    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(rounded);
+    const senderNext = Math.round((senderBal - gross_gbp) * 100) / 100;
+    const recipientNext = Math.round((recipientBal + net_gbp) * 100) / 100;
 
     const { error: debitErr } = await admin
       .from('profiles')
@@ -201,13 +203,13 @@ export async function POST(request: Request) {
 
     const desc =
       description ||
-      `${map.label} £${rounded.toFixed(2)}`;
+      `${map.label} £${gross_gbp.toFixed(2)}`;
 
     await admin.from('wallet_transactions').insert([
       {
         user_id: user.id,
         type: map.sent,
-        amount_gbp: -rounded,
+        amount_gbp: -gross_gbp,
         balance_after: senderNext,
         counterparty_id: toUserId,
         reference_type: referenceType,
@@ -217,18 +219,23 @@ export async function POST(request: Request) {
       {
         user_id: toUserId,
         type: map.received,
-        amount_gbp: rounded,
+        amount_gbp: net_gbp,
         balance_after: recipientNext,
         counterparty_id: user.id,
         reference_type: referenceType,
         reference_id: referenceId,
-        description: desc,
+        description: `${desc} · kept £${net_gbp.toFixed(2)} after 20% fee`,
+        gross_gbp,
+        fee_gbp,
+        net_gbp,
       },
     ]);
 
     return NextResponse.json({
       ok: true,
-      amount: rounded,
+      amount: gross_gbp,
+      fee_gbp,
+      net_gbp,
       balance: senderNext,
       recipient_balance: recipientNext,
     });
@@ -240,5 +247,3 @@ export async function POST(request: Request) {
     );
   }
 }
-
-

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { splitCreatorEarn } from '../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -221,8 +222,9 @@ export async function POST(request: Request) {
 
       const pending = Number(creator?.pending_gbp || 0);
       const bal = Number(creator?.balance_gbp || 0);
+      const { net_gbp, fee_gbp, gross_gbp } = splitCreatorEarn(amount);
       const pendingNext = Math.max(0, Math.round((pending - amount) * 100) / 100);
-      const balNext = Math.round((bal + amount) * 100) / 100;
+      const balNext = Math.round((bal + net_gbp) * 100) / 100;
 
       await admin
         .from('profiles')
@@ -232,12 +234,15 @@ export async function POST(request: Request) {
       await admin.from('wallet_transactions').insert({
         user_id: order.creator_id,
         type: 'shop_received',
-        amount_gbp: amount,
+        amount_gbp: net_gbp,
         balance_after: balNext,
         counterparty_id: order.buyer_id,
         reference_type: 'shop_order',
         reference_id: orderId,
-        description: `Released shop sale: ${order.item_title || 'item'}`,
+        description: `Released shop sale: ${order.item_title || 'item'} · kept £${net_gbp.toFixed(2)} after 20% fee`,
+        gross_gbp,
+        fee_gbp,
+        net_gbp,
       });
 
       await admin

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
+import { splitCreatorEarn } from '../../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -125,9 +126,10 @@ export async function POST(request: Request) {
       .eq('id', req.creator_id)
       .single();
 
-    const newFanBal = Math.round((fanBal - amount) * 100) / 100;
+    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(amount);
+    const newFanBal = Math.round((fanBal - gross_gbp) * 100) / 100;
     const newCreatorBal =
-      Math.round((Number(creator?.balance_gbp || 0) + amount) * 100) / 100;
+      Math.round((Number(creator?.balance_gbp || 0) + net_gbp) * 100) / 100;
     const ref = randomUUID();
     const endsAt = new Date(
       Date.now() + Number(req.minutes) * 60 * 1000
@@ -146,7 +148,7 @@ export async function POST(request: Request) {
       {
         user_id: req.requester_id,
         type: 'private_sent',
-        amount_gbp: -amount,
+        amount_gbp: -gross_gbp,
         balance_after: newFanBal,
         counterparty_id: req.creator_id,
         reference_type: 'live_private',
@@ -156,12 +158,15 @@ export async function POST(request: Request) {
       {
         user_id: req.creator_id,
         type: 'private_received',
-        amount_gbp: amount,
+        amount_gbp: net_gbp,
         balance_after: newCreatorBal,
         counterparty_id: req.requester_id,
         reference_type: 'live_private',
         reference_id: ref,
-        description: `Private live · ${req.minutes} min`,
+        description: `Private live · ${req.minutes} min · kept £${net_gbp.toFixed(2)} after 20% fee`,
+        gross_gbp,
+        fee_gbp,
+        net_gbp,
       },
     ]);
 
@@ -225,4 +230,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

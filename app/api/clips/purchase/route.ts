@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { splitCreatorEarn } from '../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -144,9 +145,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const newSenderBal = Math.round((bal - price) * 100) / 100;
+    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(price);
+    const newSenderBal = Math.round((bal - gross_gbp) * 100) / 100;
     const newRecipientBal =
-      Math.round((Number(recipient.balance_gbp || 0) + price) * 100) / 100;
+      Math.round((Number(recipient.balance_gbp || 0) + net_gbp) * 100) / 100;
 
     // Wallet: debit buyer, credit creator
     const { error: debitErr } = await admin
@@ -181,7 +183,7 @@ export async function POST(request: Request) {
       {
         user_id: user.id,
         type: 'clip_sent',
-        amount_gbp: -price,
+        amount_gbp: -gross_gbp,
         balance_after: newSenderBal,
         reference_type: 'clip',
         reference_id: clipId,
@@ -190,7 +192,7 @@ export async function POST(request: Request) {
       {
         user_id: clip.creator_id,
         type: 'clip_received',
-        amount_gbp: price,
+        amount_gbp: net_gbp,
         balance_after: newRecipientBal,
         reference_type: 'clip',
         reference_id: clipId,
@@ -239,7 +241,7 @@ export async function POST(request: Request) {
       .eq('id', clipId);
 
     // Notify creator — use actor_id (matches notifications schema)
-    const notifBody = `${buyerName} bought “${clip.title}” · £${price.toFixed(2)}`;
+    const notifBody = `${buyerName} bought “${clip.title}” · £${price.toFixed(2)} (you keep £${net_gbp.toFixed(2)})`;
     const { error: notifErr } = await admin.from('notifications').insert({
       user_id: clip.creator_id,
       actor_id: user.id,

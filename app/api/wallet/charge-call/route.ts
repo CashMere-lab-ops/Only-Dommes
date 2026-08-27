@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { splitCreatorEarn } from '../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,8 +102,9 @@ export async function POST(request: Request) {
       .single();
 
     const recipientBal = Number(recipient?.balance_gbp || 0);
-    const senderNext = Math.round((senderBal - rounded) * 100) / 100;
-    const recipientNext = Math.round((recipientBal + rounded) * 100) / 100;
+    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(rounded);
+    const senderNext = Math.round((senderBal - gross_gbp) * 100) / 100;
+    const recipientNext = Math.round((recipientBal + net_gbp) * 100) / 100;
 
     await admin
       .from('profiles')
@@ -114,13 +116,13 @@ export async function POST(request: Request) {
       .update({ balance_gbp: recipientNext })
       .eq('id', creatorId);
 
-    const desc = `Voice call £${rounded.toFixed(2)}`;
+    const desc = `Voice call £${gross_gbp.toFixed(2)}`;
 
     await admin.from('wallet_transactions').insert([
       {
         user_id: subId,
         type: 'call_sent',
-        amount_gbp: -rounded,
+        amount_gbp: -gross_gbp,
         balance_after: senderNext,
         counterparty_id: creatorId,
         reference_type: 'voice_call',
@@ -130,16 +132,24 @@ export async function POST(request: Request) {
       {
         user_id: creatorId,
         type: 'call_received',
-        amount_gbp: rounded,
+        amount_gbp: net_gbp,
         balance_after: recipientNext,
         counterparty_id: subId,
         reference_type: 'voice_call',
         reference_id: callId,
-        description: desc,
+        description: `${desc} · kept £${net_gbp.toFixed(2)} after 20% fee`,
+        gross_gbp,
+        fee_gbp,
+        net_gbp,
       },
     ]);
 
-    return NextResponse.json({ ok: true, amount: rounded });
+    return NextResponse.json({
+      ok: true,
+      amount: gross_gbp,
+      fee_gbp,
+      net_gbp,
+    });
   } catch (e: any) {
     console.error('charge-call', e);
     return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { splitCreatorEarn } from '../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -153,11 +154,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const newSenderBal = Math.round((senderBal - rounded) * 100) / 100;
+    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(rounded);
+    const newSenderBal = Math.round((senderBal - gross_gbp) * 100) / 100;
     const newCreatorBal =
-      Math.round((Number(creator.balance_gbp || 0) + rounded) * 100) / 100;
+      Math.round((Number(creator.balance_gbp || 0) + net_gbp) * 100) / 100;
     const newRaised =
-      Math.round((Number(stream.tip_raised_gbp || 0) + rounded) * 100) / 100;
+      Math.round((Number(stream.tip_raised_gbp || 0) + gross_gbp) * 100) / 100;
 
     const fromName = sender.display_name || sender.username || 'A fan';
     const giftLabel = `${gift.emoji} ${gift.label}`;
@@ -176,7 +178,7 @@ export async function POST(request: Request) {
       {
         user_id: user.id,
         type: 'gift_sent',
-        amount_gbp: -rounded,
+        amount_gbp: -gross_gbp,
         balance_after: newSenderBal,
         counterparty_id: stream.creator_id,
         reference_type: 'live_stream',
@@ -186,8 +188,11 @@ export async function POST(request: Request) {
       {
         user_id: stream.creator_id,
         type: 'gift_received',
-        amount_gbp: rounded,
+        amount_gbp: net_gbp,
         balance_after: newCreatorBal,
+        gross_gbp,
+        fee_gbp,
+        net_gbp,
         counterparty_id: user.id,
         reference_type: 'live_stream',
         reference_id: streamId,
@@ -301,4 +306,3 @@ export async function POST(request: Request) {
     );
   }
 }
-
