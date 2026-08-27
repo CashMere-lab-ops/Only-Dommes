@@ -29,6 +29,8 @@ type Item = {
   created_at?: string;
 };
 
+const MIN_PAYOUT = 100;
+
 const SHOP_CATEGORIES = [
   'Underwear',
   'Socks',
@@ -325,7 +327,7 @@ export default function DashboardPage() {
 
   const openPayoutModal = () => {
     const bal = Number(profile?.balance_gbp || 0);
-    setPayoutAmount(bal >= 150 ? bal.toFixed(2) : '');
+    setPayoutAmount(bal >= MIN_PAYOUT ? bal.toFixed(2) : '');
     setPayoutMsg('');
     setPayoutErr('');
     setShowPayoutModal(true);
@@ -2035,13 +2037,17 @@ export default function DashboardPage() {
                 >
                   <Phone size={18} className="text-pink-400" /> Call history
                 </Link>
-                <Link
-                  href="/live?goLive=1"
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90"
+                <button
+                  onClick={() => setIsLive(!isLive)}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition ${
+                    isLive
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90'
+                  }`}
                 >
                   <Radio size={18} />
-                  Go Live
-                </Link>
+                  {isLive ? 'End Stream' : 'Go Live'}
+                </button>
               </div>
             </div>
 
@@ -2160,11 +2166,17 @@ export default function DashboardPage() {
                     {earnAllTime > 0
                       ? ` · All-time earned ${money(earnAllTime)}`
                       : ''}
-                    {' · '}Min payout £150 (Mondays)
+                    {' · '}Min payout £{MIN_PAYOUT} (Mondays)
                   </p>
                 </div>
               </div>
               <div className="flex gap-2">
+                <Link
+                  href="/earnings"
+                  className="px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition text-center"
+                >
+                  View earnings
+                </Link>
                 <Link
                   href="/wallet?from=dashboard"
                   className="px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition text-center"
@@ -2174,11 +2186,11 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={openPayoutModal}
-                  disabled={Number(profile?.balance_gbp || 0) < 150}
+                  disabled={Number(profile?.balance_gbp || 0) < MIN_PAYOUT}
                   title={
-                    Number(profile?.balance_gbp || 0) < 150
-                      ? 'Need at least £150 available'
-                      : 'Request weekly payout'
+                    Number(profile?.balance_gbp || 0) < MIN_PAYOUT
+                      ? `Need at least £${MIN_PAYOUT} available`
+                      : 'Request Monday payout'
                   }
                   className="px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-sm font-medium transition disabled:cursor-not-allowed"
                 >
@@ -3472,9 +3484,9 @@ export default function DashboardPage() {
                 </button>
               </div>
               <p className="text-sm text-zinc-400 mb-4">
-                Minimum £150. Platform fee <span className="text-white">20%</span> is
-                taken on payout only (0% on tips, unlocks and calls). Payouts are
-                processed on Mondays.
+                Minimum £{MIN_PAYOUT}. The 20% platform fee is already taken when
+                you earn. Payouts send your available balance with no second fee.
+                Processed on Mondays. Under the minimum rolls over.
               </p>
               <p className="text-sm mb-3">
                 Available:{' '}
@@ -3487,30 +3499,23 @@ export default function DashboardPage() {
               </label>
               <input
                 type="number"
-                min={150}
+                min={MIN_PAYOUT}
                 step="0.01"
                 value={payoutAmount}
                 onChange={(e) => setPayoutAmount(e.target.value)}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500 mb-3"
               />
-              {Number(payoutAmount) >= 150 && (
+              {Number(payoutAmount) >= MIN_PAYOUT && (
                 <div className="text-sm bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 mb-4 space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">Gross</span>
-                    <span>{money(Number(payoutAmount))}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">Fee (20%)</span>
-                    <span className="text-red-400">
-                      −{money((Number(payoutAmount) * 0.2))}
-                    </span>
-                  </div>
-                  <div className="flex justify-between font-semibold border-t border-zinc-800 pt-2 mt-1">
+                  <div className="flex justify-between font-semibold">
                     <span>You receive</span>
                     <span className="text-pink-400">
-                      {money(Number(payoutAmount) * 0.8)}
+                      {money(Number(payoutAmount))}
                     </span>
                   </div>
+                  <p className="text-[11px] text-zinc-500 pt-1">
+                    No extra fee on payout
+                  </p>
                 </div>
               )}
               {payoutErr && (
@@ -3532,7 +3537,7 @@ export default function DashboardPage() {
                   onClick={requestPayout}
                   disabled={
                     payoutLoading ||
-                    Number(payoutAmount) < 150 ||
+                    Number(payoutAmount) < MIN_PAYOUT ||
                     !!payoutMsg
                   }
                   className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 font-medium transition disabled:opacity-50"
