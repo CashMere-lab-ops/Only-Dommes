@@ -719,21 +719,6 @@ export default function EarningsPage() {
                 >
                   <Download size={16} /> Export CSV
                 </button>
-                <button
-                  type="button"
-                  disabled={available < MIN_PAYOUT}
-                  onClick={() => {
-                    setPayoutErr('');
-                    setPayoutMsg('');
-                    setPayoutAmount(
-                      available >= MIN_PAYOUT ? available.toFixed(2) : ''
-                    );
-                    setShowPayout(true);
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 transition"
-                >
-                  Request payout
-                </button>
               </div>
             </div>
 
@@ -869,12 +854,12 @@ export default function EarningsPage() {
 
             {/* Next Monday payout */}
             <div className="rounded-2xl border border-pink-500/20 bg-gradient-to-br from-pink-600/10 via-zinc-900 to-zinc-900 p-5 mb-6">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wide text-pink-300">
                     Next payout
                   </p>
-                  <p className="text-xl font-bold text-white mt-1">
+                  <p className="text-xl font-semibold text-white mt-1">
                     Monday{' '}
                     {nextMonday().toLocaleDateString('en-GB', {
                       day: 'numeric',
@@ -883,23 +868,37 @@ export default function EarningsPage() {
                   </p>
                   <p className="text-sm text-zinc-400 mt-1">
                     {available >= MIN_PAYOUT
-                      ? `${money(available)} will be sent (already after 20% platform fee)`
-                      : `Need ${money(MIN_PAYOUT)} minimum · under that rolls to the next Monday`}
+                      ? `${money(available)} ready · no extra fee on payout`
+                      : `${money(Math.max(0, MIN_PAYOUT - available))} more to reach £${MIN_PAYOUT} · rolls over`}
                   </p>
                 </div>
-                <div className="sm:text-right">
-                  <p className="text-xs text-zinc-500 mb-1">Towards £{MIN_PAYOUT}</p>
-                  <div className="h-2 w-full sm:w-40 rounded-full bg-zinc-800 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-pink-600 to-rose-500"
-                      style={{
-                        width: `${Math.min(100, (available / MIN_PAYOUT) * 100)}%`,
-                      }}
-                    />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:flex-shrink-0">
+                  <div className="sm:w-36">
+                    <p className="text-xs text-zinc-500 mb-1">Towards £{MIN_PAYOUT}</p>
+                    <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-pink-600 to-rose-500"
+                        style={{
+                          width: `${Math.min(100, (available / MIN_PAYOUT) * 100)}%`,
+                        }}
+                      />
+                    </div>
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1.5">
-                    {Math.min(100, Math.round((available / MIN_PAYOUT) * 100))}%
-                  </p>
+                  <button
+                    type="button"
+                    disabled={available < MIN_PAYOUT}
+                    onClick={() => {
+                      setPayoutErr('');
+                      setPayoutMsg('');
+                      setPayoutAmount(
+                        available >= MIN_PAYOUT ? available.toFixed(2) : ''
+                      );
+                      setShowPayout(true);
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-95 transition whitespace-nowrap"
+                  >
+                    Request payout
+                  </button>
                 </div>
               </div>
             </div>
