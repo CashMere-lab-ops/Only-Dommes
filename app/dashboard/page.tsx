@@ -2152,26 +2152,42 @@ export default function DashboardPage() {
             </div>
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center flex-shrink-0">
-                    <Wallet className="text-pink-400" size={22} />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-pink-500/10 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="text-pink-400" size={18} />
                   </div>
-                  <div>
-                    <p className="font-semibold">Wallet</p>
-                    <p className="text-2xl font-bold text-white mt-1 tracking-tight">
-                      {money(Number(profile?.balance_gbp || 0))}
-                    </p>
-                    <p className="text-xs text-zinc-500 mt-1">
-                      Available · min £{MIN_PAYOUT} on Mondays
-                      {earnAllTime > 0 ? ` · all-time ${money(earnAllTime)}` : ''}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">Wallet</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Payouts Mondays · min £{MIN_PAYOUT}
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2 lg:flex-shrink-0">
+                <div className="flex items-center gap-6 sm:gap-8">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                      Available
+                    </p>
+                    <p className="text-sm text-zinc-100 mt-0.5 tabular-nums">
+                      {money(Number(profile?.balance_gbp || 0))}
+                    </p>
+                  </div>
+                  {earnAllTime > 0 && (
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                        All-time
+                      </p>
+                      <p className="text-sm text-zinc-400 mt-0.5 tabular-nums">
+                        {money(earnAllTime)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
                   <Link
                     href="/earnings"
-                    className="flex-1 lg:flex-none px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800 transition text-center"
+                    className="px-4 py-2 rounded-xl border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-800 transition"
                   >
                     Earnings
                   </Link>
@@ -2184,7 +2200,7 @@ export default function DashboardPage() {
                         ? `Need at least £${MIN_PAYOUT} available`
                         : 'Request Monday payout'
                     }
-                    className="flex-1 lg:flex-none px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-sm font-medium transition disabled:cursor-not-allowed"
+                    className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 disabled:bg-zinc-800 disabled:text-zinc-500 text-sm font-medium transition disabled:cursor-not-allowed"
                   >
                     Withdraw
                   </button>
