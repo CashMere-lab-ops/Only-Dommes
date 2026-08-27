@@ -3,8 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-const MIN_PAYOUT = 150;
-const FEE_PERCENT = 20;
+const MIN_PAYOUT = 100;
+/** Fee already taken on each earn. Payout sends the full available amount. */
+const FEE_PERCENT = 0;
 
 function nextMondayDate(from = new Date()): string {
   const d = new Date(from);
@@ -230,7 +231,7 @@ export async function POST(request: Request) {
       balance_after: newBalance,
       reference_type: 'payout_request',
       reference_id: payout.id,
-      description: `Payout request · fee £${fee.toFixed(2)} · net £${net.toFixed(2)} · scheduled ${scheduledFor}`,
+      description: `Payout request · £${amount.toFixed(2)} · scheduled ${scheduledFor}`,
     });
 
     return NextResponse.json({

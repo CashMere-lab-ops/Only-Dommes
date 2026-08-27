@@ -67,9 +67,13 @@ const EARNING_TYPES = [
   'call_received',
   'unlock_received',
   'clip_received',
+  'gift_received',
+  'private_received',
   'sub_received',
   'subscription_received',
 ];
+
+const MIN_PAYOUT = 100;
 
 const PAYOUT_TYPES = [
   'payout',
@@ -86,6 +90,15 @@ function money(n: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function nextMonday(from = new Date()) {
+  const d = new Date(from);
+  d.setHours(12, 0, 0, 0);
+  const day = d.getDay();
+  const add = day === 1 ? 7 : (8 - day) % 7 || 7;
+  d.setDate(d.getDate() + add);
+  return d;
 }
 
 function startOfWeekMonday(d = new Date()) {
@@ -131,6 +144,10 @@ function labelForType(type: string) {
       return 'Unlocked media';
     case 'clip_received':
       return 'Clip sale';
+    case 'gift_received':
+      return 'Live gift';
+    case 'private_received':
+      return 'Private live';
     case 'clip_sent':
       return 'Clip purchase';
     case 'sub_received':
@@ -704,12 +721,12 @@ export default function EarningsPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={available < 150}
+                  disabled={available < MIN_PAYOUT}
                   onClick={() => {
                     setPayoutErr('');
                     setPayoutMsg('');
                     setPayoutAmount(
-                      available >= 150 ? available.toFixed(2) : ''
+                      available >= MIN_PAYOUT ? available.toFixed(2) : ''
                     );
                     setShowPayout(true);
                   }}
@@ -735,7 +752,11 @@ export default function EarningsPage() {
                 <p className="text-xl lg:text-2xl font-bold text-white">
                   {money(available)}
                 </p>
-                <p className="text-[11px] text-zinc-600 mt-1">Can withdraw</p>
+                <p className="text-[11px] text-zinc-600 mt-1">
+                  {available >= MIN_PAYOUT
+                    ? 'Ready for Monday'
+                    : `${money(Math.max(0, MIN_PAYOUT - available))} to min`}
+                </p>
               </div>
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 lg:p-5">
                 <p className="text-xs text-zinc-500 flex items-center gap-1.5 mb-2">
@@ -846,9 +867,47 @@ export default function EarningsPage() {
               )}
             </div>
 
+            {/* Next Monday payout */}
+            <div className="rounded-2xl border border-pink-500/20 bg-gradient-to-br from-pink-600/10 via-zinc-900 to-zinc-900 p-5 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-pink-300">
+                    Next payout
+                  </p>
+                  <p className="text-xl font-bold text-white mt-1">
+                    Monday{' '}
+                    {nextMonday().toLocaleDateString('en-GB', {
+                      day: 'numeric',
+                      month: 'long',
+                    })}
+                  </p>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    {available >= MIN_PAYOUT
+                      ? `${money(available)} will be sent (already after 20% platform fee)`
+                      : `Need ${money(MIN_PAYOUT)} minimum · under that rolls to the next Monday`}
+                  </p>
+                </div>
+                <div className="sm:text-right">
+                  <p className="text-xs text-zinc-500 mb-1">Towards £{MIN_PAYOUT}</p>
+                  <div className="h-2 w-full sm:w-40 rounded-full bg-zinc-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-pink-600 to-rose-500"
+                      style={{
+                        width: `${Math.min(100, (available / MIN_PAYOUT) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1.5">
+                    {Math.min(100, Math.round((available / MIN_PAYOUT) * 100))}%
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <p className="text-xs text-zinc-500 mb-6">
-              You keep 100% until payout. Platform fee is 20% on withdrawal only.
-              Min payout £150 · processed Mondays.
+              20% platform fee is taken when you earn. Payouts send your available
+              balance with no second fee. Min £{MIN_PAYOUT} · Mondays · under the
+              minimum rolls over.
             </p>
 
             {/* Insights: best day / hour */}
@@ -1184,7 +1243,7 @@ export default function EarningsPage() {
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="font-semibold">Payout history</h2>
-                <span className="text-xs text-zinc-500">Min £150 · Mondays</span>
+                <span className="text-xs text-zinc-500">Min £{MIN_PAYOUT} · Mondays</span>
               </div>
               {payoutHistory.length === 0 ? (
                 <div className="px-5 py-10 text-center text-sm text-zinc-500">
@@ -1305,15 +1364,15 @@ export default function EarningsPage() {
             <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
               <h3 className="text-lg font-semibold mb-1">Request payout</h3>
               <p className="text-sm text-zinc-400 mb-4">
-                Available {money(available)}. Min £150. 20% platform fee on
-                withdrawal. Paid on Mondays.
+                Available {money(available)}. Min £{MIN_PAYOUT}. No extra fee on
+                payout (20% already taken when you earned). Paid Mondays.
               </p>
               <label className="text-xs text-zinc-500 block mb-1.5">
                 Amount (GBP)
               </label>
               <input
                 type="number"
-                min={150}
+                min={MIN_PAYOUT}
                 step="0.01"
                 value={payoutAmount}
                 onChange={(e) => setPayoutAmount(e.target.value)}
