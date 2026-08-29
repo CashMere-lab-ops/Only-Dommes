@@ -95,7 +95,6 @@ export async function POST(request: Request) {
         );
       }
     }
-    }
 
     const { data: sender } = await admin
       .from('profiles')
