@@ -80,6 +80,23 @@ export async function POST(request: Request) {
       );
     }
 
+    {
+      const { data: blk } = await admin
+        .from('blocks')
+        .select('blocker_id')
+        .or(
+          `and(blocker_id.eq.${user.id},blocked_id.eq.${stream.creator_id}),and(blocker_id.eq.${stream.creator_id},blocked_id.eq.${user.id})`
+        )
+        .limit(1);
+      if (blk && blk.length) {
+        return NextResponse.json(
+          { error: 'You can’t tip this creator', code: 'BLOCKED' },
+          { status: 403 }
+        );
+      }
+    }
+    }
+
     const { data: sender } = await admin
       .from('profiles')
       .select('balance_gbp, display_name, username, avatar_url')

@@ -62,6 +62,22 @@ export async function POST(request: Request) {
 
     const isHost = stream.creator_id === user.id;
 
+    if (!isHost) {
+      const { data: blk } = await admin
+        .from('blocks')
+        .select('blocker_id')
+        .or(
+          `and(blocker_id.eq.${user.id},blocked_id.eq.${stream.creator_id}),and(blocker_id.eq.${stream.creator_id},blocked_id.eq.${user.id})`
+        )
+        .limit(1);
+      if (blk && blk.length) {
+        return NextResponse.json(
+          { error: 'You can’t chat in this live', code: 'BLOCKED' },
+          { status: 403 }
+        );
+      }
+    }
+
     // Platform rule: no links for anyone (including host keeps chat clean)
     if (LINK_RE.test(content)) {
       return NextResponse.json(

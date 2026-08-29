@@ -74,6 +74,22 @@ export async function POST(request: Request) {
     if (!toUserId || toUserId === user.id) {
       return NextResponse.json({ error: 'Invalid recipient' }, { status: 400 });
     }
+
+    {
+      const { data: blk } = await admin
+        .from('blocks')
+        .select('blocker_id')
+        .or(
+          `and(blocker_id.eq.${user.id},blocked_id.eq.${toUserId}),and(blocker_id.eq.${toUserId},blocked_id.eq.${user.id})`
+        )
+        .limit(1);
+      if (blk && blk.length) {
+        return NextResponse.json(
+          { error: 'You can’t send this to that user', code: 'BLOCKED' },
+          { status: 403 }
+        );
+      }
+    }
     if (!TYPE_MAP[spendType]) {
       return NextResponse.json({ error: 'Invalid spend type' }, { status: 400 });
     }

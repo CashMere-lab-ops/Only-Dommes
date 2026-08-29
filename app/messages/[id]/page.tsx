@@ -13,6 +13,7 @@ import { createClient } from '../../../lib/supabase';
 import { createImageThumbnail } from '../../../lib/createThumbnail';
 import { createNotification } from '../../../lib/notifications';
 import { isWithinVoiceDnd } from '../../../lib/voiceDnd';
+import { pairBlocked } from '../../../lib/blocks';
 import {
   spendFromWallet,
   insufficientFundsMessage,
@@ -204,6 +205,7 @@ export default function ChatPage() {
   const [myProfile, setMyProfile] = useState<any>(null);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
+  const [blockedPair, setBlockedPair] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -359,6 +361,7 @@ export default function ChatPage() {
       const otherId =
         convo.participant_1 === user.id ? convo.participant_2 : convo.participant_1;
       setOtherUserId(otherId);
+      setBlockedPair(await pairBlocked(supabase, user.id, otherId));
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -917,6 +920,10 @@ export default function ChatPage() {
 
   const requestVoiceCall = async () => {
     if (!userId || !otherUserId || requestingCall || !canRequestCall) return;
+    if (blockedPair) {
+      setCallSheetError('You can’t call this user.');
+      return;
+    }
     setRequestingCall(true);
     try {
       // Block if either side already on a call / pending request
@@ -1103,6 +1110,10 @@ export default function ChatPage() {
   };
 
   const send = async () => {
+    if (blockedPair) {
+      alert('You can’t message this user.');
+      return;
+    }
     if (needsUnlock) {
       alert('Unlock messaging first');
       return;
@@ -1330,6 +1341,10 @@ export default function ChatPage() {
 
   const sendTip = async () => {
     if (!userId || !otherUserId || tipping) return;
+    if (blockedPair) {
+      alert('You can’t tip this user.');
+      return;
+    }
     const amount = customTip ? parseFloat(customTip) : tipAmount;
     if (!amount || amount <= 0) {
       alert('Enter a valid tip amount');
@@ -1892,17 +1907,22 @@ export default function ChatPage() {
         </div>
       )}
 
+      {blockedPair && (
+        <p className="text-center text-xs text-zinc-500 pb-2">
+          You can’t message this user.
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          disabled={recording || needsUnlock}
+          disabled={recording || needsUnlock || blockedPair}
           className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-pink-400 hover:border-pink-500 flex items-center justify-center disabled:opacity-40"
         >
           <ImagePlus size={20} />
         </button>
 
-        {!recording && !voiceBlob && !needsUnlock && (
+        {!recording && !voiceBlob && !needsUnlock && !blockedPair && (
           <button
             type="button"
             onClick={startRecording}
@@ -1916,8 +1936,14 @@ export default function ChatPage() {
           ref={inputRef}
           value={text}
           onChange={(e) => onType(e.target.value)}
-          placeholder={needsUnlock ? 'Unlock to message...' : 'Message...'}
-          disabled={recording || needsUnlock}
+          placeholder={
+            blockedPair
+              ? 'Messaging unavailable'
+              : needsUnlock
+              ? 'Unlock to message...'
+              : 'Message...'
+          }
+          disabled={recording || needsUnlock || blockedPair}
           className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 lg:py-3 lg:text-sm outline-none focus:border-pink-500 disabled:opacity-50"
           style={{ fontSize: 16 }}
           onKeyDown={(e) => {

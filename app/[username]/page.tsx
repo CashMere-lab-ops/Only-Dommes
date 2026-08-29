@@ -190,6 +190,17 @@ export default function PublicProfilePage() {
         setIsFollowing(false);
         setFollowersCount((prev) => Math.max(0, prev - 1));
       } else {
+        const { data: blk } = await supabase
+          .from('blocks')
+          .select('blocker_id')
+          .or(
+            `and(blocker_id.eq.${currentUser.id},blocked_id.eq.${profile.id}),and(blocker_id.eq.${profile.id},blocked_id.eq.${currentUser.id})`
+          )
+          .limit(1);
+        if (blk && blk.length) {
+          alert('You can’t follow this user.');
+          return;
+        }
         await supabase.from('follows').insert({
           follower_id: currentUser.id,
           following_id: profile.id,
@@ -279,6 +290,18 @@ export default function PublicProfilePage() {
       return;
     }
     if (!profile) return;
+
+    const { data: blk } = await supabase
+      .from('blocks')
+      .select('blocker_id')
+      .or(
+        `and(blocker_id.eq.${currentUser.id},blocked_id.eq.${profile.id}),and(blocker_id.eq.${profile.id},blocked_id.eq.${currentUser.id})`
+      )
+      .limit(1);
+    if (blk && blk.length) {
+      alert('You can’t message this user.');
+      return;
+    }
 
     const privacy = profile.message_privacy || 'everyone';
     if (privacy === 'nobody') {
