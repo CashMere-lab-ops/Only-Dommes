@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle, Package, ShoppingBag, Film, Lock, Play, Radio
+  ArrowLeft, Users, Heart, DollarSign, TrendingUp, MessageCircle, Package, ShoppingBag, Film, Lock, Play, Radio,
+  MoreHorizontal, Share2, Ban, Flag, Link as LinkIcon, X
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
@@ -32,6 +33,11 @@ export default function PublicProfilePage() {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subLoading, setSubLoading] = useState(false);
   const [liveStream, setLiveStream] = useState<any>(null);
+  const [showMore, setShowMore] = useState(false);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reporting, setReporting] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -151,6 +157,14 @@ export default function PublicProfilePage() {
           .maybeSingle();
 
         setIsFollowing(!!followData);
+
+        const { data: myBlock } = await supabase
+          .from('blocks')
+          .select('blocker_id')
+          .eq('blocker_id', user.id)
+          .eq('blocked_id', profileData.id)
+          .maybeSingle();
+        setIBlockedThem(!!myBlock);
 
         const { data: subData } = await supabase
           .from('subscriptions')
@@ -344,6 +358,107 @@ export default function PublicProfilePage() {
     }
   };
 
+  const profileUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/${profile?.username || username}`
+      : `https://www.worldofdommes.com/${username}`;
+
+  const shareProfile = async () => {
+    setShowMore(false);
+    const url = `${window.location.origin}/${profile.username}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${displayName} on World of Dommes`,
+          text: `Check out @${profile.username}`,
+          url,
+        });
+      } else {
+        await navigator.clipboard.writeText(url);
+        alert('Link copied');
+      }
+    } catch {
+      /* cancelled */
+    }
+  };
+
+  const copyProfileLink = async () => {
+    setShowMore(false);
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/${profile.username}`
+      );
+      alert('Link copied');
+    } catch {
+      alert('Could not copy');
+    }
+  };
+
+  const blockFromProfile = async () => {
+    if (!currentUser || !profile) {
+      router.push('/login');
+      return;
+    }
+    setShowMore(false);
+    if (iBlockedThem) {
+      if (!confirm(`Unblock @${profile.username}?`)) return;
+      await supabase
+        .from('blocks')
+        .delete()
+        .eq('blocker_id', currentUser.id)
+        .eq('blocked_id', profile.id);
+      setIBlockedThem(false);
+      return;
+    }
+    if (
+      !confirm(
+        `Block @${profile.username}? They won’t be able to message, follow, tip, or call you.`
+      )
+    ) {
+      return;
+    }
+    const { error } = await supabase.from('blocks').insert({
+      blocker_id: currentUser.id,
+      blocked_id: profile.id,
+    });
+    if (error && !String(error.message || '').includes('duplicate')) {
+      alert(error.message);
+      return;
+    }
+    await supabase
+      .from('follows')
+      .delete()
+      .or(
+        `and(follower_id.eq.${currentUser.id},following_id.eq.${profile.id}),and(follower_id.eq.${profile.id},following_id.eq.${currentUser.id})`
+      );
+    setIBlockedThem(true);
+    setIsFollowing(false);
+  };
+
+  const submitReport = async () => {
+    if (!currentUser || !reportReason.trim()) return;
+    setReporting(true);
+    try {
+      await supabase.from('support_tickets').insert({
+        user_id: currentUser.id,
+        email: currentUser.email || 'unknown@worldofdommes.com',
+        name: myProfile?.display_name || null,
+        username: myProfile?.username || null,
+        account_type: null,
+        topic: 'Report a user',
+        message: `Report @${profile.username} (${profile.id})\nReason: ${reportReason.trim()}`,
+        status: 'open',
+      });
+      setReportOpen(false);
+      setReportReason('');
+      alert('Report sent. We’ll review it.');
+    } catch {
+      alert('Could not send report');
+    } finally {
+      setReporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -396,7 +511,16 @@ export default function PublicProfilePage() {
           <button onClick={() => router.back()} className="text-zinc-400 hover:text-white">
             <ArrowLeft size={22} />
           </button>
-          <h1 className="text-lg font-semibold">@{profile.username}</h1>
+          <h1 className="text-lg font-semibold flex-1 truncate">@{profile.username}</h1>
+          {!isOwnProfile && (
+            <button
+              type="button"
+              onClick={() => setShowMore(true)}
+              className="text-zinc-400 hover:text-white p-1"
+            >
+              <MoreHorizontal size={22} />
+            </button>
+          )}
         </div>
 
         <div className="max-w-3xl mx-auto px-4 lg:px-8 py-8">
@@ -448,8 +572,22 @@ export default function PublicProfilePage() {
 
             <div className="flex-1 min-w-0">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                <div className="space-y-1">
-                  <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
+                <div className="space-y-1 relative">
+                  <div className="hidden lg:flex items-start justify-between gap-3">
+                    <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
+                      {displayName}
+                    </h1>
+                    {!isOwnProfile && (
+                      <button
+                        type="button"
+                        onClick={() => setShowMore(true)}
+                        className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800"
+                      >
+                        <MoreHorizontal size={22} />
+                      </button>
+                    )}
+                  </div>
+                  <h1 className="lg:hidden text-3xl sm:text-4xl font-bold leading-tight">
                     {displayName}
                   </h1>
                   <p className="text-pink-400 text-lg leading-tight">
@@ -794,6 +932,70 @@ export default function PublicProfilePage() {
             )}
           </div>
         </div>
+
+        {showMore && !isOwnProfile && (
+          <div className="fixed inset-0 z-[80] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowMore(false)}>
+            <div
+              className="w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-2xl sm:rounded-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+                <p className="font-medium">@{profile.username}</p>
+                <button type="button" onClick={() => setShowMore(false)} className="text-zinc-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <button type="button" onClick={shareProfile} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm">
+                <Share2 size={18} className="text-pink-400" /> Share profile
+              </button>
+              <button type="button" onClick={copyProfileLink} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm">
+                <LinkIcon size={18} className="text-zinc-400" /> Copy link
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMore(false);
+                  setReportOpen(true);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm"
+              >
+                <Flag size={18} className="text-zinc-400" /> Report
+              </button>
+              <button type="button" onClick={blockFromProfile} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm text-red-400">
+                <Ban size={18} /> {iBlockedThem ? 'Unblock' : 'Block'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {reportOpen && (
+          <div className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-4" onClick={() => setReportOpen(false)}>
+            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>
+              <h3 className="font-semibold mb-1">Report @{profile.username}</h3>
+              <p className="text-xs text-zinc-500 mb-3">This goes to support. They won’t be notified.</p>
+              <textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                rows={4}
+                placeholder="What’s wrong?"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500 mb-3"
+              />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setReportOpen(false)} className="flex-1 py-2 rounded-xl border border-zinc-700 text-sm">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!reportReason.trim() || reporting}
+                  onClick={submitReport}
+                  className="flex-1 py-2 rounded-xl bg-pink-600 text-sm font-medium disabled:opacity-50"
+                >
+                  {reporting ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

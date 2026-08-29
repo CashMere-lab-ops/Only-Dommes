@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock,
   Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid, Phone,
-  ShoppingBag, ExternalLink, Package
+  ShoppingBag, ExternalLink, Package, MoreHorizontal, Share2, Ban, Flag, Link as LinkIcon
 } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
 import { createClient } from '../../../lib/supabase';
@@ -206,6 +206,11 @@ export default function ChatPage() {
   const [otherUser, setOtherUser] = useState<any>(null);
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
   const [blockedPair, setBlockedPair] = useState(false);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reporting, setReporting] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -362,6 +367,13 @@ export default function ChatPage() {
         convo.participant_1 === user.id ? convo.participant_2 : convo.participant_1;
       setOtherUserId(otherId);
       setBlockedPair(await pairBlocked(supabase, user.id, otherId));
+      const { data: mine } = await supabase
+        .from('blocks')
+        .select('blocker_id')
+        .eq('blocker_id', user.id)
+        .eq('blocked_id', otherId)
+        .maybeSingle();
+      setIBlockedThem(!!mine);
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -1482,6 +1494,104 @@ export default function ChatPage() {
 
   const displayName = otherUser?.display_name || otherUser?.username || 'User';
   const initial = displayName.charAt(0).toUpperCase();
+
+  const shareChatProfile = async () => {
+    if (!otherUser?.username) return;
+    setShowMore(false);
+    const url = `${window.location.origin}/${otherUser.username}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${displayName} on World of Dommes`,
+          text: `Check out @${otherUser.username}`,
+          url,
+        });
+      } else {
+        await navigator.clipboard.writeText(url);
+        alert('Link copied');
+      }
+    } catch {
+      /* cancelled */
+    }
+  };
+
+  const copyChatLink = async () => {
+    if (!otherUser?.username) return;
+    setShowMore(false);
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/${otherUser.username}`
+      );
+      alert('Link copied');
+    } catch {
+      alert('Could not copy');
+    }
+  };
+
+  const blockFromChat = async () => {
+    if (!userId || !otherUserId) return;
+    setShowMore(false);
+    if (iBlockedThem) {
+      if (!confirm(`Unblock @${otherUser?.username || 'this user'}?`)) return;
+      await supabase
+        .from('blocks')
+        .delete()
+        .eq('blocker_id', userId)
+        .eq('blocked_id', otherUserId);
+      setIBlockedThem(false);
+      setBlockedPair(false);
+      return;
+    }
+    if (
+      !confirm(
+        `Block @${otherUser?.username || 'this user'}? They won’t be able to message, follow, tip, or call you.`
+      )
+    ) {
+      return;
+    }
+    const { error } = await supabase.from('blocks').insert({
+      blocker_id: userId,
+      blocked_id: otherUserId,
+    });
+    if (error && !String(error.message || '').includes('duplicate')) {
+      alert(error.message);
+      return;
+    }
+    await supabase
+      .from('follows')
+      .delete()
+      .or(
+        `and(follower_id.eq.${userId},following_id.eq.${otherUserId}),and(follower_id.eq.${otherUserId},following_id.eq.${userId})`
+      );
+    setIBlockedThem(true);
+    setBlockedPair(true);
+  };
+
+  const submitChatReport = async () => {
+    if (!userId || !reportReason.trim() || !otherUserId) return;
+    setReporting(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await supabase.from('support_tickets').insert({
+        user_id: userId,
+        email: user?.email || 'unknown@worldofdommes.com',
+        name: myProfile?.display_name || null,
+        username: myProfile?.username || null,
+        topic: 'Report a user',
+        message: `Report @${otherUser?.username || otherUserId} from chat ${conversationId}\nReason: ${reportReason.trim()}`,
+        status: 'open',
+      });
+      setReportOpen(false);
+      setReportReason('');
+      alert('Report sent. We’ll review it.');
+    } catch {
+      alert('Could not send report');
+    } finally {
+      setReporting(false);
+    }
+  };
   const isOnline = formatLastSeen(otherUser?.last_seen_at) === 'Online';
   const canSend = !needsUnlock && !sending && (!!text.trim() || !!file || !!voiceBlob);
 
@@ -2323,6 +2433,14 @@ export default function ChatPage() {
               <Phone size={18} />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowMore(true)}
+            className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 flex items-center justify-center"
+            title="More"
+          >
+            <MoreHorizontal size={18} />
+          </button>
         </div>
 
         <div
@@ -2422,6 +2540,14 @@ export default function ChatPage() {
               Call
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowMore(true)}
+            className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center"
+            title="More"
+          >
+            <MoreHorizontal size={18} />
+          </button>
         </div>
 
         <div
@@ -2459,6 +2585,74 @@ export default function ChatPage() {
           {composerUI}
         </div>
       </main>
+
+      {showMore && (
+        <div className="fixed inset-0 z-[120] bg-black/60 flex items-end sm:items-center justify-center" onClick={() => setShowMore(false)}>
+          <div
+            className="w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-2xl sm:rounded-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-zinc-800 font-medium truncate">
+              {displayName}
+            </div>
+            <Link
+              href={`/${otherUser?.username || ''}`}
+              onClick={() => setShowMore(false)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-sm"
+            >
+              View profile
+            </Link>
+            <button type="button" onClick={shareChatProfile} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm">
+              <Share2 size={18} className="text-pink-400" /> Share profile
+            </button>
+            <button type="button" onClick={copyChatLink} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm">
+              <LinkIcon size={18} className="text-zinc-400" /> Copy link
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMore(false);
+                setReportOpen(true);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm"
+            >
+              <Flag size={18} className="text-zinc-400" /> Report
+            </button>
+            <button type="button" onClick={blockFromChat} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm text-red-400">
+              <Ban size={18} /> {iBlockedThem ? 'Unblock' : 'Block'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {reportOpen && (
+        <div className="fixed inset-0 z-[130] bg-black/70 flex items-center justify-center p-4" onClick={() => setReportOpen(false)}>
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold mb-1">Report {displayName}</h3>
+            <p className="text-xs text-zinc-500 mb-3">Goes to support. They won’t be notified.</p>
+            <textarea
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              rows={4}
+              placeholder="What’s wrong?"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-pink-500 mb-3"
+            />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setReportOpen(false)} className="flex-1 py-2 rounded-xl border border-zinc-700 text-sm">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!reportReason.trim() || reporting}
+                onClick={submitChatReport}
+                className="flex-1 py-2 rounded-xl bg-pink-600 text-sm font-medium disabled:opacity-50"
+              >
+                {reporting ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
