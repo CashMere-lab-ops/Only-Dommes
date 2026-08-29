@@ -33,6 +33,7 @@ export default function DiscoverPage() {
   const [posts, setPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -147,6 +148,14 @@ export default function DiscoverPage() {
           .eq('follower_id', user.id);
         if (followsData) {
           setFollowingIds(new Set(followsData.map((f) => f.following_id)));
+        }
+
+        const { data: blockData } = await supabase
+          .from('blocks')
+          .select('blocked_id')
+          .eq('blocker_id', user.id);
+        if (blockData) {
+          setBlockedIds(new Set(blockData.map((b: any) => b.blocked_id)));
         }
       }
 
@@ -395,10 +404,40 @@ export default function DiscoverPage() {
     }, 800);
   };
 
-  const handleBlockUser = (username: string) => {
-    if (!confirm(`Block @${username}? You will no longer see their posts.`)) return;
+  const handleBlockUser = async (creatorId?: string, username?: string) => {
+    if (!creatorId) return;
+    if (
+      !confirm(
+        `Block ${username ? '@' + username : 'this user'}? They won’t be able to message, follow, tip, or call you.`
+      )
+    ) {
+      return;
+    }
     setOpenMenu(null);
-    alert(`@${username} has been blocked. (Full block system coming soon)`);
+    const {
+      data: { user: me },
+    } = await supabase.auth.getUser();
+    if (!me) return;
+    const { error } = await supabase.from('blocks').insert({
+      blocker_id: me.id,
+      blocked_id: creatorId,
+    });
+    if (error && !String(error.message || '').includes('duplicate')) {
+      alert(error.message);
+      return;
+    }
+    await supabase
+      .from('follows')
+      .delete()
+      .or(
+        `and(follower_id.eq.${me.id},following_id.eq.${creatorId}),and(follower_id.eq.${creatorId},following_id.eq.${me.id})`
+      );
+    setBlockedIds((prev) => new Set(prev).add(creatorId));
+    setFollowingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(creatorId);
+      return next;
+    });
   };
 
   const handleShare = (post: any) => {
@@ -498,6 +537,7 @@ export default function DiscoverPage() {
   };
 
   const filteredPosts = posts.filter((post) => {
+    if (post.creator_id && blockedIds.has(post.creator_id)) return false;
     if (hiddenPosts.has(post.id)) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -702,7 +742,12 @@ export default function DiscoverPage() {
                                       Hide post
                                     </button>
                                     <button
-                                      onClick={() => handleBlockUser(post.profiles?.username)}
+                                      onClick={() =>
+                                        handleBlockUser(
+                                          post.creator_id,
+                                          post.profiles?.username
+                                        )
+                                      }
                                       className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-zinc-800 transition border-t border-zinc-800"
                                     >
                                       <Ban size={16} />

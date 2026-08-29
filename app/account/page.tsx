@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Edit3, TrendingUp, Users, DollarSign, Heart,
-  Settings, Bell, Shield, LogOut, Phone, Wallet
+  Settings, Bell, Shield, LogOut, Phone, Wallet, Ban
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -264,10 +264,19 @@ export default function MyAccountPage() {
                   </Link>
                   <Link
                     href="/settings"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
                   >
                     <div className="flex items-center gap-3">
                       <Shield size={20} /> Privacy & Safety
+                    </div>
+                    <span className="text-zinc-400">→</span>
+                  </Link>
+                  <Link
+                    href="/blocked"
+                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Ban size={20} /> Blocked
                     </div>
                     <span className="text-zinc-400">→</span>
                   </Link>
@@ -334,4 +343,3 @@ export default function MyAccountPage() {
     </AuthGuard>
   );
 }
-

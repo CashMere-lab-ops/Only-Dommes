@@ -5,26 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, User, Lock, Bell, Camera, Save, Eye, EyeOff,
-  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone, Radio, Gift
+  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone, Radio, Ban
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
-
-const DEFAULT_LIVE_GIFTS = [
-  { id: 'rose', label: 'Rose', emoji: '🌹', amount_gbp: 5 },
-  { id: 'kiss', label: 'Kiss', emoji: '💋', amount_gbp: 10 },
-  { id: 'crown', label: 'Crown', emoji: '👑', amount_gbp: 20 },
-  { id: 'champagne', label: 'Champagne', emoji: '🥂', amount_gbp: 50 },
-  { id: 'diamond', label: 'Diamond', emoji: '💎', amount_gbp: 100 },
-];
-
-type LiveGiftRow = {
-  id: string;
-  label: string;
-  emoji: string;
-  amount_gbp: number;
-};
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -74,12 +59,6 @@ export default function SettingsPage() {
   const [livePrivateEnabled, setLivePrivateEnabled] = useState(true);
   const [livePrivateRate, setLivePrivateRate] = useState('8.00');
   const [livePrivateMinMinutes, setLivePrivateMinMinutes] = useState('5');
-
-  // Live gifts (creators)
-  const [liveGiftsEnabled, setLiveGiftsEnabled] = useState(true);
-  const [liveGifts, setLiveGifts] = useState<LiveGiftRow[]>(
-    DEFAULT_LIVE_GIFTS.map((g) => ({ ...g }))
-  );
 
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
@@ -138,22 +117,6 @@ export default function SettingsPage() {
             data.live_private_min_minutes ?? data.voice_min_minutes ?? 5
           )
         );
-        setLiveGiftsEnabled(data.live_gifts_enabled !== false);
-        if (Array.isArray(data.live_gifts) && data.live_gifts.length > 0) {
-          setLiveGifts(
-            data.live_gifts.slice(0, 8).map((g: any, i: number) => ({
-              id: String(g.id || `gift_${i}`).slice(0, 24),
-              label: String(g.label || 'Gift').slice(0, 24),
-              emoji: String(g.emoji || '🎁').slice(0, 8) || '🎁',
-              amount_gbp: Math.min(
-                500,
-                Math.max(1, Number(g.amount_gbp) || 5)
-              ),
-            }))
-          );
-        } else {
-          setLiveGifts(DEFAULT_LIVE_GIFTS.map((g) => ({ ...g })));
-        }
         setEmailTips(data.email_tips !== false);
         setEmailMessages(data.email_messages !== false);
         setEmailLives(data.email_lives !== false);
@@ -253,25 +216,6 @@ export default function SettingsPage() {
             ? 0
             : Math.round(lpRate * 100) / 100;
         updates.live_private_min_minutes = lpMin;
-
-        updates.live_gifts_enabled = liveGiftsEnabled;
-        updates.live_gifts = liveGifts.slice(0, 8).map((g, i) => {
-          const id = String(g.id || `gift_${i}`)
-            .toLowerCase()
-            .replace(/[^a-z0-9_]/g, '')
-            .slice(0, 24) || `gift_${i}`;
-          const label =
-            String(g.label || 'Gift')
-              .replace(/\s+/g, ' ')
-              .trim()
-              .slice(0, 24) || 'Gift';
-          const emoji = String(g.emoji || '🎁').slice(0, 8) || '🎁';
-          let amount = Number(g.amount_gbp);
-          if (!Number.isFinite(amount) || amount < 1) amount = 5;
-          if (amount > 500) amount = 500;
-          amount = Math.round(amount * 100) / 100;
-          return { id, label, emoji, amount_gbp: amount };
-        });
       }
       const { error: updateError } = await supabase
         .from('profiles')
@@ -548,115 +492,6 @@ export default function SettingsPage() {
             )}
 
             
-            {/* Live gifts (creators) */}
-            {isCreator && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Gift size={18} className="text-pink-500" />
-                  <h2 className="font-semibold">Live gifts</h2>
-                </div>
-                <p className="text-sm text-zinc-400">
-                  Fixed-price gifts on your lives. Fans pay from their wallet.
-                  Custom gift art can be added later.
-                </p>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Enable gifts</p>
-                    <p className="text-sm text-zinc-400">
-                      Show Gifts tab when fans support you live
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={liveGiftsEnabled}
-                      onChange={() => setLiveGiftsEnabled(!liveGiftsEnabled)}
-                    />
-                    <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
-                  </label>
-                </div>
-                {liveGiftsEnabled && (
-                  <div className="space-y-3 pt-1">
-                    {liveGifts.map((g, idx) => (
-                      <div
-                        key={g.id + idx}
-                        className="flex flex-wrap items-center gap-2 sm:gap-3 bg-zinc-800/60 border border-zinc-700/80 rounded-xl p-3"
-                      >
-                        <input
-                          type="text"
-                          value={g.emoji}
-                          maxLength={4}
-                          onChange={(e) => {
-                            const v = e.target.value.slice(0, 4);
-                            setLiveGifts((prev) =>
-                              prev.map((row, i) =>
-                                i === idx ? { ...row, emoji: v || '🎁' } : row
-                              )
-                            );
-                          }}
-                          className="w-12 text-center text-xl bg-zinc-900 border border-zinc-700 rounded-lg py-2 outline-none focus:border-pink-500"
-                          title="Emoji (custom icons later)"
-                        />
-                        <input
-                          type="text"
-                          value={g.label}
-                          maxLength={24}
-                          onChange={(e) => {
-                            const v = e.target.value.slice(0, 24);
-                            setLiveGifts((prev) =>
-                              prev.map((row, i) =>
-                                i === idx ? { ...row, label: v } : row
-                              )
-                            );
-                          }}
-                          placeholder="Name"
-                          className="flex-1 min-w-[100px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-pink-500"
-                        />
-                        <div className="relative w-24">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">
-                            £
-                          </span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={500}
-                            step={1}
-                            value={g.amount_gbp}
-                            onChange={(e) => {
-                              const n = Number(e.target.value);
-                              setLiveGifts((prev) =>
-                                prev.map((row, i) =>
-                                  i === idx
-                                    ? {
-                                        ...row,
-                                        amount_gbp: Number.isFinite(n)
-                                          ? n
-                                          : row.amount_gbp,
-                                      }
-                                    : row
-                                )
-                              );
-                            }}
-                            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-6 pr-2 py-2 text-sm outline-none focus:border-pink-500 tabular-nums"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setLiveGifts(DEFAULT_LIVE_GIFTS.map((g) => ({ ...g })))
-                      }
-                      className="text-xs font-medium text-zinc-400 hover:text-pink-300 transition"
-                    >
-                      Reset to defaults
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Minimum tip (creators) */}
             {profile?.account_type === 'creator' && (
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-3">
@@ -1143,6 +978,20 @@ export default function SettingsPage() {
                 </label>
               </div>
             </div>
+
+            <Link
+              href="/blocked"
+              className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 flex items-center justify-between hover:bg-zinc-800/60 transition"
+            >
+              <div className="flex items-center gap-3">
+                <Ban size={18} className="text-pink-500" />
+                <div>
+                  <p className="font-medium">Blocked users</p>
+                  <p className="text-sm text-zinc-400">Manage who can’t contact you</p>
+                </div>
+              </div>
+              <span className="text-zinc-400">→</span>
+            </Link>
 
             <button
               type="button"
