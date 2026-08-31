@@ -2,16 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Radio, Users, Loader2, Video } from 'lucide-react';
+import { Radio, Users, Loader2, Video, Search, Heart } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
+import { createClient } from '../lib/supabase';
 
 type LiveCard = {
   id: string;
   title: string;
-  status: string;
+  creator_id?: string;
   viewer_count?: number;
-  tip_goal_gbp?: number;
-  tip_raised_gbp?: number;
   thumbnail_url?: string | null;
   creator?: {
     username?: string;
@@ -20,62 +19,207 @@ type LiveCard = {
   } | null;
 };
 
+type PostCard = {
+  id: string;
+  creator_id: string;
+  content?: string | null;
+  media_type?: string | null;
+  media_url?: string | null;
+  thumbnail_url?: string | null;
+  likes_count?: number;
+  comments_count?: number;
+  created_at?: string;
+  profiles?: {
+    username?: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
+};
+
 export default function Home() {
-  const [streams, setStreams] = useState<LiveCard[]>([]);
+  const supabase = createClient();
+  const [ready, setReady] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [lives, setLives] = useState<LiveCard[]>([]);
+  const [posts, setPosts] = useState<PostCard[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
-    try {
-      const res = await fetch('/api/live/active');
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        const list = [...(data.streams || [])] as LiveCard[];
-        for (let i = list.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [list[i], list[j]] = [list[j], list[i]];
-        }
-        setStreams(list.slice(0, 10));
-      }
-    } catch {
-      /* keep previous */
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setUserId(user?.id || null);
+
+      if (!user) {
+        setFollowingIds([]);
+        setLives([]);
+        setPosts([]);
+        setReady(true);
+        setLoading(false);
+        return;
+      }
+
+      const [{ data: follows }, { data: iBlocked }, { data: blockedMe }] =
+        await Promise.all([
+          supabase.from('follows').select('following_id').eq('follower_id', user.id),
+          supabase.from('blocks').select('blocked_id').eq('blocker_id', user.id),
+          supabase.from('blocks').select('blocker_id').eq('blocked_id', user.id),
+        ]);
+
+      const hide = new Set<string>();
+      (iBlocked || []).forEach((b: any) => b.blocked_id && hide.add(b.blocked_id));
+      (blockedMe || []).forEach((b: any) => b.blocker_id && hide.add(b.blocker_id));
+
+      const ids = [
+        ...new Set(
+          (follows || [])
+            .map((f: any) => String(f.following_id || ''))
+            .filter((id) => id && id !== user.id && !hide.has(id))
+        ),
+      ];
+      setFollowingIds(ids);
+
+      if (!ids.length) {
+        setLives([]);
+        setPosts([]);
+        setReady(true);
+        setLoading(false);
+        return;
+      }
+
+      const { data: liveRows } = await supabase
+        .from('live_streams')
+        .select(
+          'id, creator_id, title, status, thumbnail_url, viewer_count, private_active'
+        )
+        .in('creator_id', ids)
+        .in('status', ['active', 'idle_ready', 'disconnected'])
+        .eq('private_active', false)
+        .order('started_at', { ascending: false, nullsFirst: false })
+        .limit(20);
+
+      const liveList = liveRows || [];
+      const liveCreatorIds = [...new Set(liveList.map((r: any) => r.creator_id))];
+      let people: Record<string, any> = {};
+      if (liveCreatorIds.length) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', liveCreatorIds);
+        (profiles || []).forEach((p: any) => {
+          people[p.id] = p;
+        });
+      }
+      setLives(
+        liveList.map((r: any) => ({
+          ...r,
+          creator: people[r.creator_id] || null,
+        }))
+      );
+
+      const { data: postRows } = await supabase
+        .from('posts')
+        .select(
+          `
+          id, creator_id, content, media_type, media_url, thumbnail_url,
+          likes_count, comments_count, created_at,
+          profiles:creator_id ( username, display_name, avatar_url )
+        `
+        )
+        .in('creator_id', ids)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      setPosts((postRows as any) || []);
+      setReady(true);
+      setLoading(false);
+    };
+
     load();
-    const t = setInterval(load, 20000);
+    const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, []);
 
-  const featured = streams[0] || null;
-  const rest = streams.slice(1);
+  const featured = lives[0] || null;
+  const rest = lives.slice(1);
   const featuredName =
     featured?.creator?.display_name ||
-    (featured?.creator?.username
-      ? `@${featured.creator.username}`
-      : 'Creator');
+    (featured?.creator?.username ? `@${featured.creator.username}` : 'Creator');
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
       <Sidebar />
-
       <main className="flex-1 overflow-y-auto pb-24 lg:pb-10">
         <div className="p-4 lg:p-8 max-w-7xl mx-auto">
-          {loading ? (
-            <div className="rounded-2xl mb-10 h-56 sm:h-72 md:h-96 bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+          <div className="flex items-end justify-between gap-3 mb-6">
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold">Home</h1>
+              <p className="text-sm text-zinc-500 mt-1">
+                Lives and posts from people you follow
+              </p>
+            </div>
+            <Link href="/discover" className="text-sm text-pink-400 hover:text-pink-300 font-medium">
+              Discover →
+            </Link>
+          </div>
+
+          {!userId && ready && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center mb-8">
+              <p className="text-lg font-semibold mb-2">Log in to see your following feed</p>
+              <p className="text-sm text-zinc-500 mb-5">
+                Home shows lives and posts from creators you follow.
+              </p>
+              <div className="flex flex-wrap justify-center gap-3">
+                <Link
+                  href="/login?next=/"
+                  className="px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-sm font-semibold"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/discover"
+                  className="px-5 py-2.5 rounded-xl border border-zinc-700 text-sm font-medium hover:bg-zinc-800"
+                >
+                  Browse Discover
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {userId && ready && followingIds.length === 0 && !loading && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center mb-8">
+              <Heart className="mx-auto text-pink-500 mb-3" size={28} />
+              <p className="text-lg font-semibold mb-2">You’re not following anyone yet</p>
+              <p className="text-sm text-zinc-500 mb-5 max-w-md mx-auto">
+                Follow creators on Discover. Their lives and posts will show up here.
+              </p>
+              <Link
+                href="/discover"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-sm font-semibold"
+              >
+                <Search size={16} /> Open Discover
+              </Link>
+            </div>
+          )}
+
+          {loading && (
+            <div className="rounded-2xl mb-10 h-48 bg-zinc-900 border border-zinc-800 flex items-center justify-center">
               <Loader2 className="animate-spin text-pink-500" size={28} />
             </div>
-          ) : featured ? (
+          )}
+
+          {userId && featured && (
             <Link
               href={`/live/${featured.id}`}
-              className="block relative rounded-2xl overflow-hidden mb-10 h-56 sm:h-72 md:h-96 bg-zinc-900 border border-zinc-800 group"
+              className="block relative rounded-2xl overflow-hidden mb-8 h-52 sm:h-72 md:h-80 bg-zinc-900 border border-zinc-800 group"
             >
-              {(featured.thumbnail_url || featured.creator?.avatar_url) ? (
+              {featured.thumbnail_url || featured.creator?.avatar_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={featured.thumbnail_url || featured.creator?.avatar_url || ""}
+                  src={featured.thumbnail_url || featured.creator?.avatar_url || ''}
                   alt=""
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition duration-500"
                 />
@@ -84,7 +228,7 @@ export default function Home() {
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
               <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-8 z-20">
-                <div className="flex items-center gap-3 mb-2 sm:mb-3">
+                <div className="flex items-center gap-3 mb-2">
                   <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                     LIVE
@@ -94,10 +238,10 @@ export default function Home() {
                     {featured.viewer_count || 0} watching
                   </span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 line-clamp-2">
+                <h2 className="text-2xl sm:text-3xl font-bold mb-2 line-clamp-2">
                   {featured.title}
-                </h1>
-                <div className="flex items-center gap-2 mt-2">
+                </h2>
+                <div className="flex items-center gap-2">
                   {featured.creator?.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -112,121 +256,134 @@ export default function Home() {
                 </div>
               </div>
             </Link>
-          ) : (
-            <div className="relative rounded-2xl overflow-hidden mb-10 h-56 sm:h-72 md:h-96 bg-zinc-900 border border-zinc-800">
-              <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-950 to-pink-950/30" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10">
-                <Radio className="text-zinc-600 mb-3" size={40} />
-                <p className="text-xl font-semibold text-zinc-200">
-                  No one is live right now
-                </p>
-                <p className="text-sm text-zinc-500 mt-2 max-w-md">
-                  When creators go live, they appear here first — homepage
-                  placement means more viewers and tips.
-                </p>
-                <Link
-                  href="/live"
-                  className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-sm font-semibold"
-                >
-                  <Video size={16} /> Browse Live
+          )}
+
+          {userId && followingIds.length > 0 && (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Radio className="text-pink-500" size={20} /> Following live
+                </h2>
+                <Link href="/live" className="text-pink-500 text-sm hover:underline font-medium">
+                  All lives →
                 </Link>
               </div>
-            </div>
-          )}
 
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Radio className="text-pink-500" size={22} /> Live Now
-            </h2>
-            <Link
-              href="/live"
-              className="text-pink-500 text-sm hover:underline font-medium"
-            >
-              View all →
-            </Link>
-          </div>
+              {!loading && lives.length === 0 && (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center mb-10">
+                  <p className="text-zinc-300 font-medium">None of your follows are live</p>
+                  <Link href="/live" className="inline-flex items-center gap-2 mt-3 text-pink-400 text-sm">
+                    <Video size={16} /> Browse all lives
+                  </Link>
+                </div>
+              )}
 
-          {loading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="animate-spin text-pink-500" size={28} />
-            </div>
-          ) : streams.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
-              <p className="text-zinc-300 font-medium">Quiet right now</p>
-              <p className="text-sm text-zinc-500 mt-2">
-                Check back soon — or go live if you are a creator.
-              </p>
-              <Link
-                href="/live"
-                className="inline-block mt-4 text-pink-400 text-sm font-medium hover:text-pink-300"
-              >
-                Open Live page →
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {(rest.length ? rest : streams).map((s) => {
-                const cname =
-                  s.creator?.display_name ||
-                  (s.creator?.username
-                    ? `@${s.creator.username}`
-                    : 'Creator');
-                return (
-                  <Link
-                    key={s.id}
-                    href={`/live/${s.id}`}
-                    className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-pink-500/40 transition group active:scale-[0.99]"
-                  >
-                    <div className="aspect-video bg-zinc-800 relative">
-                      {(s.thumbnail_url || s.creator?.avatar_url) ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={s.thumbnail_url || s.creator?.avatar_url || ""}
-                          alt=""
-                          className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-zinc-800 via-zinc-900 to-pink-950/30 flex items-center justify-center">
-                          <Radio className="text-zinc-600" size={36} />
+              {rest.length > 0 && (
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-5 mb-10">
+                  {rest.map((s) => {
+                    const name =
+                      s.creator?.display_name ||
+                      (s.creator?.username ? `@${s.creator.username}` : 'Creator');
+                    return (
+                      <Link
+                        key={s.id}
+                        href={`/live/${s.id}`}
+                        className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-pink-500/40 transition"
+                      >
+                        <div className="aspect-video bg-zinc-800 relative">
+                          {s.thumbnail_url || s.creator?.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={s.thumbnail_url || s.creator?.avatar_url || ''}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
+                              <Radio className="text-zinc-600" size={28} />
+                            </div>
+                          )}
+                          <span className="absolute top-2 left-2 bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            LIVE
+                          </span>
                         </div>
-                      )}
-                      <span className="absolute top-3 left-3 bg-red-600 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow">
-                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                        LIVE
-                      </span>
-                      <span className="absolute bottom-3 right-3 text-[11px] bg-black/70 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Users size={12} />
-                        {s.viewer_count || 0}
-                      </span>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-semibold truncate group-hover:text-pink-300 transition">
-                        {s.title}
-                      </h3>
-                      <div className="flex items-center gap-2 mt-2">
-                        {s.creator?.avatar_url ? (
+                        <div className="p-3">
+                          <p className="font-medium text-sm truncate">{s.title}</p>
+                          <p className="text-xs text-zinc-500 truncate mt-0.5">{name}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+
+              <h2 className="text-lg font-bold mb-4">Following feed</h2>
+              {posts.length === 0 && !loading ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center text-zinc-500 text-sm">
+                  No posts from people you follow yet.
+                </div>
+              ) : (
+                <div className="max-w-xl space-y-4">
+                  {posts.map((post) => {
+                    const name =
+                      post.profiles?.display_name ||
+                      (post.profiles?.username ? `@${post.profiles.username}` : 'Creator');
+                    const uname = post.profiles?.username;
+                    return (
+                      <article
+                        key={post.id}
+                        className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden"
+                      >
+                        <Link
+                          href={uname ? `/${uname}` : '/discover'}
+                          className="flex items-center gap-3 px-4 py-3"
+                        >
+                          {post.profiles?.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={post.profiles.avatar_url}
+                              alt=""
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center font-bold">
+                              {name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate">{name}</p>
+                            {uname && <p className="text-xs text-zinc-500">@{uname}</p>}
+                          </div>
+                        </Link>
+                        {post.content && (
+                          <p className="px-4 pb-3 text-sm text-zinc-100 whitespace-pre-wrap">
+                            {post.content}
+                          </p>
+                        )}
+                        {post.media_type === 'photo' && post.media_url && (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={s.creator.avatar_url}
+                            src={post.thumbnail_url || post.media_url}
                             alt=""
-                            className="w-6 h-6 rounded-full object-cover"
+                            className="w-full max-h-[420px] object-cover"
                           />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-zinc-700" />
                         )}
-                        <p className="text-sm text-zinc-400 truncate">{cname}</p>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-
-          {streams.length > 0 && (
-            <p className="text-center text-xs text-zinc-600 mt-8">
-              Showing up to 10 lives · refreshed automatically
-            </p>
+                        {post.media_type === 'video' && post.media_url && (
+                          <video
+                            src={post.media_url}
+                            controls
+                            className="w-full max-h-[420px]"
+                          />
+                        )}
+                        <div className="px-4 py-3 text-xs text-zinc-500">
+                          {post.likes_count || 0} likes · {post.comments_count || 0} comments
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>
