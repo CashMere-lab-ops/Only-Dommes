@@ -10,6 +10,7 @@ import {
 import Sidebar from '../../components/Sidebar';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
+import { applyUserBlock } from '../../lib/blocks';
 
 export default function PublicProfilePage() {
   const params = useParams();
@@ -417,22 +418,17 @@ export default function PublicProfilePage() {
     ) {
       return;
     }
-    const { error } = await supabase.from('blocks').insert({
-      blocker_id: currentUser.id,
-      blocked_id: profile.id,
-    });
-    if (error && !String(error.message || '').includes('duplicate')) {
-      alert(error.message);
+    const wasFollowing = isFollowing;
+    const res = await applyUserBlock(supabase, currentUser.id, profile.id);
+    if (!res.ok) {
+      alert(res.error || 'Could not block');
       return;
     }
-    await supabase
-      .from('follows')
-      .delete()
-      .or(
-        `and(follower_id.eq.${currentUser.id},following_id.eq.${profile.id}),and(follower_id.eq.${profile.id},following_id.eq.${currentUser.id})`
-      );
     setIBlockedThem(true);
-    setIsFollowing(false);
+    if (wasFollowing) {
+      setIsFollowing(false);
+      setFollowersCount((n) => Math.max(0, n - 1));
+    }
   };
 
   const submitReport = async () => {

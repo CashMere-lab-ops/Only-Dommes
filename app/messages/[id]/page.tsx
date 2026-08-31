@@ -13,7 +13,7 @@ import { createClient } from '../../../lib/supabase';
 import { createImageThumbnail } from '../../../lib/createThumbnail';
 import { createNotification } from '../../../lib/notifications';
 import { isWithinVoiceDnd } from '../../../lib/voiceDnd';
-import { pairBlocked } from '../../../lib/blocks';
+import { pairBlocked, applyUserBlock } from '../../../lib/blocks';
 import {
   spendFromWallet,
   insufficientFundsMessage,
@@ -1549,20 +1549,11 @@ export default function ChatPage() {
     ) {
       return;
     }
-    const { error } = await supabase.from('blocks').insert({
-      blocker_id: userId,
-      blocked_id: otherUserId,
-    });
-    if (error && !String(error.message || '').includes('duplicate')) {
-      alert(error.message);
+    const res = await applyUserBlock(supabase, userId, otherUserId);
+    if (!res.ok) {
+      alert(res.error || 'Could not block');
       return;
     }
-    await supabase
-      .from('follows')
-      .delete()
-      .or(
-        `and(follower_id.eq.${userId},following_id.eq.${otherUserId}),and(follower_id.eq.${otherUserId},following_id.eq.${userId})`
-      );
     setIBlockedThem(true);
     setBlockedPair(true);
   };

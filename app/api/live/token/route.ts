@@ -54,6 +54,23 @@ export async function POST(request: Request) {
     const isCreator = stream.creator_id === user.id;
 
     if (!isCreator) {
+      const { data: blk } = await admin
+        .from('blocks')
+        .select('blocker_id')
+        .or(
+          `and(blocker_id.eq.${user.id},blocked_id.eq.${stream.creator_id}),and(blocker_id.eq.${stream.creator_id},blocked_id.eq.${user.id})`
+        )
+        .limit(1);
+      if (blk && blk.length) {
+        return NextResponse.json(
+          {
+            error: 'You can’t join this live',
+            code: 'BANNED_FROM_LIVE',
+          },
+          { status: 403 }
+        );
+      }
+
       const { data: mod } = await admin
         .from('live_stream_moderation')
         .select('action')
@@ -167,5 +184,3 @@ export async function POST(request: Request) {
     );
   }
 }
-
-

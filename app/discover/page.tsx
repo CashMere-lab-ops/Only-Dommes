@@ -11,6 +11,7 @@ import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
+import { applyUserBlock } from '../../lib/blocks';
 import {
   spendFromWallet,
   handleInsufficientBalance,
@@ -418,20 +419,11 @@ export default function DiscoverPage() {
       data: { user: me },
     } = await supabase.auth.getUser();
     if (!me) return;
-    const { error } = await supabase.from('blocks').insert({
-      blocker_id: me.id,
-      blocked_id: creatorId,
-    });
-    if (error && !String(error.message || '').includes('duplicate')) {
-      alert(error.message);
+    const res = await applyUserBlock(supabase, me.id, creatorId);
+    if (!res.ok) {
+      alert(res.error || 'Could not block');
       return;
     }
-    await supabase
-      .from('follows')
-      .delete()
-      .or(
-        `and(follower_id.eq.${me.id},following_id.eq.${creatorId}),and(follower_id.eq.${creatorId},following_id.eq.${me.id})`
-      );
     setBlockedIds((prev) => new Set(prev).add(creatorId));
     setFollowingIds((prev) => {
       const next = new Set(prev);

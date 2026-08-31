@@ -57,6 +57,22 @@ export async function POST(request: Request) {
       );
     }
 
+    {
+      const { data: blk } = await admin
+        .from('blocks')
+        .select('blocker_id')
+        .or(
+          `and(blocker_id.eq.${user.id},blocked_id.eq.${clip.creator_id}),and(blocker_id.eq.${clip.creator_id},blocked_id.eq.${user.id})`
+        )
+        .limit(1);
+      if (blk && blk.length) {
+        return NextResponse.json(
+          { error: 'You can’t buy this clip', code: 'BLOCKED' },
+          { status: 403 }
+        );
+      }
+    }
+
     const { data: existing } = await admin
       .from('clip_purchases')
       .select('id')

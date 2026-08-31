@@ -16,6 +16,7 @@ import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
+import { pairBlocked } from '../../lib/blocks';
 import {
   handleInsufficientBalance,
   notifyBalanceUpdated,
@@ -311,6 +312,12 @@ export default function ShopPage() {
         setBuyError(
           `Not enough balance. You need £${price.toFixed(2)} but have £${balance.toFixed(2)}.`
         );
+        return;
+      }
+
+      if (await pairBlocked(supabase, currentUserId, viewer.creator_id)) {
+        setBuying(false);
+        setBuyError('You can’t buy from this creator.');
         return;
       }
 

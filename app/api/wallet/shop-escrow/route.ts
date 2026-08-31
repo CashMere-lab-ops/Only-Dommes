@@ -67,6 +67,21 @@ export async function POST(request: Request) {
       if (order.buyer_id !== user.id) {
         return NextResponse.json({ error: 'Not your order' }, { status: 403 });
       }
+      {
+        const { data: blk } = await admin
+          .from('blocks')
+          .select('blocker_id')
+          .or(
+            `and(blocker_id.eq.${user.id},blocked_id.eq.${order.creator_id}),and(blocker_id.eq.${order.creator_id},blocked_id.eq.${user.id})`
+          )
+          .limit(1);
+        if (blk && blk.length) {
+          return NextResponse.json(
+            { error: 'You can’t buy from this creator', code: 'BLOCKED' },
+            { status: 403 }
+          );
+        }
+      }
       if (order.funds_status === 'held' || order.funds_status === 'pending_creator' || order.funds_status === 'released') {
         return NextResponse.json({ ok: true, already: true, funds_status: order.funds_status });
       }
