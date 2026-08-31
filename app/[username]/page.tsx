@@ -506,6 +506,28 @@ export default function PublicProfilePage() {
     );
   }
 
+  if (theyBlockedMe && currentUser?.id !== profile.id) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white flex">
+        <Sidebar />
+        <main className="flex-1 flex items-center justify-center px-6">
+          <div className="text-center max-w-sm">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500">
+              <Ban size={26} />
+            </div>
+            <h1 className="text-2xl font-bold mb-2">This profile isn’t available</h1>
+            <p className="text-zinc-400 mb-6">
+              You can’t view this account.
+            </p>
+            <Link href="/discover" className="text-pink-400 hover:text-pink-300">
+              ← Back to Discover
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   const displayName = profile.display_name || profile.username;
   const initial = displayName.charAt(0).toUpperCase();
   const joinedDate = profile.created_at
