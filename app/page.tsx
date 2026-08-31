@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Radio, Users, Loader2, Video, Search, Heart } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
+import FeedPosts from '../components/FeedPosts';
 import { createClient } from '../lib/supabase';
 
 type LiveCard = {
@@ -43,6 +44,7 @@ export default function Home() {
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [lives, setLives] = useState<LiveCard[]>([]);
   const [posts, setPosts] = useState<PostCard[]>([]);
+  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,6 +54,15 @@ export default function Home() {
         data: { user },
       } = await supabase.auth.getUser();
       setUserId(user?.id || null);
+
+      if (user) {
+        const { data: me } = await supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url')
+          .eq('id', user.id)
+          .single();
+        setProfile(me);
+      }
 
       if (!user) {
         setFollowingIds([]);
@@ -317,65 +328,12 @@ export default function Home() {
                   No posts from people you follow yet.
                 </div>
               ) : (
-                <div className="max-w-xl space-y-4">
-                  {posts.map((post) => {
-                    const name =
-                      post.profiles?.display_name ||
-                      (post.profiles?.username ? `@${post.profiles.username}` : 'Creator');
-                    const uname = post.profiles?.username;
-                    return (
-                      <article
-                        key={post.id}
-                        className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden"
-                      >
-                        <Link
-                          href={uname ? `/${uname}` : '/discover'}
-                          className="flex items-center gap-3 px-4 py-3"
-                        >
-                          {post.profiles?.avatar_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={post.profiles.avatar_url}
-                              alt=""
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center font-bold">
-                              {name.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="font-semibold truncate">{name}</p>
-                            {uname && <p className="text-xs text-zinc-500">@{uname}</p>}
-                          </div>
-                        </Link>
-                        {post.content && (
-                          <p className="px-4 pb-3 text-sm text-zinc-100 whitespace-pre-wrap">
-                            {post.content}
-                          </p>
-                        )}
-                        {post.media_type === 'photo' && post.media_url && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={post.thumbnail_url || post.media_url}
-                            alt=""
-                            className="w-full max-h-[420px] object-cover"
-                          />
-                        )}
-                        {post.media_type === 'video' && post.media_url && (
-                          <video
-                            src={post.media_url}
-                            controls
-                            className="w-full max-h-[420px]"
-                          />
-                        )}
-                        <div className="px-4 py-3 text-xs text-zinc-500">
-                          {post.likes_count || 0} likes · {post.comments_count || 0} comments
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
+                <FeedPosts
+                  posts={posts}
+                  setPosts={setPosts}
+                  userId={userId}
+                  profile={profile}
+                />
               )}
             </>
           )}
