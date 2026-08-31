@@ -151,13 +151,18 @@ export default function DiscoverPage() {
           setFollowingIds(new Set(followsData.map((f) => f.following_id)));
         }
 
-        const { data: blockData } = await supabase
-          .from('blocks')
-          .select('blocked_id')
-          .eq('blocker_id', user.id);
-        if (blockData) {
-          setBlockedIds(new Set(blockData.map((b: any) => b.blocked_id)));
-        }
+        const [{ data: iBlocked }, { data: blockedMe }] = await Promise.all([
+          supabase.from('blocks').select('blocked_id').eq('blocker_id', user.id),
+          supabase.from('blocks').select('blocker_id').eq('blocked_id', user.id),
+        ]);
+        const hide = new Set<string>();
+        (iBlocked || []).forEach((b: any) => {
+          if (b.blocked_id) hide.add(b.blocked_id);
+        });
+        (blockedMe || []).forEach((b: any) => {
+          if (b.blocker_id) hide.add(b.blocker_id);
+        });
+        setBlockedIds(hide);
       }
 
       await loadPosts(0, true);

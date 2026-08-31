@@ -36,6 +36,7 @@ export default function PublicProfilePage() {
   const [liveStream, setLiveStream] = useState<any>(null);
   const [showMore, setShowMore] = useState(false);
   const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [theyBlockedMe, setTheyBlockedMe] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reporting, setReporting] = useState(false);
@@ -167,6 +168,14 @@ export default function PublicProfilePage() {
           .maybeSingle();
         setIBlockedThem(!!myBlock);
 
+        const { data: theirBlock } = await supabase
+          .from('blocks')
+          .select('blocker_id')
+          .eq('blocker_id', profileData.id)
+          .eq('blocked_id', user.id)
+          .maybeSingle();
+        setTheyBlockedMe(!!theirBlock);
+
         const { data: subData } = await supabase
           .from('subscriptions')
           .select('id')
@@ -246,6 +255,20 @@ export default function PublicProfilePage() {
       return;
     }
     if (!profile || subLoading) return;
+
+    const { data: blk } = await supabase
+      .from('blocks')
+      .select('blocker_id')
+      .or(
+        `and(blocker_id.eq.${currentUser.id},blocked_id.eq.${profile.id}),and(blocker_id.eq.${profile.id},blocked_id.eq.${currentUser.id})`
+      )
+      .limit(1);
+    if (blk && blk.length) {
+      if (!isSubscribed) {
+        alert('You can’t subscribe to this creator.');
+        return;
+      }
+    }
 
     setSubLoading(true);
     try {
@@ -492,12 +515,14 @@ export default function PublicProfilePage() {
       })
     : '';
   const isOwnProfile = currentUser?.id === profile.id;
+  const blockedPair = iBlockedThem || theyBlockedMe;
   const showSubscribe =
     profile.account_type === 'creator' &&
     profile.subscriptions_enabled &&
-    !isOwnProfile;
+    !isOwnProfile &&
+    !(blockedPair && !isSubscribed);
   const subPrice = Number(profile.subscription_price ?? 9.99).toFixed(2);
-  const messagingAllowed = canMessage();
+  const messagingAllowed = canMessage() && !blockedPair;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
@@ -568,22 +593,8 @@ export default function PublicProfilePage() {
 
             <div className="flex-1 min-w-0">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                <div className="space-y-1 relative">
-                  <div className="hidden lg:flex items-start justify-between gap-3">
-                    <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
-                      {displayName}
-                    </h1>
-                    {!isOwnProfile && (
-                      <button
-                        type="button"
-                        onClick={() => setShowMore(true)}
-                        className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800"
-                      >
-                        <MoreHorizontal size={22} />
-                      </button>
-                    )}
-                  </div>
-                  <h1 className="lg:hidden text-3xl sm:text-4xl font-bold leading-tight">
+                <div className="space-y-1">
+                  <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
                     {displayName}
                   </h1>
                   <p className="text-pink-400 text-lg leading-tight">
@@ -628,7 +639,7 @@ export default function PublicProfilePage() {
 
                     <button
                       onClick={handleFollow}
-                      disabled={followLoading}
+                      disabled={followLoading || blockedPair}
                       className={`px-5 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50 ${
                         isFollowing
                           ? 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white'
@@ -652,17 +663,30 @@ export default function PublicProfilePage() {
                         disabled
                         className="inline-flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 px-5 py-2.5 rounded-xl text-sm font-medium text-zinc-500 cursor-not-allowed"
                         title={
-                          (profile.message_privacy || 'everyone') === 'subscribers'
+                          blockedPair
+                            ? 'Unavailable'
+                            : (profile.message_privacy || 'everyone') === 'subscribers'
                             ? 'Subscribers only'
                             : 'Not accepting messages'
                         }
                       >
                         <MessageCircle size={16} />
-                        {(profile.message_privacy || 'everyone') === 'subscribers'
+                        {blockedPair
+                          ? 'Unavailable'
+                          : (profile.message_privacy || 'everyone') === 'subscribers'
                           ? 'Subscribers only'
                           : 'Messages off'}
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => setShowMore(true)}
+                      className="hidden lg:inline-flex w-10 h-10 items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white transition"
+                      title="More"
+                    >
+                      <MoreHorizontal size={20} />
+                    </button>
                   </div>
                 )}
               </div>
