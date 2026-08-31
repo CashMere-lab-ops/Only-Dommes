@@ -82,20 +82,14 @@ export default function Home() {
       ];
       setFollowingIds(ids);
 
-      if (!ids.length) {
-        setLives([]);
-        setPosts([]);
-        setReady(true);
-        setLoading(false);
-        return;
-      }
+      const feedIds = [...ids, user.id];
 
       const { data: liveRows } = await supabase
         .from('live_streams')
         .select(
           'id, creator_id, title, status, thumbnail_url, viewer_count, private_active'
         )
-        .in('creator_id', ids)
+        .in('creator_id', feedIds)
         .in('status', ['active', 'idle_ready', 'disconnected'])
         .eq('private_active', false)
         .order('started_at', { ascending: false, nullsFirst: false })
@@ -129,7 +123,7 @@ export default function Home() {
           profiles:creator_id ( username, display_name, avatar_url )
         `
         )
-        .in('creator_id', ids)
+        .in('creator_id', feedIds)
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -189,12 +183,12 @@ export default function Home() {
             </div>
           )}
 
-          {userId && ready && followingIds.length === 0 && !loading && (
+          {userId && ready && followingIds.length === 0 && !loading && posts.length === 0 && lives.length === 0 && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center mb-8">
               <Heart className="mx-auto text-pink-500 mb-3" size={28} />
-              <p className="text-lg font-semibold mb-2">You’re not following anyone yet</p>
+              <p className="text-lg font-semibold mb-2">Your feed is empty</p>
               <p className="text-sm text-zinc-500 mb-5 max-w-md mx-auto">
-                Follow creators on Discover. Their lives and posts will show up here.
+                Your own posts show here. Follow creators on Discover to fill the rest.
               </p>
               <Link
                 href="/discover"
@@ -258,7 +252,7 @@ export default function Home() {
             </Link>
           )}
 
-          {userId && followingIds.length > 0 && (
+          {userId && (followingIds.length > 0 || posts.length > 0 || lives.length > 0) && (
             <>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold flex items-center gap-2">
