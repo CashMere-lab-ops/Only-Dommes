@@ -144,8 +144,6 @@ export default function Home() {
     };
 
     load();
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
   }, []);
 
   const featured = lives[0] || null;
