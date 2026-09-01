@@ -32,6 +32,8 @@ export default function PublicProfilePage() {
   const [followersCount, setFollowersCount] = useState(0);
   const [subscribersCount, setSubscribersCount] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subCancelling, setSubCancelling] = useState(false);
+  const [subPeriodEnd, setSubPeriodEnd] = useState<string | null>(null);
   const [subLoading, setSubLoading] = useState(false);
   const [liveStream, setLiveStream] = useState<any>(null);
   const [showMore, setShowMore] = useState(false);
@@ -178,13 +180,15 @@ export default function PublicProfilePage() {
 
         const { data: subData } = await supabase
           .from('subscriptions')
-          .select('id')
+          .select('id, cancel_at_period_end, current_period_end')
           .eq('subscriber_id', user.id)
           .eq('creator_id', profileData.id)
           .eq('status', 'active')
           .maybeSingle();
 
         setIsSubscribed(!!subData);
+        setSubCancelling(!!subData?.cancel_at_period_end);
+        setSubPeriodEnd(subData?.current_period_end || null);
       }
 
       setLoading(false);
@@ -272,38 +276,61 @@ export default function PublicProfilePage() {
 
     setSubLoading(true);
     try {
-      if (isSubscribed) {
-        await supabase
-          .from('subscriptions')
-          .update({ status: 'cancelled' })
-          .eq('subscriber_id', currentUser.id)
-          .eq('creator_id', profile.id);
-        setIsSubscribed(false);
-        setSubscribersCount((prev) => Math.max(0, prev - 1));
-      } else {
-        const price = profile.subscription_price ?? 9.99;
-        const { error } = await supabase.from('subscriptions').upsert(
-          {
-            subscriber_id: currentUser.id,
-            creator_id: profile.id,
-            price,
-            status: 'active',
-            started_at: new Date().toISOString(),
-          },
-          { onConflict: 'subscriber_id,creator_id' }
-        );
-        if (error) throw error;
-        setIsSubscribed(true);
-        setSubscribersCount((prev) => prev + 1);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        router.push('/login');
+        return;
+      }
 
-        await createNotification({
-          userId: profile.id,
-          actorId: currentUser.id,
-          type: 'subscribe',
-          title: `${actorName()} subscribed to you`,
-          body: `£${Number(price).toFixed(2)}/mo`,
-          link: `/${myProfile?.username || ''}`,
+      if (isSubscribed && !subCancelling) {
+        const res = await fetch('/api/subscriptions/cancel', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ creator_id: profile.id }),
         });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Could not cancel');
+        setSubCancelling(true);
+        if (data.period_end) setSubPeriodEnd(data.period_end);
+        alert(
+          data.period_end
+            ? `Cancelled. Access stays until ${new Date(data.period_end).toLocaleDateString('en-GB')}.`
+            : 'Subscription will end at the end of this period.'
+        );
+      } else {
+        const res = await fetch('/api/subscriptions/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ creator_id: profile.id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (data.code === 'INSUFFICIENT_BALANCE' || data.needs_card || data.code === 'NO_CARD') {
+            const go = confirm(
+              data.needs_card || data.code === 'NO_CARD'
+                ? 'Wallet is short. Add a backup card or top up to subscribe.'
+                : `Not enough balance. Need £${Number(data.needed || 0).toFixed(2)}. Open wallet?`
+            );
+            if (go) router.push('/wallet');
+            return;
+          }
+          throw new Error(data.error || 'Could not subscribe');
+        }
+        setIsSubscribed(true);
+        setSubCancelling(false);
+        setSubPeriodEnd(data.period_end || null);
+        if (!data.already && !data.resumed) {
+          setSubscribersCount((prev) => prev + 1);
+        }
       }
     } catch (err: any) {
       console.error('Subscribe error:', err);
@@ -653,8 +680,10 @@ export default function PublicProfilePage() {
                       >
                         {subLoading
                           ? '...'
+                          : isSubscribed && subCancelling
+                          ? 'Resume subscription'
                           : isSubscribed
-                          ? 'Subscribed'
+                          ? 'Subscribed · Cancel'
                           : `Subscribe · £${subPrice}/mo`}
                       </button>
                     )}
