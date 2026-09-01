@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { splitCreatorEarn } from '../../../../lib/platform-fee';
-import { chargeSavedCardToWallet } from '../../../../lib/billing';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,35 +107,16 @@ export async function POST(request: Request) {
     let senderBal = Number(sender?.balance_gbp || 0);
 
     if (senderBal < price) {
-      const charged = await chargeSavedCardToWallet({
-        userId: user.id,
-        amountGbp: Math.max(price - senderBal, 0.5),
-        reason: `Subscription backup card £${price.toFixed(2)}`,
-      });
-      if (charged.ok) {
-        senderBal = charged.balance;
-      } else if (charged.code === 'NO_CARD') {
-        return NextResponse.json(
-          {
-            error: `Not enough wallet balance (£${senderBal.toFixed(2)}). Need £${price.toFixed(2)}. Add a backup card or top up.`,
-            code: 'INSUFFICIENT_BALANCE',
-            needed: price,
-            balance: senderBal,
-            needs_card: true,
-          },
-          { status: 402 }
-        );
-      } else if (senderBal < price) {
-        return NextResponse.json(
-          {
-            error: charged.error || 'Not enough balance',
-            code: charged.code || 'INSUFFICIENT_BALANCE',
-            needed: price,
-            balance: senderBal,
-          },
-          { status: 402 }
-        );
-      }
+      return NextResponse.json(
+        {
+          error: `Not enough wallet balance (£${senderBal.toFixed(2)}). Need £${price.toFixed(2)}. Top up or add a backup card.`,
+          code: 'INSUFFICIENT_BALANCE',
+          needed: price,
+          balance: senderBal,
+          needs_card: true,
+        },
+        { status: 402 }
+      );
     }
 
     if (senderBal < price) {
