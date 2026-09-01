@@ -197,6 +197,38 @@ export default function PublicProfilePage() {
     if (username) loadProfile();
   }, [username]);
 
+  useEffect(() => {
+    if (!profile?.id) return;
+    const refreshCount = async () => {
+      const { count } = await supabase
+        .from('subscriptions')
+        .select('*', { count: 'exact', head: true })
+        .eq('creator_id', profile.id)
+        .eq('status', 'active');
+      setSubscribersCount(count || 0);
+    };
+    const channel = supabase
+      .channel(`profile-subs-${profile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'subscriptions',
+          filter: `creator_id=eq.${profile.id}`,
+        },
+        () => {
+          refreshCount();
+        }
+      )
+      .subscribe();
+    const poll = setInterval(refreshCount, 10000);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
+  }, [profile?.id]);
+
   const actorName = () =>
     myProfile?.display_name || myProfile?.username || 'Someone';
 
