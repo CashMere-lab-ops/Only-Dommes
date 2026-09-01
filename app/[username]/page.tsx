@@ -180,15 +180,15 @@ export default function PublicProfilePage() {
 
         const { data: subData } = await supabase
           .from('subscriptions')
-          .select('id, cancel_at_period_end, current_period_end')
+          .select('id, status, price')
           .eq('subscriber_id', user.id)
           .eq('creator_id', profileData.id)
-          .eq('status', 'active')
+          .in('status', ['active', 'cancelling'])
           .maybeSingle();
 
-        setIsSubscribed(!!subData);
-        setSubCancelling(!!subData?.cancel_at_period_end);
-        setSubPeriodEnd(subData?.current_period_end || null);
+        setIsSubscribed(!!subData && subData.status === 'active');
+        setSubCancelling(subData?.status === 'cancelling');
+        setSubPeriodEnd(null);
       }
 
       setLoading(false);
@@ -296,13 +296,10 @@ export default function PublicProfilePage() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Could not cancel');
-        setSubCancelling(true);
-        if (data.period_end) setSubPeriodEnd(data.period_end);
-        alert(
-          data.period_end
-            ? `Cancelled. Access stays until ${new Date(data.period_end).toLocaleDateString('en-GB')}.`
-            : 'Subscription will end at the end of this period.'
-        );
+        setIsSubscribed(false);
+        setSubCancelling(false);
+        setSubscribersCount((prev) => Math.max(0, prev - 1));
+        alert('Subscription cancelled.');
       } else {
         const res = await fetch('/api/subscriptions/subscribe', {
           method: 'POST',
@@ -680,8 +677,6 @@ export default function PublicProfilePage() {
                       >
                         {subLoading
                           ? '...'
-                          : isSubscribed && subCancelling
-                          ? 'Resume subscription'
                           : isSubscribed
                           ? 'Subscribed · Cancel'
                           : `Subscribe · £${subPrice}/mo`}
