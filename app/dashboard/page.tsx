@@ -2359,6 +2359,13 @@ export default function DashboardPage() {
                     const initial = name.charAt(0).toUpperCase();
                     const ending =
                       sub.status === 'ending' || sub.cancel_at_period_end;
+                    const endDate = formatDate(
+                      sub.current_period_end ||
+                        new Date(
+                          new Date(sub.started_at || Date.now()).getTime() +
+                            30 * 24 * 60 * 60 * 1000
+                        ).toISOString()
+                    );
                     return (
                       <div
                         key={sub.id}
@@ -2383,7 +2390,7 @@ export default function DashboardPage() {
                           <p className="font-medium truncate">{name}</p>
                           <p className="text-xs text-zinc-400 truncate">
                             @{sub.subscriber?.username} · since {formatDate(sub.started_at)}
-                            {ending ? ' · ends this period' : ''}
+                            {ending ? ` · ends ${endDate}` : ''}
                           </p>
                         </div>
                         <span className="text-sm text-pink-400 font-medium flex-shrink-0">
