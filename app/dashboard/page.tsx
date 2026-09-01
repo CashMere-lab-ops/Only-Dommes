@@ -1032,7 +1032,7 @@ export default function DashboardPage() {
         .from('subscriptions')
         .select('*')
         .eq('creator_id', profile.id)
-        .eq('status', 'active')
+        .in('status', ['active', 'ending'])
         .order('started_at', { ascending: false });
 
       if (!subs || subs.length === 0) {
@@ -2357,14 +2357,19 @@ export default function DashboardPage() {
                       sub.subscriber?.username ||
                       'User';
                     const initial = name.charAt(0).toUpperCase();
+                    const ending =
+                      sub.status === 'ending' || sub.cancel_at_period_end;
                     return (
-                      <Link
+                      <div
                         key={sub.id}
-                        href={`/${sub.subscriber?.username}`}
                         className="flex items-center gap-3 p-3 rounded-xl hover:bg-zinc-800/70 transition"
                       >
-                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0">
+                        <Link
+                          href={`/${sub.subscriber?.username || ''}`}
+                          className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden flex-shrink-0"
+                        >
                           {sub.subscriber?.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={sub.subscriber.avatar_url}
                               alt=""
@@ -2373,17 +2378,61 @@ export default function DashboardPage() {
                           ) : (
                             initial
                           )}
-                        </div>
+                        </Link>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium truncate">{name}</p>
                           <p className="text-xs text-zinc-400 truncate">
                             @{sub.subscriber?.username} · since {formatDate(sub.started_at)}
+                            {ending ? ' · ends this period' : ''}
                           </p>
                         </div>
                         <span className="text-sm text-pink-400 font-medium flex-shrink-0">
                           £{Number(sub.price || 0).toFixed(2)}/mo
                         </span>
-                      </Link>
+                        {ending ? (
+                          <span className="text-[11px] text-zinc-500 flex-shrink-0">Ending</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (
+                                !confirm(
+                                  `End ${name}'s subscription after this paid month? They keep access until then.`
+                                )
+                              ) {
+                                return;
+                              }
+                              const {
+                                data: { session },
+                              } = await supabase.auth.getSession();
+                              if (!session?.access_token) return;
+                              const res = await fetch('/api/subscriptions/creator-cancel', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  Authorization: `Bearer ${session.access_token}`,
+                                },
+                                body: JSON.stringify({ subscriber_id: sub.subscriber_id }),
+                              });
+                              const data = await res.json().catch(() => ({}));
+                              if (!res.ok) {
+                                alert(data.error || 'Could not end subscription');
+                                return;
+                              }
+                              setSubscribers((prev) =>
+                                prev.map((s) =>
+                                  s.id === sub.id
+                                    ? { ...s, status: 'ending', cancel_at_period_end: true }
+                                    : s
+                                )
+                              );
+                            }}
+                            className="text-xs text-zinc-400 hover:text-red-400 flex-shrink-0 px-2 py-1"
+                          >
+                            End
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

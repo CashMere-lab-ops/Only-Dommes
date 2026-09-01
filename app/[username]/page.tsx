@@ -183,11 +183,11 @@ export default function PublicProfilePage() {
           .select('id, status, price')
           .eq('subscriber_id', user.id)
           .eq('creator_id', profileData.id)
-          .in('status', ['active', 'cancelling'])
+          .in('status', ['active', 'ending'])
           .maybeSingle();
 
-        setIsSubscribed(!!subData && subData.status === 'active');
-        setSubCancelling(subData?.status === 'cancelling');
+        setIsSubscribed(!!subData);
+        setSubCancelling(subData?.status === 'ending');
         setSubPeriodEnd(null);
       }
 
