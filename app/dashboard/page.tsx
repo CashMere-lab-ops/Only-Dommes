@@ -1024,6 +1024,71 @@ export default function DashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!profile?.id || profile.account_type !== 'creator') return;
+
+    const refreshSubs = async () => {
+      const { data: subs } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('creator_id', profile.id)
+        .eq('status', 'active')
+        .order('started_at', { ascending: false });
+
+      if (!subs || subs.length === 0) {
+        setSubscribers([]);
+        setSubCount(0);
+      } else {
+        const ids = subs.map((s: any) => s.subscriber_id);
+        const { data: people } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', ids);
+        const map = new Map((people || []).map((p: any) => [p.id, p]));
+        const enriched = subs.map((s: any) => ({
+          ...s,
+          subscriber: map.get(s.subscriber_id) || null,
+        }));
+        setSubscribers(enriched);
+        setSubCount(enriched.length);
+      }
+
+      const { data: me } = await supabase
+        .from('profiles')
+        .select('balance_gbp')
+        .eq('id', profile.id)
+        .single();
+      if (me && me.balance_gbp != null) {
+        setProfile((p: any) =>
+          p ? { ...p, balance_gbp: Number(me.balance_gbp) } : p
+        );
+      }
+    };
+
+    refreshSubs();
+    const channel = supabase
+      .channel(`dash-subs-${profile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'subscriptions',
+          filter: `creator_id=eq.${profile.id}`,
+        },
+        () => {
+          refreshSubs();
+        }
+      )
+      .subscribe();
+
+    const poll = setInterval(refreshSubs, 15000);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
+  }, [profile?.id, profile?.account_type]);
+
   const displayName = profile?.display_name || profile?.username || 'User';
   const isCreator = profile?.account_type === 'creator';
 
