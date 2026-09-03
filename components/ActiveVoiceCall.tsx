@@ -473,8 +473,9 @@ export default function ActiveVoiceCall() {
       });
 
       room.on(RoomEvent.ParticipantDisconnected, () => {
-        // Other person left — end for both
-        if (billingStarted.current || room.remoteParticipants.size === 0) {
+        if (!billingStarted.current) return;
+        if (secondsRef.current < 3) return;
+        if (room.remoteParticipants.size === 0) {
           hangUp('remote');
         }
       });
@@ -652,15 +653,14 @@ export default function ActiveVoiceCall() {
           setTimeout(() => hangUp('local'), 0);
           return n;
         }
-        // Auto-end when prepaid hold is exhausted
+        // End only when time used uses up the hold (not the minimum charge)
         const c = callRef.current;
         if (c && billingStarted.current) {
           const rate = Number(c.rate_per_minute || 0);
-          const minM = Number(c.min_minutes || 1);
           const held = Number(c.amount_held || 0);
           if (held > 0 && rate > 0) {
-            const cost = Math.max(rate * (n / 60), rate * minM);
-            if (cost >= held - 0.001) {
+            const elapsedCost = rate * (n / 60);
+            if (elapsedCost >= held - 0.001) {
               setTimeout(() => hangUp('local'), 0);
             }
           }

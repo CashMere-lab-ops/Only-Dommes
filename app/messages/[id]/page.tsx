@@ -2430,13 +2430,6 @@ export default function ChatPage() {
               </p>
             </div>
           </Link>
-          <button
-            type="button"
-            onClick={() => setShowGallery(true)}
-            className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 flex items-center justify-center"
-          >
-            <LayoutGrid size={18} />
-          </button>
           {otherUser?.account_type === 'creator' && (
             <button
               type="button"
@@ -2639,6 +2632,16 @@ export default function ChatPage() {
             <div className="px-4 py-3 border-b border-zinc-800 font-medium truncate">
               {displayName}
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMore(false);
+                setShowGallery(true);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm"
+            >
+              <LayoutGrid size={18} className="text-pink-400" /> Media
+            </button>
             <Link
               href={`/${otherUser?.username || ''}`}
               onClick={() => setShowMore(false)}
