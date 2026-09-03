@@ -38,6 +38,8 @@ function WalletPageInner() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [card, setCard] = useState<{ saved: boolean; brand?: string | null; last4?: string | null } | null>(null);
+  const [savingCard, setSavingCard] = useState(false);
 
   const load = async () => {
     const {
@@ -66,6 +68,18 @@ function WalletPageInner() {
       .limit(30);
 
     setTransactions(txs || []);
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const cardRes = await fetch('/api/billing/save-card', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const cardData = await cardRes.json().catch(() => ({}));
+      if (cardRes.ok) setCard(cardData);
+    }
+
     setLoading(false);
   };
 
@@ -77,6 +91,10 @@ function WalletPageInner() {
   useEffect(() => {
     const topup = searchParams.get('topup');
     const sessionId = searchParams.get('session_id');
+
+    if (searchParams.get('card') === 'saved') {
+      setMessage('Backup card saved. We’ll use it if your wallet is short on a subscription.');
+    }
 
     if (topup === 'cancelled') {
       setError('Top-up cancelled.');
@@ -265,6 +283,60 @@ function WalletPageInner() {
                 Balances are held in GBP. Use this balance to tip, unlock, call,
                 and buy on World of Dommes.
               </p>
+            </div>
+
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mb-8">
+              <h2 className="font-semibold mb-1">Backup card</h2>
+              <p className="text-sm text-zinc-500 mb-4">
+                Used only if your wallet is short on a subscription renewal.
+              </p>
+              {card?.saved ? (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm">
+                    {(card.brand || 'Card').toUpperCase()} ····· {card.last4}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const {
+                        data: { session },
+                      } = await supabase.auth.getSession();
+                      if (!session?.access_token) return;
+                      await fetch('/api/billing/save-card', {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${session.access_token}` },
+                      });
+                      setCard({ saved: false });
+                    }}
+                    className="text-sm text-red-400 hover:text-red-300"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={savingCard}
+                  onClick={async () => {
+                    setSavingCard(true);
+                    const {
+                      data: { session },
+                    } = await supabase.auth.getSession();
+                    if (!session?.access_token) return;
+                    const res = await fetch('/api/billing/save-card', {
+                      method: 'POST',
+                      headers: { Authorization: `Bearer ${session.access_token}` },
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    setSavingCard(false);
+                    if (data.url) window.location.href = data.url;
+                    else alert(data.error || 'Could not open card setup');
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium disabled:opacity-50"
+                >
+                  {savingCard ? 'Opening…' : 'Add backup card'}
+                </button>
+              )}
             </div>
 
             <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-5 mb-8">

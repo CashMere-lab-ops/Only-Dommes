@@ -9,7 +9,6 @@ async function creditTopUp(opts: {
   userId: string;
   amountGbp: number;
   sessionId: string;
-  paymentIntentId: string | null;
 }) {
   const admin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,67 +49,122 @@ async function creditTopUp(opts: {
     throw new Error(upErr.message);
   }
 
-  const { error: txErr } = await admin.from('wallet_transactions').insert({
+  const full = await admin.from('wallet_transactions').insert({
     user_id: opts.userId,
     type: 'top_up',
     amount_gbp: opts.amountGbp,
     balance_after: next,
     reference_type: 'stripe_checkout',
     reference_id: opts.sessionId,
-    stripe_payment_intent_id: opts.paymentIntentId,
     description: `Wallet top-up £${opts.amountGbp.toFixed(2)}`,
   });
 
-  if (txErr) {
-    throw new Error(txErr.message);
+  if (full.error) {
+    const minimal = await admin.from('wallet_transactions').insert({
+      user_id: opts.userId,
+      type: 'top_up',
+      amount_gbp: opts.amountGbp,
+      reference_id: opts.sessionId,
+    });
+    if (minimal.error) {
+      await admin
+        .from('profiles')
+        .update({ balance_gbp: current })
+        .eq('id', opts.userId);
+      throw new Error(minimal.error.message);
+    }
   }
 
   return { already: false, balance: next };
 }
 
 export async function POST(request: Request) {
-  const stripe = getStripe();
-  const whSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-  const body = await request.text();
-  const sig = request.headers.get('stripe-signature');
-
-  let event: Stripe.Event;
-
   try {
-    if (whSecret && sig) {
-      event = stripe.webhooks.constructEvent(body, sig, whSecret);
-    } else {
-      event = JSON.parse(body) as Stripe.Event;
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json({ error: 'Missing STRIPE_SECRET_KEY' }, { status: 500 });
     }
-  } catch (err: any) {
-    console.error('webhook signature', err?.message);
-    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
-  }
 
-  try {
+    const stripe = getStripe();
+    const whSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const body = await request.text();
+    const sig = request.headers.get('stripe-signature');
+
+    let event: Stripe.Event;
+
+    try {
+      if (whSecret && sig) {
+        event = stripe.webhooks.constructEvent(body, sig, whSecret);
+      } else {
+        event = JSON.parse(body) as Stripe.Event;
+      }
+    } catch (err: any) {
+      console.error('webhook signature', err?.message);
+      return NextResponse.json(
+        { error: `Webhook Error: ${err.message}` },
+        { status: 400 }
+      );
+    }
+
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as Stripe.Checkout.Session;
+
+      if (session.mode === 'setup' || session.metadata?.type === 'save_card') {
+        const userId = session.metadata?.user_id || session.client_reference_id;
+        if (!userId || !session.setup_intent) {
+          return NextResponse.json({ received: true, skipped: true });
+        }
+        const stripe = getStripe();
+        const setup =
+          typeof session.setup_intent === 'string'
+            ? await stripe.setupIntents.retrieve(session.setup_intent)
+            : session.setup_intent;
+        const pmId =
+          typeof setup.payment_method === 'string'
+            ? setup.payment_method
+            : setup.payment_method?.id;
+        if (!pmId) return NextResponse.json({ received: true, skipped: true });
+
+        const pm = await stripe.paymentMethods.retrieve(pmId);
+        const admin = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        await admin
+          .from('profiles')
+          .update({
+            stripe_customer_id:
+              typeof session.customer === 'string'
+                ? session.customer
+                : session.customer?.id || null,
+            stripe_payment_method_id: pmId,
+            card_brand: pm.card?.brand || null,
+            card_last4: pm.card?.last4 || null,
+          })
+          .eq('id', userId);
+        return NextResponse.json({ received: true, saved_card: true });
+      }
+
       if (session.metadata?.type !== 'wallet_top_up') {
         return NextResponse.json({ received: true, skipped: true });
       }
 
       const userId = session.metadata?.user_id || session.client_reference_id;
-      const amountGbp = Number(session.metadata?.amount_gbp);
-      const paymentIntentId =
-        typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id || null;
+      let amountGbp = Number(session.metadata?.amount_gbp);
+      if (!Number.isFinite(amountGbp) || amountGbp <= 0) {
+        amountGbp = Math.round(Number(session.amount_total || 0)) / 100;
+      }
 
       if (!userId || !Number.isFinite(amountGbp) || amountGbp <= 0) {
-        return NextResponse.json({ error: 'Invalid session metadata' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'Invalid session metadata' },
+          { status: 400 }
+        );
       }
 
       const result = await creditTopUp({
         userId,
         amountGbp,
         sessionId: session.id,
-        paymentIntentId,
       });
 
       return NextResponse.json({ received: true, ...result });
@@ -119,6 +173,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   } catch (e: any) {
     console.error('webhook handler', e);
-    return NextResponse.json({ error: e?.message || 'Handler failed' }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || 'Handler failed' },
+      { status: 500 }
+    );
   }
 }
