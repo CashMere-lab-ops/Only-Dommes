@@ -79,16 +79,12 @@ export default function ActiveVoiceCall() {
   const rateNum = call ? Number(call.rate_per_minute || 0) : 0;
   const minMinsNum = call ? call.min_minutes || 1 : 1;
 
-  // Live estimate: pro-rate by seconds, but never show below minimum once connected
-  const liveCost = () => {
+  const elapsedCost = () => {
     if (!call || phase !== 'in_call') return 0;
-    const elapsedMins = Math.max(seconds, 1) / 60;
-    const raw = rateNum * elapsedMins;
-    const minCharge = rateNum * minMinsNum;
-    // Until min duration reached, show minimum; after that tick up
-    const cost = Math.max(minCharge, raw);
-    return Math.round(cost * 100) / 100;
+    return Math.round(rateNum * (seconds / 60) * 100) / 100;
   };
+  const minCharge = rateNum * minMinsNum;
+  const liveCost = () => Math.max(elapsedCost(), phase === 'in_call' ? 0 : 0);
 
   const runningCost = liveCost;
 
@@ -848,10 +844,12 @@ export default function ActiveVoiceCall() {
   };
 
   const isVideo = (call?.call_kind || 'voice') === 'video';
+  const held = Number(call?.amount_held || 0);
+  const holdLow = held > 0 && elapsedCost() >= held * 0.8;
 
   return (
-    <div className="fixed inset-0 z-[210] bg-zinc-950 flex flex-col items-center justify-center p-6 overflow-hidden">
-      {isVideo && (
+    <div className="fixed inset-0 z-[210] bg-black overflow-hidden">
+      {isVideo ? (
         <>
           <video
             ref={remoteVideoRef}
@@ -864,134 +862,77 @@ export default function ActiveVoiceCall() {
             autoPlay
             playsInline
             muted
-            className="absolute bottom-28 right-4 w-28 h-40 object-cover rounded-2xl border border-white/20 bg-black z-10 shadow-xl"
+            className="absolute top-16 right-4 w-24 h-36 sm:w-28 sm:h-40 object-cover rounded-2xl border border-white/25 bg-zinc-900 z-20 shadow-2xl"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-zinc-950/40 pointer-events-none" />
+          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent pointer-events-none z-10" />
+          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent pointer-events-none z-10" />
         </>
-      )}
-      {/* Studio blurred background */}
-      <div className="absolute inset-0 pointer-events-none">
-        {otherAvatar ? (
-          <>
-            <img
-              src={otherAvatar}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl opacity-40"
-            />
-            <div className="absolute inset-0 bg-zinc-950/70" />
-            <div className="absolute inset-0 bg-gradient-to-b from-pink-950/30 via-transparent to-zinc-950/90" />
-          </>
-        ) : (
-          <>
-            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-pink-600/25 blur-3xl" />
-            <div className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full bg-rose-600/15 blur-3xl" />
-          </>
-        )}
-      </div>
-
-      <div className="relative w-full max-w-sm text-center">
-        <div className="relative mx-auto w-28 h-28 mb-6">
-          <div
-            className={`absolute inset-0 rounded-full bg-pink-500/20 ${
-              phase === 'in_call' ? 'animate-pulse' : ''
-            }`}
-          />
-          <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-3xl font-bold ring-2 ring-white/10 shadow-2xl shadow-pink-900/40">
-            {otherAvatar ? (
+      ) : (
+        <div className="absolute inset-0 pointer-events-none">
+          {otherAvatar ? (
+            <>
               <img
                 src={otherAvatar}
                 alt=""
-                className="w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl opacity-40"
               />
-            ) : (
-              initial
-            )}
+              <div className="absolute inset-0 bg-zinc-950/70" />
+            </>
+          ) : (
+            <div className="absolute inset-0 bg-zinc-950" />
+          )}
+        </div>
+      )}
+
+      <div className="relative z-20 flex flex-col h-full">
+        <div className="flex items-start justify-between px-5 pt-5 pb-2">
+          <div className="min-w-0">
+            <p className="text-xs text-white/70">{statusLine()}</p>
+            <p className="text-lg font-semibold text-white truncate">{otherName}</p>
           </div>
+          {phase === 'in_call' && (
+            <div className="text-right">
+              <p className="text-xl font-mono text-white tabular-nums">{formatTime(seconds)}</p>
+              <p className="text-sm text-pink-400 tabular-nums">£{elapsedCost().toFixed(2)}</p>
+            </div>
+          )}
         </div>
 
-        <p className="text-sm text-pink-400 font-medium mb-1">{statusLine()}</p>
-        <h2 className="text-2xl font-semibold text-white mb-2">{otherName}</h2>
-        {phase === 'reconnecting' && (
-          <div className="mb-4 rounded-xl border border-amber-500/50 bg-amber-500/15 px-4 py-3 text-sm text-amber-100">
-            <p className="font-medium">Reconnecting…</p>
-            <p className="text-xs text-amber-200/80 mt-1">
-              Check your Wi‑Fi or mobile data. You won&apos;t be charged for dead air if the call drops.
-            </p>
-          </div>
-        )}
-        {phase === 'in_call' && (
-          <div className="flex items-center justify-center gap-1.5 mb-3">
-            {[0, 1, 2].map((i) => {
-              const level =
-                connectionQuality === 'excellent'
-                  ? 3
-                  : connectionQuality === 'good'
-                  ? 2
-                  : connectionQuality === 'poor'
-                  ? 1
-                  : 0;
-              const on = i < level;
-              return (
-                <div
-                  key={i}
-                  className={`w-1.5 rounded-full transition ${
-                    on ? 'bg-emerald-400' : 'bg-zinc-700'
-                  }`}
-                  style={{ height: 6 + i * 4 }}
-                />
-              );
-            })}
-            <span className="text-[11px] text-zinc-500 ml-1">
-              {connectionQuality === 'excellent'
-                ? 'Excellent'
-                : connectionQuality === 'good'
-                ? 'Good'
-                : connectionQuality === 'poor'
-                ? 'Weak signal'
-                : 'Connecting'}
-            </span>
-          </div>
-        )}
-
-        {phase === 'in_call' ? (
-          <>
-            <p className="text-3xl font-mono text-white tabular-nums mb-1">
-              {formatTime(seconds)}
-            </p>
-            <div className="mb-6">
-              <p className="text-2xl font-semibold text-pink-400 tabular-nums">
-                £{liveCost().toFixed(2)}
-              </p>
-              <p className="text-xs text-zinc-500 mt-1">
-                £{rateNum.toFixed(2)}/min
-{seconds < minMinsNum * 60
-                  ? ` · min charge £${(rateNum * minMinsNum).toFixed(2)} until ${minMinsNum} min`
-                  : ' · running'}
-                {call.max_minutes
-                  ? ` · max ${call.max_minutes} min`
-                  : ''}
-              </p>
-              {Number(call.amount_held || 0) > 0 &&
-                liveCost() >= Number(call.amount_held) * 0.8 && (
-                <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                  {liveCost() >= Number(call.amount_held)
-                    ? 'Hold limit reached — call may end soon'
-                    : 'Running low on hold (80%+)'}
-                </div>
+        {!isVideo && (
+          <div className="flex-1 flex flex-col items-center justify-center px-6">
+            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-3xl font-bold mb-4">
+              {otherAvatar ? (
+                <img src={otherAvatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                initial
               )}
             </div>
-          </>
-        ) : (
-          <p className="text-sm text-zinc-500 mb-8">
-            {phase === 'waiting'
-              ? 'Timer starts when both of you are connected'
-              : 'Please allow microphone access'}
-          </p>
+            <p className="text-pink-400 text-sm mb-1">{statusLine()}</p>
+            <h2 className="text-2xl font-semibold text-white">{otherName}</h2>
+          </div>
         )}
 
-        {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+        {isVideo && <div className="flex-1" />}
 
-        <div className="flex items-center justify-center gap-5">
+        {phase === 'reconnecting' && (
+          <div className="mx-5 mb-3 rounded-xl border border-amber-500/50 bg-amber-500/15 px-4 py-3 text-sm text-amber-100">
+            <p className="font-medium">Reconnecting…</p>
+          </div>
+        )}
+
+        <div className="px-5 pb-8 pt-2">
+          {holdLow && (
+            <p className="text-center text-xs text-amber-300 mb-3">
+              Hold running low · tap +5 min to keep going
+            </p>
+          )}
+          {error && <p className="text-center text-sm text-red-400 mb-3">{error}</p>}
+          <p className="text-center text-xs text-white/50 mb-4">
+            £{rateNum.toFixed(2)}/min
+            {minMinsNum > 0 ? ` · min £${minCharge.toFixed(2)}` : ''}
+          </p>
+
+          <div className="flex items-center justify-center gap-3">
           <button
             type="button"
             onClick={toggleMute}
@@ -1021,6 +962,7 @@ export default function ActiveVoiceCall() {
             </button>
           )}
 
+          {!isVideo && (
           <button
             type="button"
             onClick={toggleSpeaker}
@@ -1034,6 +976,7 @@ export default function ActiveVoiceCall() {
           >
             {speakerOn ? <Volume2 size={22} /> : <Volume1 size={22} />}
           </button>
+          )}
 
           <button
             type="button"
@@ -1060,17 +1003,7 @@ export default function ActiveVoiceCall() {
             </button>
           )}
         </div>
-        {phase === 'in_call' && Number(call.amount_held || 0) > 0 && (
-          <p className="text-xs text-zinc-600 mt-3">
-            Hold: £{Number(call.amount_held).toFixed(2)}
-          </p>
-        )}
-
-        <p className="text-xs text-zinc-600 mt-8">
-          {phase === 'in_call'
-            ? `Minimum ${call.min_minutes || 1} min charged`
-            : 'No charge until both join'}
-        </p>
+        </div>
       </div>
     </div>
   );
