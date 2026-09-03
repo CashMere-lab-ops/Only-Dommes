@@ -49,6 +49,7 @@ export default function ActiveVoiceCall() {
   const [ratingSaving, setRatingSaving] = useState(false);
   const [ratingDone, setRatingDone] = useState(false);
   const [extending, setExtending] = useState(false);
+  const [holdToast, setHoldToast] = useState('');
   const [earningsToast, setEarningsToast] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [reportReason, setReportReason] = useState('');
@@ -372,9 +373,10 @@ export default function ActiveVoiceCall() {
 
   const extendHold = async () => {
     if (!call || extending || phase !== 'in_call') return;
+    if (userId !== call.subscriber_id) return;
     setExtending(true);
     try {
-      const extra = Math.round(rateNum * 5 * 100) / 100; // +5 minutes worth
+      const extra = Math.round(rateNum * 5 * 100) / 100;
       const next = Math.round((Number(call.amount_held || 0) + extra) * 100) / 100;
       const { error } = await supabase
         .from('voice_calls')
@@ -384,9 +386,12 @@ export default function ActiveVoiceCall() {
       if (error) throw error;
       setCall({ ...call, amount_held: next });
       callRef.current = { ...call, amount_held: next };
+      setHoldToast(`+5 min added · hold now £${next.toFixed(2)}`);
+      setTimeout(() => setHoldToast(''), 3500);
     } catch (e) {
       console.error(e);
-      setError('Could not extend hold');
+      setHoldToast('Could not add time');
+      setTimeout(() => setHoldToast(''), 3000);
     } finally {
       setExtending(false);
     }
@@ -921,7 +926,10 @@ export default function ActiveVoiceCall() {
         )}
 
         <div className="px-5 pb-8 pt-2">
-          {holdLow && (
+          {holdToast && (
+            <p className="text-center text-sm text-pink-300 mb-3">{holdToast}</p>
+          )}
+          {holdLow && userId === call.subscriber_id && (
             <p className="text-center text-xs text-amber-300 mb-3">
               Hold running low · tap +5 min to keep going
             </p>
@@ -986,7 +994,7 @@ export default function ActiveVoiceCall() {
             <PhoneOff size={26} />
           </button>
 
-          {phase === 'in_call' && (
+          {phase === 'in_call' && userId === call.subscriber_id && (
             <button
               type="button"
               onClick={extendHold}
