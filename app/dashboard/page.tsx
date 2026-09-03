@@ -88,6 +88,9 @@ export default function DashboardPage() {
     voiceRate: 3,
     voiceMinMinutes: 3,
     voiceMaxMinutes: 30,
+    videoCallsEnabled: false,
+    videoRate: 5,
+    videoMinMinutes: 3,
     tipMenuEnabled: true,
   });
   const [pricingSaving, setPricingSaving] = useState(false);
@@ -451,6 +454,9 @@ export default function DashboardPage() {
         voice_rate_per_minute: Number(pricing.voiceRate) || 0,
         voice_min_minutes: Math.min(15, Math.max(1, Number(pricing.voiceMinMinutes) || 3)),
         voice_max_minutes: Math.min(120, Math.max(5, Number(pricing.voiceMaxMinutes) || 30)),
+        video_calls_enabled: pricing.videoCallsEnabled,
+        video_rate_per_minute: Number(pricing.videoRate) || 0,
+        video_min_minutes: Math.min(15, Math.max(1, Number(pricing.videoMinMinutes) || 3)),
       })
       .eq('id', profile.id);
     setPricingSaving(false);
@@ -541,6 +547,9 @@ export default function DashboardPage() {
           voiceRate: Number(data.voice_rate_per_minute ?? 3),
           voiceMinMinutes: Number(data.voice_min_minutes ?? 3),
           voiceMaxMinutes: Number(data.voice_max_minutes ?? 30),
+          videoCallsEnabled: !!data.video_calls_enabled,
+          videoRate: Number(data.video_rate_per_minute ?? 5),
+          videoMinMinutes: Number(data.video_min_minutes ?? 3),
           tipMenuEnabled: data.tip_menu_enabled !== false,
         });
       }
@@ -3605,6 +3614,65 @@ export default function DashboardPage() {
                             setPricing({
                               ...pricing,
                               voiceMaxMinutes: Number(e.target.value),
+                            })
+                          }
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-sm outline-none focus:border-pink-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-zinc-950/60 border border-zinc-800 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <p className="text-sm font-medium text-zinc-200">Video calls</p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPricing({
+                            ...pricing,
+                            videoCallsEnabled: !pricing.videoCallsEnabled,
+                          })
+                        }
+                        className={`w-10 h-6 rounded-full relative transition ${
+                          pricing.videoCallsEnabled ? 'bg-pink-600' : 'bg-zinc-700'
+                        }`}
+                        aria-label="Toggle video calls"
+                      >
+                        <span
+                          className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition ${
+                            pricing.videoCallsEnabled ? 'left-[18px]' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">Per minute</label>
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">£</span>
+                          <input
+                            type="number"
+                            min="0.5"
+                            step="0.5"
+                            value={pricing.videoRate}
+                            onChange={(e) =>
+                              setPricing({ ...pricing, videoRate: Number(e.target.value) })
+                            }
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 pl-6 pr-2 text-sm outline-none focus:border-pink-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">Min minutes</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="15"
+                          value={pricing.videoMinMinutes}
+                          onChange={(e) =>
+                            setPricing({
+                              ...pricing,
+                              videoMinMinutes: Number(e.target.value),
                             })
                           }
                           className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-sm outline-none focus:border-pink-500"

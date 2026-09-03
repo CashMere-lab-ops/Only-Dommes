@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Send, ImagePlus, X, DollarSign, Lock, Unlock,
-  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid, Phone,
+  Check, CheckCheck, Reply, Smile, Mic, Square, Play, Pause, LayoutGrid, Phone, Video,
   ShoppingBag, ExternalLink, Package, MoreHorizontal, Share2, Ban, Flag, Link as LinkIcon
 } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
@@ -234,6 +234,7 @@ export default function ChatPage() {
 
   // Voice calls
   const [showCallSheet, setShowCallSheet] = useState(false);
+  const [callSheetKind, setCallSheetKind] = useState<'voice' | 'video'>('voice');
   const [requestingCall, setRequestingCall] = useState(false);
   const [incomingCall, setIncomingCall] = useState<any | null>(null);
   const [myOutgoingCall, setMyOutgoingCall] = useState<any | null>(null);
@@ -378,7 +379,7 @@ export default function ChatPage() {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
-          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away'
+          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away, video_calls_enabled, video_rate_per_minute, video_min_minutes'
         )
         .eq('id', otherId)
         .single();
@@ -816,9 +817,21 @@ export default function ChatPage() {
     !!otherUser?.voice_calls_enabled &&
     !needsUnlock;
 
+  const canRequestVideo =
+    myProfile?.account_type !== 'creator' &&
+    otherUser?.account_type === 'creator' &&
+    !!otherUser?.video_calls_enabled &&
+    !needsUnlock;
+
   const voiceRate = Number(otherUser?.voice_rate_per_minute ?? 3);
   const voiceMin = Number(otherUser?.voice_min_minutes ?? 3);
   const voiceHold = Math.round(voiceRate * voiceMin * 100) / 100;
+  const videoRate = Number(otherUser?.video_rate_per_minute ?? voiceRate);
+  const videoMin = Number(otherUser?.video_min_minutes ?? voiceMin);
+  const videoHold = Math.round(videoRate * videoMin * 100) / 100;
+  const sheetRate = callSheetKind === 'video' ? videoRate : voiceRate;
+  const sheetMin = callSheetKind === 'video' ? videoMin : voiceMin;
+  const sheetHold = callSheetKind === 'video' ? videoHold : voiceHold;
 
   const CALL_PREFIX = '__CALL_EVENT__:';
 
@@ -994,28 +1007,43 @@ export default function ChatPage() {
         .eq('id', userId)
         .single();
       const bal = Number(balRow?.balance_gbp || 0);
-      if (bal < voiceHold) {
+      if (bal < sheetHold) {
         setCallSheetError(
-          insufficientFundsMessage(voiceHold, bal) + ' Open Wallet to top up.'
+          insufficientFundsMessage(sheetHold, bal) + ' Open Wallet to top up.'
         );
         setRequestingCall(false);
         return;
       }
 
-      const { data, error } = await supabase
+      const payload: any = {
+        creator_id: otherUserId,
+        subscriber_id: userId,
+        conversation_id: conversationId,
+        status: 'requested',
+        rate_per_minute: sheetRate,
+        min_minutes: sheetMin,
+        max_minutes: otherUser?.voice_max_minutes || 30,
+        amount_held: sheetHold,
+        call_kind: callSheetKind,
+      };
+
+      let { data, error } = await supabase
         .from('voice_calls')
-        .insert({
-          creator_id: otherUserId,
-          subscriber_id: userId,
-          conversation_id: conversationId,
-          status: 'requested',
-          rate_per_minute: voiceRate,
-          min_minutes: voiceMin,
-          max_minutes: otherUser?.voice_max_minutes || 30,
-          amount_held: voiceHold,
-        })
+        .insert(payload)
         .select()
         .single();
+
+      if (error && /call_kind/.test(error.message || '')) {
+        delete payload.call_kind;
+        const retry = await supabase
+          .from('voice_calls')
+          .insert(payload)
+          .select()
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
+
       if (error) throw error;
 
       setMyOutgoingCall(data);
@@ -1026,8 +1054,8 @@ export default function ChatPage() {
         userId: otherUserId,
         actorId: userId,
         type: 'message',
-        title: `${actorName()} is requesting a voice call`,
-        body: `£${voiceRate.toFixed(2)}/min · min ${voiceMin} min (£${voiceHold.toFixed(2)} hold)`,
+        title: `${actorName()} is requesting a ${callSheetKind} call`,
+        body: `£${sheetRate.toFixed(2)}/min · min ${sheetMin} min (£${sheetHold.toFixed(2)} hold)`,
         link: `/messages/${conversationId}`,
       });
     } catch (err: any) {
@@ -2233,27 +2261,32 @@ export default function ChatPage() {
           <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Phone size={20} className="text-pink-400" /> Voice call
+                {callSheetKind === 'video' ? (
+                  <Video size={20} className="text-pink-400" />
+                ) : (
+                  <Phone size={20} className="text-pink-400" />
+                )}
+                {callSheetKind === 'video' ? 'Video call' : 'Voice call'}
               </h3>
               <button type="button" onClick={() => setShowCallSheet(false)} className="text-zinc-400">
                 <X size={22} />
               </button>
             </div>
             <p className="text-sm text-zinc-400 mb-4">
-              Request a paid voice call with {displayName}
+              Request a paid {callSheetKind} call with {displayName}
             </p>
             <div className="bg-zinc-800 border border-zinc-700 rounded-2xl p-4 mb-4 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-zinc-400">Rate</span>
-                <span className="font-medium text-pink-400">£{voiceRate.toFixed(2)}/min</span>
+                <span className="font-medium text-pink-400">£{sheetRate.toFixed(2)}/min</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-400">Minimum</span>
-                <span className="font-medium">{voiceMin} minutes</span>
+                <span className="font-medium">{sheetMin} minutes</span>
               </div>
               <div className="flex justify-between border-t border-zinc-700 pt-2">
                 <span className="text-zinc-400">Hold (up front)</span>
-                <span className="font-semibold text-white">£{voiceHold.toFixed(2)}</span>
+                <span className="font-semibold text-white">£{sheetHold.toFixed(2)}</span>
               </div>
             </div>
             <p className="text-xs text-zinc-500 mb-4">
@@ -2417,11 +2450,21 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => { setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
+              onClick={() => { setCallSheetKind('voice'); setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
               className="w-9 h-9 rounded-full bg-pink-600 text-white flex items-center justify-center"
               title="Voice call"
             >
               <Phone size={18} />
+            </button>
+          )}
+          {canRequestVideo && (
+            <button
+              type="button"
+              onClick={() => { setCallSheetKind('video'); setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
+              className="w-9 h-9 rounded-full bg-rose-600 text-white flex items-center justify-center"
+              title="Video call"
+            >
+              <Video size={18} />
             </button>
           )}
           <button
@@ -2524,11 +2567,21 @@ export default function ChatPage() {
           {canRequestCall && (
             <button
               type="button"
-              onClick={() => { setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
+              onClick={() => { setCallSheetKind('voice'); setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-700 text-white text-sm font-medium"
             >
               <Phone size={16} />
               Call
+            </button>
+          )}
+          {canRequestVideo && (
+            <button
+              type="button"
+              onClick={() => { setCallSheetKind('video'); setCallSheetError(''); setMicError(''); setMicReady(false); setShowCallSheet(true); startMicTest(); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium"
+            >
+              <Video size={16} />
+              Video
             </button>
           )}
           <button

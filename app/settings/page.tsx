@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, User, Lock, Bell, Camera, Save, Eye, EyeOff,
-  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone, Radio, Ban
+  Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone, Video, Radio, Ban
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -54,6 +54,9 @@ export default function SettingsPage() {
   const [voiceDndEnd, setVoiceDndEnd] = useState('08:00');
   const [voiceMaxMinutes, setVoiceMaxMinutes] = useState('30');
   const [voiceAway, setVoiceAway] = useState(false);
+  const [videoCallsEnabled, setVideoCallsEnabled] = useState(false);
+  const [videoRate, setVideoRate] = useState('5.00');
+  const [videoMinMinutes, setVideoMinMinutes] = useState('3');
 
   // Live private
   const [livePrivateEnabled, setLivePrivateEnabled] = useState(true);
@@ -104,6 +107,9 @@ export default function SettingsPage() {
         setVoiceDndEnd(data.voice_dnd_end || '08:00');
         setVoiceMaxMinutes(String(data.voice_max_minutes ?? 30));
         setVoiceAway(!!data.voice_away);
+        setVideoCallsEnabled(!!data.video_calls_enabled);
+        setVideoRate(String(data.video_rate_per_minute ?? 5));
+        setVideoMinMinutes(String(data.video_min_minutes ?? 3));
         setLivePrivateEnabled(data.live_private_enabled !== false);
         setLivePrivateRate(
           String(
@@ -205,6 +211,14 @@ export default function SettingsPage() {
         if (maxMins > 120) maxMins = 120;
         updates.voice_max_minutes = maxMins;
         updates.voice_away = voiceAway;
+        const vRate = parseFloat(videoRate);
+        let vMin = parseInt(videoMinMinutes, 10);
+        if (Number.isNaN(vMin) || vMin < 1) vMin = 1;
+        if (vMin > 15) vMin = 15;
+        updates.video_calls_enabled = videoCallsEnabled;
+        updates.video_rate_per_minute =
+          Number.isNaN(vRate) || vRate < 0 ? 0 : Math.round(vRate * 100) / 100;
+        updates.video_min_minutes = vMin;
 
         const lpRate = parseFloat(livePrivateRate);
         let lpMin = parseInt(livePrivateMinMinutes, 10);
@@ -687,6 +701,58 @@ export default function SettingsPage() {
                           </p>
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isCreator && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Video size={18} className="text-pink-500" /> Video calls
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  Same as voice: wallet hold for the minimum, then per minute. Camera on both sides.
+                </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Enable video calls</p>
+                    <p className="text-sm text-zinc-400">Shows a video button in chat for subs</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={videoCallsEnabled}
+                      onChange={() => setVideoCallsEnabled(!videoCallsEnabled)}
+                    />
+                    <div className="w-11 h-6 bg-zinc-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600" />
+                  </label>
+                </div>
+                {videoCallsEnabled && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Price per minute (£)</label>
+                      <input
+                        type="number"
+                        min="0.5"
+                        step="0.5"
+                        value={videoRate}
+                        onChange={(e) => setVideoRate(e.target.value)}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-3 outline-none focus:border-pink-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 mb-1.5 block">Minimum minutes</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="15"
+                        value={videoMinMinutes}
+                        onChange={(e) => setVideoMinMinutes(e.target.value)}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-3 outline-none focus:border-pink-500"
+                      />
                     </div>
                   </div>
                 )}

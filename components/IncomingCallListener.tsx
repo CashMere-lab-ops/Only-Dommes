@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Phone, X } from 'lucide-react';
+import { Phone, Video, X } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createNotification } from '../lib/notifications';
 
@@ -12,6 +12,7 @@ type CallRow = {
   subscriber_id: string;
   conversation_id: string | null;
   status: string;
+  call_kind?: string;
   rate_per_minute: number;
   min_minutes: number;
   amount_held?: number;
@@ -112,7 +113,9 @@ export default function IncomingCallListener() {
     closeBrowserNotif();
 
     try {
-      const n = new Notification('Incoming voice call', {
+      const n = new Notification(
+        call.call_kind === 'video' ? 'Incoming video call' : 'Incoming voice call',
+        {
         body: `${name} · £${rate}/min`,
         tag: `voice-call-${call.id}`,
         
@@ -394,8 +397,14 @@ export default function IncomingCallListener() {
             </div>
 
             <div className="flex items-center justify-center gap-2 text-pink-400 mb-2">
-              <Phone size={18} className="animate-pulse" />
-              <span className="text-sm font-medium">Incoming voice call</span>
+              {incoming.call_kind === 'video' ? (
+                <Video size={18} className="animate-pulse" />
+              ) : (
+                <Phone size={18} className="animate-pulse" />
+              )}
+              <span className="text-sm font-medium">
+                Incoming {incoming.call_kind === 'video' ? 'video' : 'voice'} call
+              </span>
             </div>
 
             <h3 className="text-xl font-semibold text-white">{displayName}</h3>

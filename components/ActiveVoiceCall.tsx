@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { PhoneOff, Mic, MicOff, Volume2, Volume1 } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, Volume2, Volume1, Video, VideoOff } from 'lucide-react';
 import { Room, RoomEvent, Track, ConnectionState, ConnectionQuality } from 'livekit-client';
 import { createClient } from '../lib/supabase';
 
@@ -11,6 +11,7 @@ type CallRow = {
   subscriber_id: string;
   conversation_id: string | null;
   status: string;
+  call_kind?: string;
   rate_per_minute: number;
   min_minutes: number;
   max_minutes?: number;
@@ -55,7 +56,10 @@ export default function ActiveVoiceCall() {
   const [reportDone, setReportDone] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
+  const [camOff, setCamOff] = useState(false);
   const remoteAudioEls = useRef<HTMLAudioElement[]>([]);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const [blockDone, setBlockDone] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
@@ -449,14 +453,9 @@ export default function ActiveVoiceCall() {
           el.style.display = 'none';
           document.body.appendChild(el);
           remoteAudioEls.current.push(el);
-          // Prefer speaker route when possible
-          try {
-            if (typeof (el as any).setSinkId === 'function') {
-              // default device; browser manages earpiece vs speaker on many mobiles
-            }
-          } catch {
-            /* ignore */
-          }
+        }
+        if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
+          track.attach(remoteVideoRef.current);
         }
       });
 
@@ -506,6 +505,17 @@ export default function ActiveVoiceCall() {
       await room.connect(data.url, data.token);
       await room.localParticipant.setMicrophoneEnabled(true);
       setMuted(false);
+      if ((c.call_kind || 'voice') === 'video') {
+        try {
+          await room.localParticipant.setCameraEnabled(true);
+          const cam = room.localParticipant.getTrackPublication(Track.Source.Camera);
+          if (cam?.track && localVideoRef.current) {
+            cam.track.attach(localVideoRef.current);
+          }
+        } catch (camErr: any) {
+          setError(camErr?.message || 'Camera permission denied');
+        }
+      }
 
       // If other already in room
       await checkBothConnected(room, c);
@@ -682,6 +692,14 @@ export default function ActiveVoiceCall() {
     setMuted(next);
   };
 
+  const toggleCam = async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    const next = !camOff;
+    await room.localParticipant.setCameraEnabled(!next);
+    setCamOff(next);
+  };
+
   if (phase === 'ended' && endSummary) {
     return (
       <div className="fixed inset-0 z-[210] bg-zinc-950/95 flex flex-col items-center justify-center p-6">
@@ -826,11 +844,31 @@ export default function ActiveVoiceCall() {
     if (phase === 'connecting') return 'Connecting…';
     if (phase === 'waiting') return 'Waiting for them to join…';
     if (phase === 'reconnecting') return 'Connection lost — reconnecting…';
-    return 'Voice call';
+    return (call?.call_kind || 'voice') === 'video' ? 'Video call' : 'Voice call';
   };
+
+  const isVideo = (call?.call_kind || 'voice') === 'video';
 
   return (
     <div className="fixed inset-0 z-[210] bg-zinc-950 flex flex-col items-center justify-center p-6 overflow-hidden">
+      {isVideo && (
+        <>
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover bg-black"
+          />
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute bottom-28 right-4 w-28 h-40 object-cover rounded-2xl border border-white/20 bg-black z-10 shadow-xl"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-zinc-950/40 pointer-events-none" />
+        </>
+      )}
       {/* Studio blurred background */}
       <div className="absolute inset-0 pointer-events-none">
         {otherAvatar ? (
@@ -966,6 +1004,22 @@ export default function ActiveVoiceCall() {
           >
             {muted ? <MicOff size={22} /> : <Mic size={22} />}
           </button>
+
+          {(call.call_kind || 'voice') === 'video' && (
+            <button
+              type="button"
+              onClick={toggleCam}
+              disabled={phase === 'connecting'}
+              className={`w-14 h-14 rounded-full flex items-center justify-center border transition ${
+                camOff
+                  ? 'bg-zinc-800 border-zinc-600 text-white'
+                  : 'bg-zinc-900 border-zinc-700 text-zinc-200 hover:border-pink-500'
+              }`}
+              title={camOff ? 'Camera off' : 'Camera on'}
+            >
+              {camOff ? <VideoOff size={22} /> : <Video size={22} />}
+            </button>
+          )}
 
           <button
             type="button"
