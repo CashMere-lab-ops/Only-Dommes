@@ -88,9 +88,6 @@ export default function ActiveVoiceCall() {
     return Math.round(rateNum * (seconds / 60) * 100) / 100;
   };
   const minCharge = rateNum * minMinsNum;
-  const liveCost = () => Math.max(elapsedCost(), phase === 'in_call' ? 0 : 0);
-
-  const runningCost = liveCost;
 
   const disconnectRoom = async () => {
     const room = roomRef.current;
@@ -923,7 +920,7 @@ export default function ActiveVoiceCall() {
             autoPlay
             playsInline
             muted
-            className="absolute right-4 w-[72px] h-[104px] sm:w-28 sm:h-40 object-cover rounded-2xl border border-white/20 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+            className="absolute left-4 w-[72px] h-[104px] sm:w-28 sm:h-40 object-cover rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
             style={{ bottom: 'calc(7.5rem + env(safe-area-inset-bottom))' }}
           />
           <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none z-10" />
@@ -953,27 +950,19 @@ export default function ActiveVoiceCall() {
           paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
         }}
       >
-        <div className="px-4 pt-2">
-          <div className="inline-flex max-w-[46%] items-center gap-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0" />
-            <span className="text-sm font-medium text-white truncate">{otherName}</span>
-          </div>
+        <div className="absolute left-1/2 -translate-x-1/2 z-30 text-center" style={{ top: 'max(12px, calc(env(safe-area-inset-top) + 6px))' }}>
+          <p className="text-[11px] font-medium text-white/80 drop-shadow mb-1.5 truncate max-w-[70vw]">{otherName}</p>
+          {phase === 'in_call' ? (
+            <div className="inline-flex flex-col items-center rounded-full bg-black/45 backdrop-blur-xl border border-white/10 px-5 py-1.5">
+              <span className="text-[15px] font-medium text-white tabular-nums tracking-[0.08em]">{formatTime(seconds)}</span>
+              <span className="text-[10px] text-pink-300/90 tabular-nums">£{elapsedCost().toFixed(2)}</span>
+            </div>
+          ) : (
+            <p className="text-xs text-white/60">{statusLine()}</p>
+          )}
         </div>
 
-        {phase === 'in_call' && (
-          <div className="absolute left-1/2 -translate-x-1/2 z-30" style={{ top: 'max(14px, calc(env(safe-area-inset-top) + 8px))' }}>
-            <div className="flex flex-col items-center rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 px-4 py-2 shadow-lg">
-              <span className="text-lg font-mono text-white tabular-nums tracking-wide">{formatTime(seconds)}</span>
-              <span className="text-[11px] text-pink-300 tabular-nums mt-0.5">
-                £{elapsedCost().toFixed(2)} · £{rateNum.toFixed(2)}/min
-              </span>
-            </div>
-          </div>
-        )}
-
-        {phase !== 'in_call' && (
-          <p className="text-center text-sm text-white/70 mt-16">{statusLine()}</p>
-        )}
+        <div className="h-20 shrink-0" />
 
         {!isVideo && (
           <div className="flex-1 flex flex-col items-center justify-center px-6">
@@ -1044,7 +1033,7 @@ export default function ActiveVoiceCall() {
               type="button"
               onClick={toggleMute}
               disabled={phase === 'connecting'}
-              className={`w-13 h-13 w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md border transition ${
+              className={`w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md border transition ${
                 muted
                   ? 'bg-white text-zinc-950 border-white'
                   : 'bg-white/10 border-white/15 text-white'
