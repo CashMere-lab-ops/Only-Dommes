@@ -923,10 +923,11 @@ export default function ActiveVoiceCall() {
             autoPlay
             playsInline
             muted
-            className="absolute bottom-36 right-4 w-20 h-28 sm:w-28 sm:h-40 object-cover rounded-2xl border border-white/25 bg-zinc-900 z-20 shadow-2xl"
+            className="absolute right-4 w-[72px] h-[104px] sm:w-28 sm:h-40 object-cover rounded-2xl border border-white/20 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+            style={{ bottom: 'calc(7.5rem + env(safe-area-inset-bottom))' }}
           />
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent pointer-events-none z-10" />
-          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent pointer-events-none z-10" />
+          <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none z-10" />
+          <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none z-10" />
         </>
       ) : (
         <div className="absolute inset-0 pointer-events-none">
@@ -935,9 +936,9 @@ export default function ActiveVoiceCall() {
               <img
                 src={otherAvatar}
                 alt=""
-                className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl opacity-40"
+                className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl opacity-35"
               />
-              <div className="absolute inset-0 bg-zinc-950/70" />
+              <div className="absolute inset-0 bg-zinc-950/75" />
             </>
           ) : (
             <div className="absolute inset-0 bg-zinc-950" />
@@ -945,60 +946,73 @@ export default function ActiveVoiceCall() {
         </div>
       )}
 
-      <div className="relative z-20 flex flex-col h-full">
-        <div className="flex items-center px-4 pt-4 pb-2">
-          <div className="min-w-0 max-w-[42%]">
-            <p className="text-[11px] uppercase tracking-wide text-white/50">{statusLine()}</p>
-            <p className="text-base font-semibold text-white truncate">{otherName}</p>
+      <div
+        className="relative z-20 flex flex-col h-full"
+        style={{
+          paddingTop: 'max(12px, env(safe-area-inset-top))',
+          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        }}
+      >
+        <div className="px-4 pt-2">
+          <div className="inline-flex max-w-[46%] items-center gap-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0" />
+            <span className="text-sm font-medium text-white truncate">{otherName}</span>
           </div>
         </div>
+
         {phase === 'in_call' && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
-            <div className="flex items-center gap-2 rounded-full bg-black/55 backdrop-blur-md border border-white/10 px-4 py-1.5 shadow-lg">
-              <span className="text-sm font-mono text-white tabular-nums">{formatTime(seconds)}</span>
-              <span className="w-px h-3 bg-white/20" />
-              <span className="text-sm text-pink-300 tabular-nums">£{elapsedCost().toFixed(2)}</span>
+          <div className="absolute left-1/2 -translate-x-1/2 z-30" style={{ top: 'max(14px, calc(env(safe-area-inset-top) + 8px))' }}>
+            <div className="flex flex-col items-center rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 px-4 py-2 shadow-lg">
+              <span className="text-lg font-mono text-white tabular-nums tracking-wide">{formatTime(seconds)}</span>
+              <span className="text-[11px] text-pink-300 tabular-nums mt-0.5">
+                £{elapsedCost().toFixed(2)} · £{rateNum.toFixed(2)}/min
+              </span>
             </div>
           </div>
         )}
 
+        {phase !== 'in_call' && (
+          <p className="text-center text-sm text-white/70 mt-16">{statusLine()}</p>
+        )}
+
         {!isVideo && (
           <div className="flex-1 flex flex-col items-center justify-center px-6">
-            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-3xl font-bold mb-4">
+            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-3xl font-bold ring-2 ring-white/10 shadow-2xl">
               {otherAvatar ? (
                 <img src={otherAvatar} alt="" className="w-full h-full object-cover" />
               ) : (
                 initial
               )}
             </div>
-            <p className="text-pink-400 text-sm mb-1">{statusLine()}</p>
-            <h2 className="text-2xl font-semibold text-white">{otherName}</h2>
+            <h2 className="text-2xl font-semibold text-white mt-5">{otherName}</h2>
+            <p className="text-sm text-white/50 mt-1">{statusLine()}</p>
           </div>
         )}
 
         {isVideo && <div className="flex-1" />}
 
         {phase === 'reconnecting' && (
-          <div className="mx-5 mb-3 rounded-xl border border-amber-500/50 bg-amber-500/15 px-4 py-3 text-sm text-amber-100">
-            <p className="font-medium">Reconnecting…</p>
+          <div className="mx-5 mb-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 text-center">
+            Reconnecting…
           </div>
         )}
 
-        <div className="px-5 pb-8 pt-2">
+        <div className="px-5 pt-2">
           {userId === call.creator_id && call.extend_request_status === 'pending' && (
-            <div className="mb-4 rounded-2xl border border-pink-500/40 bg-zinc-950/80 backdrop-blur-md p-4">
-              <p className="text-sm text-white text-center mb-3">
-                <span className="font-semibold">{otherName}</span> requested +5 minutes
-                <span className="block text-xs text-zinc-400 mt-1">
-                  Extra hold £{(rateNum * 5).toFixed(2)}
-                </span>
+            <div className="mb-4 rounded-3xl border border-white/10 bg-black/55 backdrop-blur-xl p-4 shadow-2xl">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-pink-300 text-center mb-1">Time request</p>
+              <p className="text-sm text-white text-center">
+                <span className="font-semibold">{otherName}</span> would like +5 minutes
+              </p>
+              <p className="text-xs text-white/45 text-center mt-1 mb-4">
+                Extra hold £{(rateNum * 5).toFixed(2)}
               </p>
               <div className="flex gap-2">
                 <button
                   type="button"
                   disabled={extendActing}
                   onClick={() => respondMoreTime(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm text-zinc-200 disabled:opacity-50"
+                  className="flex-1 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm text-white/80 disabled:opacity-50"
                 >
                   Decline
                 </button>
@@ -1006,7 +1020,7 @@ export default function ActiveVoiceCall() {
                   type="button"
                   disabled={extendActing}
                   onClick={() => respondMoreTime(true)}
-                  className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-sm font-semibold text-white disabled:opacity-50"
+                  className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {extendActing ? '…' : 'Accept'}
                 </button>
@@ -1014,92 +1028,90 @@ export default function ActiveVoiceCall() {
             </div>
           )}
           {holdToast && (
-            <p className="text-center text-sm text-pink-300 mb-3">{holdToast}</p>
+            <div className="mb-3 text-center">
+              <span className="inline-flex rounded-full bg-black/55 backdrop-blur-md border border-white/10 px-4 py-1.5 text-sm text-pink-200">
+                {holdToast}
+              </span>
+            </div>
           )}
           {holdLow && userId === call.subscriber_id && call.extend_request_status !== 'pending' && (
-            <p className="text-center text-xs text-amber-300 mb-3">
-              Time running low · request +5 min
-            </p>
+            <p className="text-center text-xs text-amber-200/90 mb-3">Time running low</p>
           )}
           {error && <p className="text-center text-sm text-red-400 mb-3">{error}</p>}
-          <p className="text-center text-xs text-white/50 mb-4">
-            £{rateNum.toFixed(2)}/min
-            {minMinsNum > 0 ? ` · min £${minCharge.toFixed(2)}` : ''}
-          </p>
 
-          <div className="flex items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={toggleMute}
-            disabled={phase === 'connecting'}
-            className={`w-14 h-14 rounded-full flex items-center justify-center border transition ${
-              muted
-                ? 'bg-zinc-800 border-zinc-600 text-white'
-                : 'bg-zinc-900 border-zinc-700 text-zinc-200 hover:border-pink-500'
-            }`}
-          >
-            {muted ? <MicOff size={22} /> : <Mic size={22} />}
-          </button>
-
-          {(call.call_kind || 'voice') === 'video' && (
+          <div className="flex items-center justify-center gap-3 pb-1">
             <button
               type="button"
-              onClick={toggleCam}
+              onClick={toggleMute}
               disabled={phase === 'connecting'}
-              className={`w-14 h-14 rounded-full flex items-center justify-center border transition ${
-                camOff
-                  ? 'bg-zinc-800 border-zinc-600 text-white'
-                  : 'bg-zinc-900 border-zinc-700 text-zinc-200 hover:border-pink-500'
+              className={`w-13 h-13 w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md border transition ${
+                muted
+                  ? 'bg-white text-zinc-950 border-white'
+                  : 'bg-white/10 border-white/15 text-white'
               }`}
-              title={camOff ? 'Camera off' : 'Camera on'}
             >
-              {camOff ? <VideoOff size={22} /> : <Video size={22} />}
+              {muted ? <MicOff size={22} /> : <Mic size={22} />}
             </button>
-          )}
 
-          {!isVideo && (
-          <button
-            type="button"
-            onClick={toggleSpeaker}
-            disabled={phase === 'connecting'}
-            className={`w-14 h-14 rounded-full flex items-center justify-center border transition ${
-              speakerOn
-                ? 'bg-zinc-900 border-pink-500/50 text-pink-400'
-                : 'bg-zinc-900 border-zinc-700 text-zinc-200'
-            }`}
-            title={speakerOn ? 'Speaker on' : 'Quieter'}
-          >
-            {speakerOn ? <Volume2 size={22} /> : <Volume1 size={22} />}
-          </button>
-          )}
+            {(call.call_kind || 'voice') === 'video' && (
+              <button
+                type="button"
+                onClick={toggleCam}
+                disabled={phase === 'connecting'}
+                className={`w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md border transition ${
+                  camOff
+                    ? 'bg-white text-zinc-950 border-white'
+                    : 'bg-white/10 border-white/15 text-white'
+                }`}
+                title={camOff ? 'Camera off' : 'Camera on'}
+              >
+                {camOff ? <VideoOff size={22} /> : <Video size={22} />}
+              </button>
+            )}
 
-          <button
-            type="button"
-            onClick={() => hangUp('local')}
-            className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg shadow-red-900/40"
-          >
-            <PhoneOff size={26} />
-          </button>
+            {!isVideo && (
+              <button
+                type="button"
+                onClick={toggleSpeaker}
+                disabled={phase === 'connecting'}
+                className={`w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md border transition ${
+                  speakerOn
+                    ? 'bg-white/10 border-pink-400/40 text-pink-300'
+                    : 'bg-white/10 border-white/15 text-white'
+                }`}
+                title={speakerOn ? 'Speaker on' : 'Quieter'}
+              >
+                {speakerOn ? <Volume2 size={22} /> : <Volume1 size={22} />}
+              </button>
+            )}
 
-          {phase === 'in_call' && userId === call.subscriber_id && (
             <button
               type="button"
-              onClick={requestMoreTime}
-              disabled={extending || call.extend_request_status === 'pending'}
-              className="w-14 h-14 rounded-full flex flex-col items-center justify-center border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-pink-500 text-[10px] font-semibold leading-tight disabled:opacity-50"
-              title="Request +5 minutes"
+              onClick={() => hangUp('local')}
+              className="w-[68px] h-[68px] rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-[0_10px_30px_rgba(220,38,38,0.45)]"
             >
-              {extending || call.extend_request_status === 'pending' ? (
-                <span className="text-[10px] text-pink-300">Wait</span>
-              ) : (
-                <>
-                  <span className="text-sm text-pink-400">+5</span>
-                  <span>min</span>
-                </>
-              )}
+              <PhoneOff size={26} />
             </button>
-          )}
-        </div>
+
+            {phase === 'in_call' && userId === call.subscriber_id && (
+              <button
+                type="button"
+                onClick={requestMoreTime}
+                disabled={extending || call.extend_request_status === 'pending'}
+                className="w-14 h-14 rounded-full flex flex-col items-center justify-center backdrop-blur-md border border-white/15 bg-white/10 text-white text-[10px] font-semibold leading-tight disabled:opacity-50"
+                title="Request +5 minutes"
+              >
+                {extending || call.extend_request_status === 'pending' ? (
+                  <span className="text-[10px] text-pink-200">Wait</span>
+                ) : (
+                  <>
+                    <span className="text-sm text-pink-300">+5</span>
+                    <span className="text-white/70">min</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
