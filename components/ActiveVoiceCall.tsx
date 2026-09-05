@@ -21,6 +21,8 @@ type CallRow = {
   started_at?: string | null;
   ended_at?: string | null;
   livekit_room?: string | null;
+  extend_request_status?: string | null;
+  extend_request_at?: string | null;
 };
 
 type UiPhase =
@@ -50,6 +52,7 @@ export default function ActiveVoiceCall() {
   const [ratingDone, setRatingDone] = useState(false);
   const [extending, setExtending] = useState(false);
   const [holdToast, setHoldToast] = useState('');
+  const [extendActing, setExtendActing] = useState(false);
   const [earningsToast, setEarningsToast] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [reportReason, setReportReason] = useState('');
@@ -371,29 +374,69 @@ export default function ActiveVoiceCall() {
 
 
 
-  const extendHold = async () => {
+  const requestMoreTime = async () => {
     if (!call || extending || phase !== 'in_call') return;
     if (userId !== call.subscriber_id) return;
+    if (call.extend_request_status === 'pending') return;
     setExtending(true);
     try {
-      const extra = Math.round(rateNum * 5 * 100) / 100;
-      const next = Math.round((Number(call.amount_held || 0) + extra) * 100) / 100;
       const { error } = await supabase
         .from('voice_calls')
-        .update({ amount_held: next })
+        .update({
+          extend_request_status: 'pending',
+          extend_request_at: new Date().toISOString(),
+        })
         .eq('id', call.id)
         .eq('status', 'active');
       if (error) throw error;
-      setCall({ ...call, amount_held: next });
-      callRef.current = { ...call, amount_held: next };
-      setHoldToast(`+5 min added · hold now £${next.toFixed(2)}`);
-      setTimeout(() => setHoldToast(''), 3500);
+      const next = { ...call, extend_request_status: 'pending' };
+      setCall(next);
+      callRef.current = next;
+      setHoldToast('Request sent · waiting for them');
     } catch (e) {
       console.error(e);
-      setHoldToast('Could not add time');
+      setHoldToast('Could not send request');
       setTimeout(() => setHoldToast(''), 3000);
     } finally {
       setExtending(false);
+    }
+  };
+
+  const respondMoreTime = async (accept: boolean) => {
+    if (!call || extendActing || phase !== 'in_call') return;
+    if (userId !== call.creator_id) return;
+    setExtendActing(true);
+    try {
+      const extra = Math.round(rateNum * 5 * 100) / 100;
+      const nextHold = Math.round((Number(call.amount_held || 0) + extra) * 100) / 100;
+      const { error } = await supabase
+        .from('voice_calls')
+        .update(
+          accept
+            ? {
+                extend_request_status: 'accepted',
+                amount_held: nextHold,
+              }
+            : { extend_request_status: 'declined' }
+        )
+        .eq('id', call.id)
+        .eq('status', 'active');
+      if (error) throw error;
+      const next = {
+        ...call,
+        extend_request_status: accept ? 'accepted' : 'declined',
+        amount_held: accept ? nextHold : call.amount_held,
+      };
+      setCall(next);
+      callRef.current = next;
+      setHoldToast(accept ? 'Extra time accepted' : 'Request declined');
+      setTimeout(() => setHoldToast(''), 2800);
+    } catch (e) {
+      console.error(e);
+      setHoldToast('Could not respond');
+      setTimeout(() => setHoldToast(''), 3000);
+    } finally {
+      setExtendActing(false);
     }
   };
 
@@ -594,6 +637,19 @@ export default function ActiveVoiceCall() {
 
           if (row.status === 'active' && callIdRef.current !== row.id) {
             await connectToCall(row, uid);
+          }
+          if (row.status === 'active' && callIdRef.current === row.id) {
+            setCall((prev) => (prev ? { ...prev, ...row } : row));
+            callRef.current = { ...(callRef.current || row), ...row };
+            const st = row.extend_request_status;
+            if (st === 'accepted' && uid === row.subscriber_id) {
+              setHoldToast('They accepted · +5 min added');
+              setTimeout(() => setHoldToast(''), 3500);
+            }
+            if (st === 'declined' && uid === row.subscriber_id) {
+              setHoldToast('They declined extra time');
+              setTimeout(() => setHoldToast(''), 3500);
+            }
           }
           if (
             callIdRef.current === row.id &&
@@ -867,7 +923,7 @@ export default function ActiveVoiceCall() {
             autoPlay
             playsInline
             muted
-            className="absolute top-16 right-4 w-24 h-36 sm:w-28 sm:h-40 object-cover rounded-2xl border border-white/25 bg-zinc-900 z-20 shadow-2xl"
+            className="absolute bottom-36 right-4 w-20 h-28 sm:w-28 sm:h-40 object-cover rounded-2xl border border-white/25 bg-zinc-900 z-20 shadow-2xl"
           />
           <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent pointer-events-none z-10" />
           <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent pointer-events-none z-10" />
@@ -890,18 +946,21 @@ export default function ActiveVoiceCall() {
       )}
 
       <div className="relative z-20 flex flex-col h-full">
-        <div className="flex items-start justify-between px-5 pt-5 pb-2">
-          <div className="min-w-0">
-            <p className="text-xs text-white/70">{statusLine()}</p>
-            <p className="text-lg font-semibold text-white truncate">{otherName}</p>
+        <div className="flex items-center px-4 pt-4 pb-2">
+          <div className="min-w-0 max-w-[42%]">
+            <p className="text-[11px] uppercase tracking-wide text-white/50">{statusLine()}</p>
+            <p className="text-base font-semibold text-white truncate">{otherName}</p>
           </div>
-          {phase === 'in_call' && (
-            <div className="text-right">
-              <p className="text-xl font-mono text-white tabular-nums">{formatTime(seconds)}</p>
-              <p className="text-sm text-pink-400 tabular-nums">£{elapsedCost().toFixed(2)}</p>
-            </div>
-          )}
         </div>
+        {phase === 'in_call' && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30">
+            <div className="flex items-center gap-2 rounded-full bg-black/55 backdrop-blur-md border border-white/10 px-4 py-1.5 shadow-lg">
+              <span className="text-sm font-mono text-white tabular-nums">{formatTime(seconds)}</span>
+              <span className="w-px h-3 bg-white/20" />
+              <span className="text-sm text-pink-300 tabular-nums">£{elapsedCost().toFixed(2)}</span>
+            </div>
+          </div>
+        )}
 
         {!isVideo && (
           <div className="flex-1 flex flex-col items-center justify-center px-6">
@@ -926,12 +985,40 @@ export default function ActiveVoiceCall() {
         )}
 
         <div className="px-5 pb-8 pt-2">
+          {userId === call.creator_id && call.extend_request_status === 'pending' && (
+            <div className="mb-4 rounded-2xl border border-pink-500/40 bg-zinc-950/80 backdrop-blur-md p-4">
+              <p className="text-sm text-white text-center mb-3">
+                <span className="font-semibold">{otherName}</span> requested +5 minutes
+                <span className="block text-xs text-zinc-400 mt-1">
+                  Extra hold £{(rateNum * 5).toFixed(2)}
+                </span>
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={extendActing}
+                  onClick={() => respondMoreTime(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm text-zinc-200 disabled:opacity-50"
+                >
+                  Decline
+                </button>
+                <button
+                  type="button"
+                  disabled={extendActing}
+                  onClick={() => respondMoreTime(true)}
+                  className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {extendActing ? '…' : 'Accept'}
+                </button>
+              </div>
+            </div>
+          )}
           {holdToast && (
             <p className="text-center text-sm text-pink-300 mb-3">{holdToast}</p>
           )}
-          {holdLow && userId === call.subscriber_id && (
+          {holdLow && userId === call.subscriber_id && call.extend_request_status !== 'pending' && (
             <p className="text-center text-xs text-amber-300 mb-3">
-              Hold running low · tap +5 min to keep going
+              Time running low · request +5 min
             </p>
           )}
           {error && <p className="text-center text-sm text-red-400 mb-3">{error}</p>}
@@ -997,12 +1084,14 @@ export default function ActiveVoiceCall() {
           {phase === 'in_call' && userId === call.subscriber_id && (
             <button
               type="button"
-              onClick={extendHold}
-              disabled={extending}
+              onClick={requestMoreTime}
+              disabled={extending || call.extend_request_status === 'pending'}
               className="w-14 h-14 rounded-full flex flex-col items-center justify-center border border-zinc-700 bg-zinc-900 text-zinc-200 hover:border-pink-500 text-[10px] font-semibold leading-tight disabled:opacity-50"
-              title="Add 5 minutes to hold"
+              title="Request +5 minutes"
             >
-              {extending ? '…' : (
+              {extending || call.extend_request_status === 'pending' ? (
+                <span className="text-[10px] text-pink-300">Wait</span>
+              ) : (
                 <>
                   <span className="text-sm text-pink-400">+5</span>
                   <span>min</span>
