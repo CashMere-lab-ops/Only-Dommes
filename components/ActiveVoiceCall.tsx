@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { PhoneOff, Mic, MicOff, Volume2, Volume1, Video, VideoOff } from 'lucide-react';
 import { Room, RoomEvent, Track, ConnectionState, ConnectionQuality } from 'livekit-client';
 import { createClient } from '../lib/supabase';
+import { splitCreatorEarn } from '../lib/platform-fee';
+import { spendFromWallet } from '../lib/wallet';
+import { createNotification } from '../lib/notifications';
 
 type CallRow = {
   id: string;
@@ -23,6 +27,9 @@ type CallRow = {
   livekit_room?: string | null;
   extend_request_status?: string | null;
   extend_request_at?: string | null;
+  after_call_tip_gbp?: number | null;
+  caller_quality?: number | null;
+  rating?: number | null;
 };
 
 type UiPhase =
@@ -40,6 +47,11 @@ export default function ActiveVoiceCall() {
   const [call, setCall] = useState<CallRow | null>(null);
   const [otherName, setOtherName] = useState('…');
   const [otherAvatar, setOtherAvatar] = useState<string | null>(null);
+  const [otherUsername, setOtherUsername] = useState('');
+  const [endCharged, setEndCharged] = useState(0);
+  const [endDuration, setEndDuration] = useState(0);
+  const [callerQuality, setCallerQuality] = useState(0);
+  const [qualityDone, setQualityDone] = useState(false);
   const [muted, setMuted] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [phase, setPhase] = useState<UiPhase>('connecting');
@@ -65,6 +77,12 @@ export default function ActiveVoiceCall() {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const [blockDone, setBlockDone] = useState(false);
+  const [endSecondsLeft, setEndSecondsLeft] = useState(30);
+  const [tipAmount, setTipAmount] = useState<number | null>(10);
+  const [customTip, setCustomTip] = useState('');
+  const [tipping, setTipping] = useState(false);
+  const [tipDoneAmount, setTipDoneAmount] = useState(0);
+  const [tipError, setTipError] = useState('');
 
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -152,6 +170,7 @@ export default function ActiveVoiceCall() {
   };
 
   const checkBothConnected = async (room: Room, c: CallRow) => {
+    // Local + at least one remote participant
     const remoteCount = room.remoteParticipants.size;
     if (remoteCount >= 1 && room.state === ConnectionState.Connected) {
       await markBillingStarted(c);
@@ -176,6 +195,7 @@ export default function ActiveVoiceCall() {
     let label = '';
 
     if (!billingStarted.current) {
+      // Never both connected — no charge
       status = 'failed';
       amountCharged = 0;
       label =
@@ -189,16 +209,18 @@ export default function ActiveVoiceCall() {
       const secs = durationSeconds % 60;
       const dur = `${mins}:${String(secs).padStart(2, '0')}`;
       const extra = Math.max(0, usedMins - minMins);
+      const kindLabel = (c.call_kind || 'voice') === 'video' ? 'Video call' : 'Voice call';
       const breakdown =
         extra > 0
           ? `min ${minMins} min + ${extra} extra`
           : `min ${minMins} min`;
-      label = `Voice call · ${dur} · £${amountCharged.toFixed(2)} · ${breakdown}`;
+      label = `${kindLabel} · ${dur} · £${amountCharged.toFixed(2)} · ${breakdown}`;
     }
 
     await disconnectRoom();
 
     try {
+      // Only first hang-up writer wins
       const { data } = await supabase
         .from('voice_calls')
         .update({
@@ -213,6 +235,7 @@ export default function ActiveVoiceCall() {
         .maybeSingle();
 
       if (data) {
+        // Either party can trigger charge; server is idempotent by call id
         if (status === 'ended' && amountCharged > 0) {
           try {
             const {
@@ -248,29 +271,41 @@ export default function ActiveVoiceCall() {
     }
 
     setEndSummary(label || 'Call ended');
+    setEndCharged(amountCharged);
+    setEndDuration(durationSeconds);
     setPhase('ended');
+    hangingUp.current = false;
     const isSub = uid === c.subscriber_id;
-    const offerRating = isSub && status === 'ended' && amountCharged > 0;
-    if (offerRating) {
+    if (isSub && status === 'ended' && amountCharged > 0) {
       setShowRating(true);
       setRating(0);
       setRatingDone(false);
-      hangingUp.current = false;
-    } else {
-      setTimeout(() => {
-        setCall(null);
-        callRef.current = null;
-        callIdRef.current = null;
-        setSeconds(0);
-        secondsRef.current = 0;
-        billingStarted.current = false;
-        setEndSummary(null);
-        setShowRating(false);
-        setPhase('connecting');
-        setError('');
-        hangingUp.current = false;
-      }, 2500);
     }
+  };
+
+  const closeEndScreen = () => {
+    setCall(null);
+    callRef.current = null;
+    callIdRef.current = null;
+    setSeconds(0);
+    secondsRef.current = 0;
+    billingStarted.current = false;
+    setEndSummary(null);
+    setShowRating(false);
+    setRating(0);
+    setRatingDone(false);
+    setCallerQuality(0);
+    setQualityDone(false);
+    setShowReport(false);
+    setTipAmount(10);
+    setCustomTip('');
+    setTipping(false);
+    setTipDoneAmount(0);
+    setTipError('');
+    setEndSecondsLeft(30);
+    setPhase('connecting');
+    setError('');
+    hangingUp.current = false;
   };
 
   const submitRating = async (stars: number) => {
@@ -283,38 +318,81 @@ export default function ActiveVoiceCall() {
         .update({ rating: stars, rated_by: userIdRef.current })
         .eq('id', callRef.current.id);
       setRatingDone(true);
+      setEndSecondsLeft(30);
     } catch (e) {
       console.error(e);
     } finally {
       setRatingSaving(false);
-      setTimeout(() => {
-        setCall(null);
-        callRef.current = null;
-        callIdRef.current = null;
-        setSeconds(0);
-        secondsRef.current = 0;
-        billingStarted.current = false;
-        setEndSummary(null);
-        setShowRating(false);
-        setRating(0);
-        setRatingDone(false);
-        setPhase('connecting');
-        setError('');
-      }, 1200);
     }
   };
 
   const skipRating = () => {
     setShowRating(false);
-    setCall(null);
-    callRef.current = null;
-    callIdRef.current = null;
-    setSeconds(0);
-    secondsRef.current = 0;
-    billingStarted.current = false;
-    setEndSummary(null);
-    setPhase('connecting');
-    setError('');
+    setEndSecondsLeft(30);
+  };
+
+  const sendAfterCallTip = async () => {
+    const c = callRef.current;
+    const uid = userIdRef.current;
+    if (!c || !uid || tipping || tipDoneAmount > 0) return;
+    if (uid !== c.subscriber_id) return;
+    const amount = customTip ? parseFloat(customTip) : tipAmount;
+    if (!amount || !Number.isFinite(amount) || amount < 2) {
+      setTipError('Minimum tip is £2.00');
+      return;
+    }
+    setTipping(true);
+    setTipError('');
+    try {
+      const paid = await spendFromWallet({
+        amount,
+        toUserId: c.creator_id,
+        type: 'tip',
+        referenceType: 'call_tip',
+        referenceId: c.id,
+        description: `After-call tip`,
+      });
+      if (!paid.ok) throw new Error(paid.error);
+      await supabase.from('voice_calls').update({ after_call_tip_gbp: amount }).eq('id', c.id);
+      try {
+        await supabase.from('tips').insert({
+          from_user_id: uid,
+          to_user_id: c.creator_id,
+          amount,
+          conversation_id: c.conversation_id,
+          message: 'After-call tip',
+        });
+      } catch {
+        /* tips table optional */
+      }
+      if (c.conversation_id) {
+        await supabase.from('messages').insert({
+          conversation_id: c.conversation_id,
+          sender_id: uid,
+          content: `💸 tipped £${amount.toFixed(2)} after the call`,
+          media_type: 'tip',
+        });
+        await supabase
+          .from('conversations')
+          .update({ last_message_at: new Date().toISOString() })
+          .eq('id', c.conversation_id);
+      }
+      await createNotification({
+        userId: c.creator_id,
+        actorId: uid,
+        type: 'tip',
+        title: `${otherName} left a £${amount.toFixed(2)} thank-you after the call`,
+        body: null,
+        link: c.conversation_id ? `/messages/${c.conversation_id}` : '/earnings',
+      });
+      setTipDoneAmount(amount);
+      setEndSecondsLeft(30);
+      callRef.current = { ...c, after_call_tip_gbp: amount };
+    } catch (e: any) {
+      setTipError(e?.message || 'Tip failed');
+    } finally {
+      setTipping(false);
+    }
   };
 
   const submitCallReport = async () => {
@@ -352,6 +430,7 @@ export default function ActiveVoiceCall() {
         blocker_id: userIdRef.current,
         blocked_id: otherId,
       });
+      // ignore unique violation (already blocked)
       if (error && !String(error.message || '').toLowerCase().includes('duplicate')) {
         throw error;
       }
@@ -363,6 +442,8 @@ export default function ActiveVoiceCall() {
       setBlocking(false);
     }
   };
+
+
 
   const requestMoreTime = async () => {
     if (!call || extending || phase !== 'in_call') return;
@@ -452,6 +533,7 @@ export default function ActiveVoiceCall() {
       .single();
     setOtherName(profile?.display_name || profile?.username || 'User');
     setOtherAvatar(profile?.avatar_url || null);
+    setOtherUsername(profile?.username || '');
 
     try {
       const {
@@ -497,7 +579,8 @@ export default function ActiveVoiceCall() {
         checkBothConnected(room, c);
       });
 
-      room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
+      room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+        // Prefer remote quality when available; else local
         const q = quality;
         if (q === ConnectionQuality.Excellent) setConnectionQuality('excellent');
         else if (q === ConnectionQuality.Good) setConnectionQuality('good');
@@ -519,14 +602,15 @@ export default function ActiveVoiceCall() {
         } else if (state === ConnectionState.Connected) {
           checkBothConnected(room, c);
         } else if (state === ConnectionState.Disconnected) {
+          // Give LiveKit a moment to recover before treating as hang-up
           if (!hangingUp.current && callIdRef.current === c.id) {
             setPhase('reconnecting');
             setTimeout(() => {
-              const roomNow = roomRef.current;
+              const room = roomRef.current;
               if (
                 !hangingUp.current &&
                 callIdRef.current === c.id &&
-                (!roomNow || roomNow.state === ConnectionState.Disconnected)
+                (!room || room.state === ConnectionState.Disconnected)
               ) {
                 hangUp('remote');
               }
@@ -550,6 +634,7 @@ export default function ActiveVoiceCall() {
         }
       }
 
+      // If other already in room
       await checkBothConnected(room, c);
       if (!billingStarted.current) {
         setPhase('waiting');
@@ -622,12 +707,18 @@ export default function ActiveVoiceCall() {
           if (!uid) return;
           if (row.creator_id !== uid && row.subscriber_id !== uid) return;
 
+          const incomingTip = Number(row.after_call_tip_gbp || 0);
+          if (incomingTip > 0 && callIdRef.current === row.id) {
+            setTipDoneAmount(incomingTip);
+            callRef.current = { ...(callRef.current || row), after_call_tip_gbp: incomingTip };
+          }
+
           if (row.status === 'active' && callIdRef.current !== row.id) {
             await connectToCall(row, uid);
           }
           if (row.status === 'active' && callIdRef.current === row.id) {
             setCall((prev) => (prev ? { ...prev, ...row } : row));
-            callRef.current = { ...(callRef.current || row), ...row };
+            callRef.current = { ...(callRef.current || row), ...row};
             const st = row.extend_request_status;
             if (st === 'accepted' && uid === row.subscriber_id) {
               setHoldToast('They accepted · +5 min added');
@@ -657,8 +748,9 @@ export default function ActiveVoiceCall() {
               } else {
                 const m = Math.floor(dur / 60);
                 const s = dur % 60;
+                const kindLabel = (row.call_kind || 'voice') === 'video' ? 'Video call' : 'Voice call';
                 setEndSummary(
-                  `Voice call · ${m}:${String(s).padStart(2, '0')} · £${charged.toFixed(2)}`
+                  `${kindLabel} · ${m}:${String(s).padStart(2, '0')} · £${charged.toFixed(2)}`
                 );
                 if (uid === row.creator_id && charged > 0) {
                   setEarningsToast(`You earned £${charged.toFixed(2)}`);
@@ -666,14 +758,14 @@ export default function ActiveVoiceCall() {
                 }
               }
               setPhase('ended');
-              setTimeout(() => {
-                setCall(null);
-                callRef.current = null;
-                callIdRef.current = null;
-                billingStarted.current = false;
-                setEndSummary(null);
-                setSeconds(0);
-              }, 2500);
+              setEndCharged(charged);
+              setEndDuration(dur);
+              hangingUp.current = false;
+              const alreadyTip = Number((row as any).after_call_tip_gbp || 0);
+              if (alreadyTip > 0) setTipDoneAmount(alreadyTip);
+              if (uid === row.subscriber_id && charged > 0) {
+                setShowRating(true);
+              }
             }
           }
         }
@@ -685,6 +777,7 @@ export default function ActiveVoiceCall() {
     };
   }, [userId]);
 
+  // Timer only after both connected (billing started)
   useEffect(() => {
     if (phase !== 'in_call') return;
     const t = setInterval(() => {
@@ -696,13 +789,14 @@ export default function ActiveVoiceCall() {
           setTimeout(() => hangUp('local'), 0);
           return n;
         }
+        // End only when time used uses up the hold (not the minimum charge)
         const c = callRef.current;
         if (c && billingStarted.current) {
           const rate = Number(c.rate_per_minute || 0);
           const held = Number(c.amount_held || 0);
           if (held > 0 && rate > 0) {
-            const costNow = rate * (n / 60);
-            if (costNow >= held - 0.001) {
+            const elapsedCost = rate * (n / 60);
+            if (elapsedCost >= held - 0.001) {
               setTimeout(() => hangUp('local'), 0);
             }
           }
@@ -719,6 +813,7 @@ export default function ActiveVoiceCall() {
     remoteAudioEls.current.forEach((el) => {
       try {
         el.volume = next ? 1 : 0.85;
+        // volume boost as soft "speaker" cue; true earpiece routing is OS-level
       } catch {
         /* ignore */
       }
@@ -741,25 +836,140 @@ export default function ActiveVoiceCall() {
     setCamOff(next);
   };
 
-  if (phase === 'ended' && endSummary) {
-    return (
-      <div className="fixed inset-0 z-[210] bg-zinc-950/95 flex flex-col items-center justify-center p-6">
-        {earningsToast && (
-          <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl">
-            {earningsToast}
-          </div>
-        )}
-        <div className="w-full max-w-sm text-center">
-          <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-            <PhoneOff size={28} className="text-zinc-400" />
-          </div>
-          <p className="text-lg font-semibold text-white mb-1">Call ended</p>
-          <p className="text-sm text-zinc-400 mb-6">{endSummary}</p>
+  const submitCallerQuality = async (stars: number) => {
+    if (!callRef.current || qualityDone) return;
+    setCallerQuality(stars);
+    try {
+      await supabase
+        .from('voice_calls')
+        .update({ caller_quality: stars })
+        .eq('id', callRef.current.id);
+      setQualityDone(true);
+      setEndSecondsLeft(30);
+    } catch (e) {
+      console.error(e);
+      setQualityDone(true);
+      setEndSecondsLeft(30);
+    }
+  };
 
-          {showRating && !ratingDone && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+  useEffect(() => {
+    if (phase !== 'ended' || !endSummary) return;
+    setEndSecondsLeft(30);
+    const t = setInterval(() => {
+      setEndSecondsLeft((n) => {
+        if (showReport || tipping || ratingSaving) return n;
+        if (n <= 1) {
+          setTimeout(() => closeEndScreen(), 0);
+          return 0;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [phase, endSummary, showReport, tipping, ratingSaving]);
+
+  if (phase === 'ended' && endSummary) {
+    const endedCall = callRef.current || call;
+    const isCreator = !!(endedCall && userId === endedCall.creator_id);
+    const isSub = !!(endedCall && userId === endedCall.subscriber_id);
+    const split = splitCreatorEarn(endCharged);
+    const tipGross = tipDoneAmount || Number(endedCall?.after_call_tip_gbp || 0);
+    const tipSplit = splitCreatorEarn(tipGross);
+    const totalNet = Math.round((split.net_gbp + tipSplit.net_gbp) * 100) / 100;
+    const durLabel = formatTime(endDuration);
+    const billedMins = endCharged > 0 && endedCall
+      ? Math.max(endedCall.min_minutes || 1, Math.ceil(Math.max(endDuration, 1) / 60))
+      : 0;
+    const extraMins = endedCall ? Math.max(0, billedMins - (endedCall.min_minutes || 1)) : 0;
+    const kindLabel = (endedCall?.call_kind || 'voice') === 'video' ? 'Video call' : 'Voice call';
+    const selectedTip = customTip ? parseFloat(customTip) || 0 : tipAmount || 0;
+    return (
+      <div className="fixed inset-0 z-[210] bg-zinc-950 flex flex-col items-center justify-center p-6 overflow-y-auto">
+        <div className="w-full max-w-sm text-center py-4">
+          {otherAvatar ? (
+            <img src={otherAvatar} alt="" className="w-16 h-16 rounded-full object-cover mx-auto mb-3 ring-2 ring-white/10" />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center mx-auto mb-3 text-xl font-bold">
+              {(otherName || 'U').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <p className="text-lg font-semibold text-white">Call ended</p>
+          <p className="text-sm text-zinc-400 mt-0.5">{otherName}</p>
+          <p className="text-xs text-zinc-500 mt-1">
+            {kindLabel} · {durLabel}
+          </p>
+
+          <div className="mt-5 grid grid-cols-2 gap-2 text-left">
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">
+                {isCreator ? 'They paid' : 'You paid'}
+              </p>
+              <p className="text-lg font-semibold text-white tabular-nums">
+                £{endCharged.toFixed(2)}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-800 px-4 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">
+                {isCreator ? 'You earned' : 'Duration'}
+              </p>
+              <p className={`text-lg font-semibold tabular-nums ${isCreator ? 'text-pink-400' : 'text-white'}`}>
+                {isCreator ? `£${split.net_gbp.toFixed(2)}` : durLabel}
+              </p>
+            </div>
+          </div>
+
+          {endCharged > 0 && endedCall && (
+            <p className="text-[11px] text-zinc-500 mt-2">
+              Billed {billedMins} min
+              {extraMins > 0 ? ` · min ${endedCall.min_minutes} + ${extraMins} extra` : ` · ${endedCall.min_minutes} min minimum`}
+              {isCreator ? ' · after 20% fee' : ''}
+            </p>
+          )}
+
+          {isCreator && tipGross > 0 && (
+            <div className="mt-3 rounded-2xl border border-pink-500/30 bg-pink-600/10 px-4 py-3 text-left">
+              <p className="text-[10px] uppercase tracking-wider text-pink-300">Thank-you tip</p>
+              <p className="text-sm text-white mt-0.5">
+                +£{tipGross.toFixed(2)} · you keep £{tipSplit.net_gbp.toFixed(2)}
+              </p>
+              <p className="text-[11px] text-zinc-500 mt-1">Total earned £{totalNet.toFixed(2)}</p>
+            </div>
+          )}
+
+          {isCreator && tipGross <= 0 && endCharged > 0 && (
+            <p className="text-[11px] text-zinc-600 mt-3">If they leave an extra tip, it will appear here.</p>
+          )}
+
+          {isCreator && (
+            <div className="mt-5 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+              <p className="text-sm text-zinc-300 mb-1">Caller quality</p>
+              <p className="text-[11px] text-zinc-500 mb-3">Private — they never see this</p>
+              {qualityDone ? (
+                <p className="text-sm text-pink-400">Saved · {callerQuality}/5</p>
+              ) : (
+                <div className="flex items-center justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => submitCallerQuality(star)}
+                      className={`text-3xl transition ${
+                        star <= callerQuality ? 'text-pink-400' : 'text-zinc-600 hover:text-pink-300'
+                      }`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {isSub && showRating && !ratingDone && (
+            <div className="mt-5 bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <p className="text-sm text-zinc-300 mb-4">How was the call?</p>
-              <div className="flex items-center justify-center gap-2 mb-4">
+              <div className="flex items-center justify-center gap-2 mb-3">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
                     key={star}
@@ -774,25 +984,98 @@ export default function ActiveVoiceCall() {
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={skipRating}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
-              >
-                Skip
+              <button type="button" onClick={skipRating} className="text-xs text-zinc-500 hover:text-zinc-300">
+                Skip rating
               </button>
             </div>
           )}
 
-          {ratingDone && (
-            <p className="text-sm text-pink-400">Thanks for your feedback</p>
+          {ratingDone && <p className="mt-3 text-sm text-pink-400">Thanks for your feedback</p>}
+
+          {isSub && endCharged > 0 && (
+            <div className="mt-5 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-left">
+              <p className="text-sm text-white font-medium">Leave a little extra</p>
+              <p className="text-[11px] text-zinc-500 mt-0.5 mb-3">Optional · they keep 80%</p>
+              {tipGross > 0 ? (
+                <p className="text-sm text-pink-400">Sent £{tipGross.toFixed(2)} thank-you</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-2 mb-3">
+                    {[5, 10, 20, 50].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => {
+                          setTipAmount(amt);
+                          setCustomTip('');
+                          setEndSecondsLeft(30);
+                        }}
+                        className={`py-2.5 rounded-xl text-sm font-semibold ${
+                          tipAmount === amt && !customTip
+                            ? 'bg-pink-600 text-white'
+                            : 'bg-zinc-800 text-zinc-300'
+                        }`}
+                      >
+                        £{amt}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    min="2"
+                    step="0.01"
+                    placeholder="Custom amount"
+                    value={customTip}
+                    onChange={(e) => {
+                      setCustomTip(e.target.value);
+                      setTipAmount(null);
+                      setEndSecondsLeft(30);
+                    }}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 mb-3 outline-none focus:border-pink-500 text-sm"
+                  />
+                  {tipError && <p className="text-xs text-red-400 mb-2">{tipError}</p>}
+                  <button
+                    type="button"
+                    onClick={sendAfterCallTip}
+                    disabled={tipping || selectedTip < 2}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold disabled:opacity-50"
+                  >
+                    {tipping ? 'Sending…' : `Send £${selectedTip.toFixed(2)} tip`}
+                  </button>
+                </>
+              )}
+            </div>
           )}
 
-          <div className="mt-6 flex flex-col items-center gap-2">
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            {endedCall?.conversation_id && (
+              <Link
+                href={`/messages/${endedCall.conversation_id}`}
+                onClick={closeEndScreen}
+                className="py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-sm text-white"
+              >
+                Message
+              </Link>
+            )}
+            {otherUsername && (
+              <Link
+                href={`/${otherUsername}`}
+                onClick={closeEndScreen}
+                className="py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-sm text-white"
+              >
+                Profile
+              </Link>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-col items-center gap-2">
             {!showReport && !reportDone && (
               <button
                 type="button"
-                onClick={() => setShowReport(true)}
+                onClick={() => {
+                  setShowReport(true);
+                  setEndSecondsLeft(30);
+                }}
                 className="text-xs text-zinc-500 hover:text-zinc-300 underline"
               >
                 Report this call
@@ -813,11 +1096,11 @@ export default function ActiveVoiceCall() {
           </div>
 
           {reportDone && (
-            <p className="mt-4 text-xs text-zinc-400">Report submitted. Thank you.</p>
+            <p className="mt-3 text-xs text-zinc-400">Report submitted. Thank you.</p>
           )}
 
           {showReport && (
-            <div className="mt-6 text-left bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+            <div className="mt-5 text-left bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
               <p className="text-sm font-medium mb-3">Why are you reporting?</p>
               <div className="space-y-2 mb-4">
                 {[
@@ -847,6 +1130,7 @@ export default function ActiveVoiceCall() {
                   onClick={() => {
                     setShowReport(false);
                     setReportReason('');
+                    setEndSecondsLeft(30);
                   }}
                   className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm"
                 >
@@ -863,6 +1147,19 @@ export default function ActiveVoiceCall() {
               </div>
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={closeEndScreen}
+            className="mt-6 w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold text-white"
+          >
+            Done
+          </button>
+          <p className="text-[11px] text-zinc-600 mt-3">
+            {showReport || tipping || ratingSaving
+              ? 'Timer paused while you finish'
+              : `Closes in ${endSecondsLeft}s · or tap Done`}
+          </p>
         </div>
       </div>
     );
@@ -907,7 +1204,7 @@ export default function ActiveVoiceCall() {
             autoPlay
             playsInline
             muted
-            className="absolute right-4 w-[72px] h-[104px] sm:right-5 sm:w-28 sm:h-40 object-cover rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
+            className="absolute top-16 right-4 w-[72px] h-[104px] sm:top-20 sm:right-5 sm:w-28 sm:h-40 object-cover rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
             style={{ top: 'max(4.5rem, calc(env(safe-area-inset-top) + 3.25rem))' }}
           />
           <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none z-10" />
@@ -937,7 +1234,10 @@ export default function ActiveVoiceCall() {
           paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
         }}
       >
-        <div className="flex items-start justify-between px-4" style={{ paddingTop: 4 }}>
+        <div
+          className="flex items-start justify-between px-4"
+          style={{ paddingTop: 4 }}
+        >
           <div className="min-w-0 max-w-[38%] pt-1">
             <p className="text-[10px] uppercase tracking-[0.14em] text-white/45 truncate">
               {isVideo ? 'Video' : 'Voice'}

@@ -260,6 +260,16 @@ export default function CallHistoryPage() {
                             ))}
                           </div>
                         ) : null}
+                        {isMineCreator && c.caller_quality ? (
+                          <p className="text-[11px] text-zinc-500 mt-1">
+                            Your private score · {c.caller_quality}/5
+                          </p>
+                        ) : null}
+                        {Number(c.after_call_tip_gbp || 0) > 0 && (
+                          <p className="text-[11px] text-pink-400 mt-1">
+                            Thank-you tip £{Number(c.after_call_tip_gbp).toFixed(2)}
+                          </p>
+                        )}
                         {c.other?.username && (
                           <Link
                             href={`/${c.other.username}`}
