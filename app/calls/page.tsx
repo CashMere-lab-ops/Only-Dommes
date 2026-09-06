@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Phone, Star } from 'lucide-react';
+import { ArrowLeft, Phone, Star, Video } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
@@ -23,6 +23,9 @@ type CallRow = {
   created_at: string;
   started_at?: string | null;
   ended_at?: string | null;
+  call_kind?: string;
+  after_call_tip_gbp?: number | null;
+  caller_quality?: number | null;
 };
 
 export default function CallHistoryPage() {
@@ -166,8 +169,8 @@ export default function CallHistoryPage() {
               </h1>
               <p className="text-zinc-400">
                 {isCreator
-                  ? 'Past voice calls, earnings and ratings'
-                  : 'Your voice calls and spend'}
+                  ? 'Past voice and video calls, earnings and ratings'
+                  : 'Your voice and video calls and spend'}
               </p>
             </div>
 
@@ -203,7 +206,7 @@ export default function CallHistoryPage() {
                 <p className="text-sm text-zinc-600 mt-1">
                   {isCreator
                     ? 'When subs call you, they will show up here'
-                    : 'Request a voice call from a creator’s chat'}
+                    : 'Request a voice or video call from a creator’s chat'}
                 </p>
               </div>
             ) : (
@@ -215,6 +218,7 @@ export default function CallHistoryPage() {
                     'User';
                   const charged = Number(c.amount_charged || 0);
                   const isMineCreator = c.creator_id === userId;
+                  const isVideo = (c.call_kind || 'voice') === 'video';
                   return (
                     <div
                       key={c.id}
@@ -236,6 +240,18 @@ export default function CallHistoryPage() {
                           <p className="font-semibold truncate">{name}</p>
                           <span className="text-xs text-zinc-500 flex-shrink-0">
                             {formatDate(c.created_at)}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 mb-0.5">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                              isVideo
+                                ? 'bg-pink-600/15 text-pink-300 border border-pink-500/30'
+                                : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                            }`}
+                          >
+                            {isVideo ? <Video size={11} /> : <Phone size={11} />}
+                            {isVideo ? 'Video' : 'Voice'}
                           </span>
                         </div>
                         <p className="text-sm text-zinc-400 mt-0.5">

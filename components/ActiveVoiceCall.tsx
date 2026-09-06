@@ -83,6 +83,7 @@ export default function ActiveVoiceCall() {
   const [tipping, setTipping] = useState(false);
   const [tipDoneAmount, setTipDoneAmount] = useState(0);
   const [tipError, setTipError] = useState('');
+  const [tipToast, setTipToast] = useState<string | null>(null);
 
   const roomRef = useRef<Room | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -302,6 +303,7 @@ export default function ActiveVoiceCall() {
     setTipping(false);
     setTipDoneAmount(0);
     setTipError('');
+    setTipToast(null);
     setEndSecondsLeft(30);
     setPhase('connecting');
     setError('');
@@ -708,9 +710,20 @@ export default function ActiveVoiceCall() {
           if (row.creator_id !== uid && row.subscriber_id !== uid) return;
 
           const incomingTip = Number(row.after_call_tip_gbp || 0);
+          const prevTip = Number(
+            (callRef.current as CallRow | null)?.after_call_tip_gbp || tipDoneAmount || 0
+          );
           if (incomingTip > 0 && callIdRef.current === row.id) {
             setTipDoneAmount(incomingTip);
             callRef.current = { ...(callRef.current || row), after_call_tip_gbp: incomingTip };
+            if (incomingTip > prevTip && uid === row.creator_id) {
+              const keep = splitCreatorEarn(incomingTip).net_gbp;
+              setTipToast(
+                `£${incomingTip.toFixed(2)} thank-you tip · you keep £${keep.toFixed(2)}`
+              );
+              setEndSecondsLeft(30);
+              setTimeout(() => setTipToast(null), 4500);
+            }
           }
 
           if (row.status === 'active' && callIdRef.current !== row.id) {
@@ -886,6 +899,13 @@ export default function ActiveVoiceCall() {
     const selectedTip = customTip ? parseFloat(customTip) || 0 : tipAmount || 0;
     return (
       <div className="fixed inset-0 z-[210] bg-zinc-950 flex flex-col items-center justify-center p-6 overflow-y-auto">
+        {isCreator && tipToast && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[220] px-4 w-full max-w-sm">
+            <div className="bg-gradient-to-r from-pink-600 to-rose-500 text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl shadow-pink-900/40 text-center">
+              {tipToast}
+            </div>
+          </div>
+        )}
         <div className="w-full max-w-sm text-center py-4">
           {otherAvatar ? (
             <img src={otherAvatar} alt="" className="w-16 h-16 rounded-full object-cover mx-auto mb-3 ring-2 ring-white/10" />
