@@ -560,6 +560,9 @@ export default function ActiveVoiceCall() {
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
+        videoCaptureDefaults: {
+          facingMode: 'user',
+        },
       });
       roomRef.current = room;
 
@@ -626,7 +629,9 @@ export default function ActiveVoiceCall() {
       setMuted(false);
       if ((c.call_kind || 'voice') === 'video') {
         try {
-          await room.localParticipant.setCameraEnabled(true);
+          await room.localParticipant.setCameraEnabled(true, {
+            facingMode: 'user',
+          });
           const cam = room.localParticipant.getTrackPublication(Track.Source.Camera);
           if (cam?.track && localVideoRef.current) {
             cam.track.attach(localVideoRef.current);
@@ -1217,15 +1222,18 @@ export default function ActiveVoiceCall() {
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className="absolute inset-0 w-full h-full object-cover bg-black"
+            className="absolute inset-0 w-full h-full object-contain object-center bg-black"
           />
           <video
             ref={localVideoRef}
             autoPlay
             playsInline
             muted
-            className="absolute top-16 right-4 w-[72px] h-[104px] sm:top-20 sm:right-5 sm:w-28 sm:h-40 object-cover rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
-            style={{ top: 'max(4.5rem, calc(env(safe-area-inset-top) + 3.25rem))' }}
+            className="absolute top-16 right-4 w-[72px] h-[104px] sm:top-20 sm:right-5 sm:w-28 sm:h-40 object-contain object-center rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
+            style={{
+              top: 'max(4.5rem, calc(env(safe-area-inset-top) + 3.25rem))',
+              transform: 'scaleX(-1)',
+            }}
           />
           <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none z-10" />
           <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none z-10" />
