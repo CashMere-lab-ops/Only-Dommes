@@ -152,7 +152,6 @@ export default function ActiveVoiceCall() {
   };
 
   const checkBothConnected = async (room: Room, c: CallRow) => {
-    // Local + at least one remote participant
     const remoteCount = room.remoteParticipants.size;
     if (remoteCount >= 1 && room.state === ConnectionState.Connected) {
       await markBillingStarted(c);
@@ -177,7 +176,6 @@ export default function ActiveVoiceCall() {
     let label = '';
 
     if (!billingStarted.current) {
-      // Never both connected — no charge
       status = 'failed';
       amountCharged = 0;
       label =
@@ -201,7 +199,6 @@ export default function ActiveVoiceCall() {
     await disconnectRoom();
 
     try {
-      // Only first hang-up writer wins
       const { data } = await supabase
         .from('voice_calls')
         .update({
@@ -216,7 +213,6 @@ export default function ActiveVoiceCall() {
         .maybeSingle();
 
       if (data) {
-        // Either party can trigger charge; server is idempotent by call id
         if (status === 'ended' && amountCharged > 0) {
           try {
             const {
@@ -356,7 +352,6 @@ export default function ActiveVoiceCall() {
         blocker_id: userIdRef.current,
         blocked_id: otherId,
       });
-      // ignore unique violation (already blocked)
       if (error && !String(error.message || '').toLowerCase().includes('duplicate')) {
         throw error;
       }
@@ -368,8 +363,6 @@ export default function ActiveVoiceCall() {
       setBlocking(false);
     }
   };
-
-
 
   const requestMoreTime = async () => {
     if (!call || extending || phase !== 'in_call') return;
@@ -504,8 +497,7 @@ export default function ActiveVoiceCall() {
         checkBothConnected(room, c);
       });
 
-      room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
-        // Prefer remote quality when available; else local
+      room.on(RoomEvent.ConnectionQualityChanged, (quality) => {
         const q = quality;
         if (q === ConnectionQuality.Excellent) setConnectionQuality('excellent');
         else if (q === ConnectionQuality.Good) setConnectionQuality('good');
@@ -527,15 +519,14 @@ export default function ActiveVoiceCall() {
         } else if (state === ConnectionState.Connected) {
           checkBothConnected(room, c);
         } else if (state === ConnectionState.Disconnected) {
-          // Give LiveKit a moment to recover before treating as hang-up
           if (!hangingUp.current && callIdRef.current === c.id) {
             setPhase('reconnecting');
             setTimeout(() => {
-              const room = roomRef.current;
+              const roomNow = roomRef.current;
               if (
                 !hangingUp.current &&
                 callIdRef.current === c.id &&
-                (!room || room.state === ConnectionState.Disconnected)
+                (!roomNow || roomNow.state === ConnectionState.Disconnected)
               ) {
                 hangUp('remote');
               }
@@ -559,7 +550,6 @@ export default function ActiveVoiceCall() {
         }
       }
 
-      // If other already in room
       await checkBothConnected(room, c);
       if (!billingStarted.current) {
         setPhase('waiting');
@@ -695,7 +685,6 @@ export default function ActiveVoiceCall() {
     };
   }, [userId]);
 
-  // Timer only after both connected (billing started)
   useEffect(() => {
     if (phase !== 'in_call') return;
     const t = setInterval(() => {
@@ -707,14 +696,13 @@ export default function ActiveVoiceCall() {
           setTimeout(() => hangUp('local'), 0);
           return n;
         }
-        // End only when time used uses up the hold (not the minimum charge)
         const c = callRef.current;
         if (c && billingStarted.current) {
           const rate = Number(c.rate_per_minute || 0);
           const held = Number(c.amount_held || 0);
           if (held > 0 && rate > 0) {
-            const elapsedCost = rate * (n / 60);
-            if (elapsedCost >= held - 0.001) {
+            const costNow = rate * (n / 60);
+            if (costNow >= held - 0.001) {
               setTimeout(() => hangUp('local'), 0);
             }
           }
@@ -731,7 +719,6 @@ export default function ActiveVoiceCall() {
     remoteAudioEls.current.forEach((el) => {
       try {
         el.volume = next ? 1 : 0.85;
-        // volume boost as soft "speaker" cue; true earpiece routing is OS-level
       } catch {
         /* ignore */
       }
@@ -920,8 +907,8 @@ export default function ActiveVoiceCall() {
             autoPlay
             playsInline
             muted
-            className="absolute left-4 w-[72px] h-[104px] sm:w-28 sm:h-40 object-cover rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
-            style={{ bottom: 'calc(7.5rem + env(safe-area-inset-bottom))' }}
+            className="absolute right-4 w-[72px] h-[104px] sm:right-5 sm:w-28 sm:h-40 object-cover rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
+            style={{ top: 'max(4.5rem, calc(env(safe-area-inset-top) + 3.25rem))' }}
           />
           <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/75 via-black/20 to-transparent pointer-events-none z-10" />
           <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none z-10" />
@@ -950,19 +937,35 @@ export default function ActiveVoiceCall() {
           paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
         }}
       >
-        <div className="absolute left-1/2 -translate-x-1/2 z-30 text-center" style={{ top: 'max(12px, calc(env(safe-area-inset-top) + 6px))' }}>
-          <p className="text-[11px] font-medium text-white/80 drop-shadow mb-1.5 truncate max-w-[70vw]">{otherName}</p>
+        <div className="flex items-start justify-between px-4" style={{ paddingTop: 4 }}>
+          <div className="min-w-0 max-w-[38%] pt-1">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-white/45 truncate">
+              {isVideo ? 'Video' : 'Voice'}
+            </p>
+            <p className="text-sm font-semibold text-white truncate drop-shadow">{otherName}</p>
+          </div>
+          <div className="w-[38%]" />
+        </div>
+
+        <div
+          className="absolute left-1/2 -translate-x-1/2 z-30 text-center pointer-events-none"
+          style={{ top: 'max(10px, calc(env(safe-area-inset-top) + 6px))' }}
+        >
           {phase === 'in_call' ? (
-            <div className="inline-flex flex-col items-center rounded-full bg-black/45 backdrop-blur-xl border border-white/10 px-5 py-1.5">
-              <span className="text-[15px] font-medium text-white tabular-nums tracking-[0.08em]">{formatTime(seconds)}</span>
-              <span className="text-[10px] text-pink-300/90 tabular-nums">£{elapsedCost().toFixed(2)}</span>
+            <div className="inline-flex flex-col items-center rounded-full bg-black/45 backdrop-blur-xl border border-white/10 px-4 py-1">
+              <span className="text-[15px] font-medium text-white tabular-nums tracking-[0.08em]">
+                {formatTime(seconds)}
+              </span>
+              <span className="text-[10px] text-pink-300/90 tabular-nums">
+                £{elapsedCost().toFixed(2)}
+              </span>
             </div>
           ) : (
             <p className="text-xs text-white/60">{statusLine()}</p>
           )}
         </div>
 
-        <div className="h-20 shrink-0" />
+        <div className="h-4 shrink-0" />
 
         {!isVideo && (
           <div className="flex-1 flex flex-col items-center justify-center px-6">
