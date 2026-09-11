@@ -75,6 +75,7 @@ export default function ActiveVoiceCall() {
   const [camOff, setCamOff] = useState(false);
   const remoteAudioEls = useRef<HTMLAudioElement[]>([]);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteBlurRef = useRef<HTMLVideoElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const [blockDone, setBlockDone] = useState(false);
   const [endSecondsLeft, setEndSecondsLeft] = useState(30);
@@ -586,8 +587,9 @@ export default function ActiveVoiceCall() {
           document.body.appendChild(el);
           remoteAudioEls.current.push(el);
         }
-        if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
-          track.attach(remoteVideoRef.current);
+        if (track.kind === Track.Kind.Video) {
+          if (remoteVideoRef.current) track.attach(remoteVideoRef.current);
+          if (remoteBlurRef.current) track.attach(remoteBlurRef.current);
         }
       });
 
@@ -1258,10 +1260,17 @@ export default function ActiveVoiceCall() {
       {isVideo ? (
         <>
           <video
+            ref={remoteBlurRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover object-center scale-110 blur-2xl opacity-40"
+          />
+          <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className="absolute inset-0 w-full h-full object-cover object-center bg-black"
+            className="absolute inset-0 w-full h-full object-contain object-center bg-transparent"
           />
           <video
             ref={localVideoRef}
