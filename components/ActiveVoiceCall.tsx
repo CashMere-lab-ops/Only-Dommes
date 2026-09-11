@@ -1261,14 +1261,14 @@ export default function ActiveVoiceCall() {
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className="absolute inset-0 w-full h-full object-contain object-center bg-black"
+            className="absolute inset-0 w-full h-full object-cover object-center bg-black"
           />
           <video
             ref={localVideoRef}
             autoPlay
             playsInline
             muted
-            className="absolute top-16 right-4 w-[72px] h-[104px] sm:top-20 sm:right-5 sm:w-28 sm:h-40 object-contain object-center rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
+            className="absolute top-16 right-4 w-[72px] h-[104px] sm:top-20 sm:right-5 sm:w-28 sm:h-40 object-cover object-center rounded-[18px] ring-1 ring-white/25 bg-zinc-900 z-20 shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
             style={{
               top: 'max(4.5rem, calc(env(safe-area-inset-top) + 3.25rem))',
               transform: 'scaleX(-1)',
