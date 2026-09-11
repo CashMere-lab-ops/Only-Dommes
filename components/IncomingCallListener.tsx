@@ -346,7 +346,9 @@ export default function IncomingCallListener() {
         window.dispatchEvent(
           new CustomEvent('wod-join-call', { detail: { callId: incoming.id } })
         );
-        if (convoId) router.push(`/messages/${convoId}`);
+        if (convoId && window.location.pathname !== `/messages/${convoId}`) {
+          router.push(`/messages/${convoId}`);
+        }
       } else {
         await insertDeclineReceipt(incoming, userId, declineReason);
         clearIncoming();

@@ -92,6 +92,7 @@ export default function ActiveVoiceCall() {
   const hangingUp = useRef(false);
   const billingStarted = useRef(false);
   const secondsRef = useRef(0);
+  const joiningIdRef = useRef<string | null>(null);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -514,18 +515,28 @@ export default function ActiveVoiceCall() {
   };
 
   const connectToCall = async (c: CallRow, uid: string) => {
-    if (callIdRef.current === c.id && roomRef.current) return;
+    if (joiningIdRef.current === c.id) return;
+    if (
+      callIdRef.current === c.id &&
+      roomRef.current &&
+      roomRef.current.state !== ConnectionState.Disconnected
+    ) {
+      return;
+    }
 
+    joiningIdRef.current = c.id;
     hangingUp.current = false;
-    billingStarted.current = false;
+    if (callIdRef.current !== c.id) {
+      billingStarted.current = false;
+      setSeconds(0);
+      secondsRef.current = 0;
+    }
     setPhase('connecting');
     setError('');
     setEndSummary(null);
     callIdRef.current = c.id;
     callRef.current = c;
     setCall(c);
-    setSeconds(0);
-    secondsRef.current = 0;
 
     const otherId = c.creator_id === uid ? c.subscriber_id : c.creator_id;
     const { data: profile } = await supabase
@@ -594,6 +605,7 @@ export default function ActiveVoiceCall() {
       });
 
       room.on(RoomEvent.ParticipantDisconnected, () => {
+        if (roomRef.current !== room) return;
         if (!billingStarted.current) return;
         if (secondsRef.current < 3) return;
         if (room.remoteParticipants.size === 0) {
@@ -602,20 +614,21 @@ export default function ActiveVoiceCall() {
       });
 
       room.on(RoomEvent.ConnectionStateChanged, (state) => {
+        if (roomRef.current !== room) return;
         if (state === ConnectionState.Reconnecting) {
           setPhase('reconnecting');
         } else if (state === ConnectionState.Connected) {
           checkBothConnected(room, c);
         } else if (state === ConnectionState.Disconnected) {
-          // Give LiveKit a moment to recover before treating as hang-up
-          if (!hangingUp.current && callIdRef.current === c.id) {
+          if (!hangingUp.current && callIdRef.current === c.id && !joiningIdRef.current) {
             setPhase('reconnecting');
             setTimeout(() => {
-              const room = roomRef.current;
+              const current = roomRef.current;
               if (
                 !hangingUp.current &&
+                !joiningIdRef.current &&
                 callIdRef.current === c.id &&
-                (!room || room.state === ConnectionState.Disconnected)
+                (!current || current.state === ConnectionState.Disconnected)
               ) {
                 hangUp('remote');
               }
@@ -648,18 +661,22 @@ export default function ActiveVoiceCall() {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Failed to connect');
-      setPhase('ended');
-      setEndSummary('Call failed · you were not charged');
-      callIdRef.current = null;
-      callRef.current = null;
-      setCall(null);
-      await disconnectRoom();
-      hangingUp.current = false;
-      setTimeout(() => {
-        setEndSummary(null);
-        setError('');
-      }, 2500);
+      if (callIdRef.current === c.id && !roomRef.current) {
+        setError(err.message || 'Failed to connect');
+        setPhase('ended');
+        setEndSummary('Call failed · you were not charged');
+        callIdRef.current = null;
+        callRef.current = null;
+        setCall(null);
+        await disconnectRoom();
+        hangingUp.current = false;
+        setTimeout(() => {
+          setEndSummary(null);
+          setError('');
+        }, 2500);
+      }
+    } finally {
+      if (joiningIdRef.current === c.id) joiningIdRef.current = null;
     }
   };
 

@@ -2368,8 +2368,8 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Incoming call (creator) */}
-      {incomingCall && (
+      {/* Incoming call is handled by IncomingCallListener */}
+      {false && incomingCall && (
         <div className="fixed inset-0 z-[90] bg-black/70 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
             <div className="text-center mb-5">
