@@ -696,6 +696,28 @@ export default function ActiveVoiceCall() {
   }, []);
 
   useEffect(() => {
+    const onJoin = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: active } = await supabase
+        .from('voice_calls')
+        .select('*')
+        .eq('status', 'active')
+        .or(`creator_id.eq.${user.id},subscriber_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (active) {
+        await connectToCall(active as CallRow, user.id);
+      }
+    };
+    window.addEventListener('wod-join-call', onJoin);
+    return () => window.removeEventListener('wod-join-call', onJoin);
+  }, []);
+
+  useEffect(() => {
     if (!userId) return;
 
     const channel = supabase

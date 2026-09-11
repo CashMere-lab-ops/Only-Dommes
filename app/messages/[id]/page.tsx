@@ -1116,14 +1116,15 @@ export default function ChatPage() {
       const status = accept ? 'active' : 'declined';
       const updates: any = { status };
       if (accept) {
-        updates.started_at = new Date().toISOString();
         updates.livekit_room = `call-${incomingCall.id}`;
       }
-      await supabase
+      const { error } = await supabase
         .from('voice_calls')
         .update(updates)
         .eq('id', incomingCall.id)
-        .eq('creator_id', userId);
+        .eq('creator_id', userId)
+        .eq('status', 'requested');
+      if (error) throw error;
 
       if (accept) {
         await createNotification({
@@ -1134,7 +1135,9 @@ export default function ChatPage() {
           body: 'Connecting…',
           link: `/messages/${conversationId}`,
         });
-        alert('Call accepted — live audio coming in the next step');
+        window.dispatchEvent(
+          new CustomEvent('wod-join-call', { detail: { callId: incomingCall.id } })
+        );
       } else {
         await insertCallReceipt('declined', {
           senderId: userId,
@@ -2373,7 +2376,9 @@ export default function ChatPage() {
               <div className="w-16 h-16 rounded-full bg-pink-600/20 flex items-center justify-center mx-auto mb-3">
                 <Phone size={28} className="text-pink-400" />
               </div>
-              <h3 className="text-lg font-semibold">Incoming voice call</h3>
+              <h3 className="text-lg font-semibold">
+                Incoming {(incomingCall.call_kind || 'voice') === 'video' ? 'video' : 'voice'} call
+              </h3>
               <p className="text-sm text-zinc-400 mt-1">
                 £{Number(incomingCall.rate_per_minute).toFixed(2)}/min · min {incomingCall.min_minutes} min
               </p>

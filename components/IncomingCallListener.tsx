@@ -304,7 +304,6 @@ export default function IncomingCallListener() {
         status: accept ? 'active' : 'declined',
       };
       if (accept) {
-        updates.started_at = new Date().toISOString();
         updates.livekit_room = `call-${incoming.id}`;
       }
 
@@ -344,6 +343,9 @@ export default function IncomingCallListener() {
 
         const convoId = incoming.conversation_id;
         clearIncoming();
+        window.dispatchEvent(
+          new CustomEvent('wod-join-call', { detail: { callId: incoming.id } })
+        );
         if (convoId) router.push(`/messages/${convoId}`);
       } else {
         await insertDeclineReceipt(incoming, userId, declineReason);
