@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -26,8 +26,7 @@ import {
   MoreHorizontal,
   Settings,
   Type,
-  Plus,
-  Wallet,
+  Swords,
 } from 'lucide-react';
 import { notifyBalanceUpdated } from '../../../lib/wallet';
 import {
@@ -71,6 +70,14 @@ type StreamRow = {
   showcase_avatar_url?: string | null;
   thumbnail_url?: string | null;
   peak_viewers?: number;
+  raid_target_stream_id?: string | null;
+  raid_target_creator_id?: string | null;
+  raid_viewer_count?: number | null;
+  raided_at?: string | null;
+  last_raid_from_stream_id?: string | null;
+  last_raid_from_creator_id?: string | null;
+  last_raid_viewers?: number | null;
+  last_raid_at?: string | null;
 };
 
 const LIVE_REACT_EMOJIS = ['🔥', '👏', '👑', '😍', '💎'] as const;
@@ -224,11 +231,10 @@ function playAnnounceChime() {
   }
 }
 
-export default function LiveRoom({ streamId }: { streamId?: string }) {
-  const params = useParams();
+export default function LiveRoom({ streamId }: { streamId: string }) {
   const router = useRouter();
   const supabase = createClient();
-  const id = (streamId || (params?.id as string)) as string;
+  const id = streamId;
 
   const [loading, setLoading] = useState(true);
   /** Guest opened share link — show login gate, never connect LiveKit */
@@ -247,6 +253,43 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
   const [myBalance, setMyBalance] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [ending, setEnding] = useState(false);
+  const [showEndSheet, setShowEndSheet] = useState(false);
+  const [raidTargets, setRaidTargets] = useState<
+    {
+      id: string;
+      title: string;
+      viewer_count?: number;
+      thumbnail_url?: string | null;
+      creator?: {
+        username?: string | null;
+        display_name?: string | null;
+        avatar_url?: string | null;
+      } | null;
+    }[]
+  >([]);
+  const [raidTargetsLoading, setRaidTargetsLoading] = useState(false);
+  const [raidPickingId, setRaidPickingId] = useState<string | null>(null);
+  const [raidBusy, setRaidBusy] = useState(false);
+  const [raidError, setRaidError] = useState('');
+  const [outgoingRaid, setOutgoingRaid] = useState<{
+    target_stream_id: string;
+    target_title?: string | null;
+    target_live?: boolean;
+    target_creator?: {
+      username?: string | null;
+      display_name?: string | null;
+      avatar_url?: string | null;
+    } | null;
+    viewer_count?: number;
+  } | null>(null);
+  const [raidCountdown, setRaidCountdown] = useState(0);
+  const [incomingRaidBanner, setIncomingRaidBanner] = useState<{
+    name: string;
+    viewers: number;
+    avatar?: string | null;
+  } | null>(null);
+  const raidStartedRef = useRef(false);
+  const incomingRaidKeyRef = useRef<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<
     'idle' | 'connecting' | 'live' | 'ended' | 'error'
   >('idle');
@@ -284,12 +327,6 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
-  const [showWalletSheet, setShowWalletSheet] = useState(false);
-  const [topUpAmount, setTopUpAmount] = useState(25);
-  const [customTopUp, setCustomTopUp] = useState('');
-  const [toppingUp, setToppingUp] = useState(false);
-  const [topUpError, setTopUpError] = useState('');
-  const [topUpFlash, setTopUpFlash] = useState<string | null>(null);
 
   const [goalReachedFlash, setGoalReachedFlash] = useState(false);
   const [showGoalEditor, setShowGoalEditor] = useState(false);
@@ -610,6 +647,12 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
 
     if (data.status === 'ended') {
       setLiveStatus('ended');
+      if (data.raid_target_stream_id) {
+        setOutgoingRaid({
+          target_stream_id: data.raid_target_stream_id,
+          viewer_count: Number(data.raid_viewer_count || 0),
+        });
+      }
       const started = data.started_at || data.created_at
         ? new Date(data.started_at || data.created_at).getTime()
         : Date.now();
@@ -1039,7 +1082,25 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
               );
             }
           }
-          if (msg?.type === 'moderation' && msg.user_id) {
+          if (msg?.type === 'raid' && msg.target_stream_id) {
+            const raid = {
+              target_stream_id: String(msg.target_stream_id),
+              target_title: msg.target_title || null,
+              target_live: true,
+              target_creator: msg.target_creator || null,
+              viewer_count: Number(msg.viewer_count || 0),
+            };
+            setOutgoingRaid(raid);
+            setStream((s) =>
+              s
+                ? {
+                    ...s,
+                    raid_target_stream_id: raid.target_stream_id,
+                    raid_viewer_count: raid.viewer_count,
+                  }
+                : s
+            );
+          }
             const me = userIdRef.current;
             if (me && String(msg.user_id) === me) {
               const act = msg.action;
@@ -1370,53 +1431,6 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
     };
   }, [userId, isOwner, supabase]);
 
-  // After Stripe mid-live top-up, credit + clean the URL
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const q = new URLSearchParams(window.location.search);
-    const flag = q.get('topup');
-    const sessionId = q.get('session_id');
-    if (flag === 'cancelled') {
-      setShowWalletSheet(true);
-      setTopUpError('Top-up cancelled');
-      window.history.replaceState({}, '', `/live/${id}`);
-      return;
-    }
-    if (flag !== 'success' || !sessionId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.access_token) return;
-        const res = await fetch('/api/wallet/confirm-top-up', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ session_id: sessionId }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (cancelled) return;
-        if (res.ok && typeof data.balance === 'number') {
-          setMyBalance(data.balance);
-          notifyBalanceUpdated(data.balance);
-          setTopUpFlash('Wallet topped up');
-          setTimeout(() => setTopUpFlash(null), 2800);
-        }
-      } catch {
-        /* webhook may still credit */
-      } finally {
-        window.history.replaceState({}, '', `/live/${id}`);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, supabase]);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1487,6 +1501,29 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
         if (typeof data.my_tip_gbp === 'number') {
           setMyTipTotal(Number(data.my_tip_gbp));
         }
+        if (data.raid?.target_stream_id) {
+          setOutgoingRaid((prev) =>
+            prev?.target_creator ? prev : data.raid
+          );
+        }
+        if (data.incoming_raid?.from_creator) {
+          const key = String(
+            data.incoming_raid.at || data.incoming_raid.from_stream_id || ''
+          );
+          if (key && incomingRaidKeyRef.current !== key) {
+            incomingRaidKeyRef.current = key;
+            const fc = data.incoming_raid.from_creator;
+            setIncomingRaidBanner({
+              name:
+                fc.display_name ||
+                (fc.username ? `@${fc.username}` : 'A creator'),
+              viewers: Number(data.incoming_raid.viewers || 0),
+              avatar: fc.avatar_url || null,
+            });
+            playAnnounceChime();
+            setTimeout(() => setIncomingRaidBanner(null), 8000);
+          }
+        }
         if (data.status === 'ended' || data.stream?.status === 'ended') {
           void finalizeRef.current(data.stream);
         }
@@ -1518,7 +1555,42 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
             showJoinsRef.current = row.show_join_messages;
           }
           if (row.status === 'ended') {
+            if (row.raid_target_stream_id) {
+              setOutgoingRaid((prev) =>
+                prev || {
+                  target_stream_id: row.raid_target_stream_id,
+                  viewer_count: Number(row.raid_viewer_count || 0),
+                }
+              );
+            }
             void finalizeRef.current(row);
+          }
+          if (
+            row.last_raid_from_creator_id &&
+            row.last_raid_at &&
+            incomingRaidKeyRef.current !== String(row.last_raid_at)
+          ) {
+            incomingRaidKeyRef.current = String(row.last_raid_at);
+            void (async () => {
+              try {
+                const { data: fp } = await supabase
+                  .from('profiles')
+                  .select('display_name, username, avatar_url')
+                  .eq('id', row.last_raid_from_creator_id)
+                  .maybeSingle();
+                setIncomingRaidBanner({
+                  name:
+                    fp?.display_name ||
+                    (fp?.username ? `@${fp.username}` : 'A creator'),
+                  viewers: Number(row.last_raid_viewers || 0),
+                  avatar: fp?.avatar_url || null,
+                });
+                playAnnounceChime();
+                setTimeout(() => setIncomingRaidBanner(null), 8000);
+              } catch {
+                /* ignore */
+              }
+            })();
           }
         }
       )
@@ -2548,46 +2620,6 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
     }
   };
 
-  const startLiveTopUp = async () => {
-    const raw = customTopUp !== '' ? Number(customTopUp) : Number(topUpAmount);
-    const amount = Math.round(raw * 100) / 100;
-    if (!Number.isFinite(amount) || amount < 10) {
-      setTopUpError('Minimum top-up is £10');
-      return;
-    }
-    setToppingUp(true);
-    setTopUpError('');
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        setTopUpError('Please log in again');
-        return;
-      }
-      const res = await fetch('/api/wallet/top-up', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          amount,
-          from: 'live',
-          return_to: `/live/${id}`,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || 'Could not start top-up');
-      }
-      window.location.href = data.url;
-    } catch (e: any) {
-      setTopUpError(e?.message || 'Top-up failed');
-      setToppingUp(false);
-    }
-  };
-
   const sendTip = async (amount: number) => {
     if (!stream || isOwner) return;
     const minT = creatorMinTip > 2 ? creatorMinTip : 2;
@@ -2733,8 +2765,7 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
   };
 
 
-  const endLive = async () => {
-    if (!confirm('End this live stream? It will not be saved.')) return;
+  const endLiveOnly = async () => {
     intentionalLeaveRef.current = true;
     setReconnecting(false);
     if (reconnectTimerRef.current) {
@@ -2742,12 +2773,12 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
       reconnectTimerRef.current = null;
     }
     setEnding(true);
+    setRaidError('');
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       const peak = Math.max(peakViewers, viewerCount);
-      // Mark ended in DB FIRST so viewer polls / status API see it before room drops
       const res = await fetch('/api/live/end', {
         method: 'POST',
         headers: {
@@ -2762,6 +2793,7 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not end');
       endFinalized.current = true;
+      setShowEndSheet(false);
       setLiveStatus('ended');
       try {
         await cleanupRoom();
@@ -2791,6 +2823,143 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
       setEnding(false);
     }
   };
+
+  const openEndSheet = async () => {
+    if (!isOwner || ending || raidBusy) return;
+    setShowEndSheet(true);
+    setRaidError('');
+    setRaidPickingId(null);
+    setRaidTargetsLoading(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch(`/api/live/raid?exclude=${encodeURIComponent(id)}`, {
+        headers: session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {},
+        cache: 'no-store',
+      });
+      const data = await res.json().catch(() => ({}));
+      setRaidTargets(Array.isArray(data.streams) ? data.streams : []);
+    } catch {
+      setRaidTargets([]);
+    } finally {
+      setRaidTargetsLoading(false);
+    }
+  };
+
+  const raidToLive = async (targetId: string) => {
+    if (!isOwner || raidBusy || ending) return;
+    setRaidBusy(true);
+    setRaidError('');
+    try {
+      const target = raidTargets.find((t) => t.id === targetId);
+      const raidPayload = {
+        type: 'raid',
+        target_stream_id: targetId,
+        target_title: target?.title || null,
+        target_creator: target?.creator || null,
+        viewer_count: Math.max(viewerCount, trueViewerRef.current, 0),
+      };
+      try {
+        const room = roomRef.current;
+        if (room?.localParticipant) {
+          const bytes = new TextEncoder().encode(JSON.stringify(raidPayload));
+          await room.localParticipant.publishData(bytes, { reliable: true });
+        }
+      } catch {
+        /* viewers still pick it up from status */
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const peak = Math.max(peakViewers, viewerCount);
+      const res = await fetch('/api/live/raid', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          stream_id: id,
+          target_stream_id: targetId,
+          peak_viewers: peak,
+          viewer_count: raidPayload.viewer_count,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not raid');
+
+      intentionalLeaveRef.current = true;
+      endFinalized.current = true;
+      setShowEndSheet(false);
+      setOutgoingRaid(data.raid || {
+        target_stream_id: targetId,
+        target_title: target?.title,
+        target_creator: target?.creator,
+        viewer_count: raidPayload.viewer_count,
+      });
+      setLiveStatus('ended');
+      try {
+        await cleanupRoom();
+      } catch {
+        /* ignore */
+      }
+      setEndSummary({
+        ...(data.summary || {
+          title: stream?.title,
+          duration_seconds: liveStartedAt
+            ? Math.floor((Date.now() - liveStartedAt) / 1000)
+            : 0,
+          tip_raised_gbp: Number(stream?.tip_raised_gbp || 0),
+          tip_goal_gbp: Number(stream?.tip_goal_gbp || 0),
+          peak_viewers: peak,
+          tipper_count: 0,
+          showcase_name: stream?.showcase_name,
+          showcase_amount_gbp: stream?.showcase_amount_gbp,
+          showcase_avatar_url: stream?.showcase_avatar_url,
+        }),
+        my_tip_gbp: 0,
+        is_host: true,
+      });
+    } catch (e: any) {
+      setRaidError(e.message || 'Raid failed');
+    } finally {
+      setRaidBusy(false);
+    }
+  };
+
+  const endLive = async () => {
+    void openEndSheet();
+  };
+
+  useEffect(() => {
+    if (!outgoingRaid?.target_stream_id) return;
+    if (isOwner || endSummary?.is_host) return;
+    if (raidStartedRef.current) return;
+    raidStartedRef.current = true;
+    setRaidCountdown(6);
+  }, [outgoingRaid?.target_stream_id, isOwner, endSummary?.is_host]);
+
+  useEffect(() => {
+    if (raidCountdown <= 0) return;
+    if (isOwner || endSummary?.is_host) return;
+    const t = setInterval(() => {
+      setRaidCountdown((n) => {
+        if (n <= 1) {
+          const dest = outgoingRaid?.target_stream_id;
+          if (dest) {
+            setTimeout(() => router.push(`/live/${dest}?from=raid`), 0);
+          }
+          return 0;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [raidCountdown, isOwner, endSummary?.is_host, outgoingRaid?.target_stream_id, router]);
 
   const formatDuration = (sec: number) => {
     const s = Math.max(0, Math.floor(sec));
@@ -3019,6 +3188,16 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
         label: content.slice(9).trim() || 'Someone',
       };
     }
+    if (content.startsWith('__RAID__:')) {
+      const raw = content.slice(8);
+      const [label, count, uname] = raw.split('|');
+      return {
+        type: 'raid' as const,
+        label: (label || 'A creator').trim(),
+        count: Number(count || 0),
+        username: (uname || '').trim() || null,
+      };
+    }
     return null;
   };
 
@@ -3188,7 +3367,16 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                       {endSummary?.title || stream?.title || 'Live stream'}
                     </p>
                     <p className="text-xs text-zinc-500 mt-1">
-                      Not saved · no replay
+                      {outgoingRaid
+                        ? showAsHost
+                          ? `Raided ${
+                              outgoingRaid.target_creator?.display_name ||
+                              (outgoingRaid.target_creator?.username
+                                ? `@${outgoingRaid.target_creator.username}`
+                                : 'another live')
+                            }`
+                          : 'Sending you to another live'
+                        : 'Not saved · no replay'}
                     </p>
                   </div>
 
@@ -3272,6 +3460,43 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                         </div>
                       </div>
                     )}
+
+                  {outgoingRaid?.target_stream_id && (
+                    <div className="mb-4 rounded-2xl border border-pink-500/35 bg-pink-600/10 p-3 text-left">
+                      <p className="text-[10px] uppercase tracking-wide text-pink-300 font-bold flex items-center gap-1">
+                        <Swords size={11} /> Raid
+                      </p>
+                      <p className="text-sm font-semibold text-white mt-1 truncate">
+                        {outgoingRaid.target_creator?.display_name ||
+                          (outgoingRaid.target_creator?.username
+                            ? `@${outgoingRaid.target_creator.username}`
+                            : outgoingRaid.target_title || 'Another live')}
+                      </p>
+                      {!showAsHost && raidCountdown > 0 && (
+                        <p className="text-xs text-pink-200 mt-1 tabular-nums">
+                          Joining in {raidCountdown}s…
+                        </p>
+                      )}
+                      {showAsHost && (
+                        <p className="text-xs text-zinc-400 mt-1">
+                          Your viewers were sent over
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/live/${outgoingRaid.target_stream_id}${
+                              showAsHost ? '' : '?from=raid'
+                            }`
+                          )
+                        }
+                        className="mt-3 w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-sm font-semibold"
+                      >
+                        {showAsHost ? 'Watch their live' : 'Join raid now'}
+                      </button>
+                    </div>
+                  )}
 
                   {!showAsHost && creator?.username && (
                     <Link
@@ -3374,32 +3599,27 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                     <Users size={12} />
                     {viewerCount}
                   </span>
-                  {/* Wallet chip — tap to open compact wallet */}
+                  {/* Wallet balance — subs + creators */}
                   {userId && myBalance != null && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTopUpError('');
-                        setShowWalletSheet(true);
-                      }}
-                      className="h-8 pl-1.5 pr-2 rounded-full bg-black/55 backdrop-blur border border-pink-400/35 text-pink-50 tabular-nums flex items-center gap-1 max-w-[46vw] sm:max-w-none hover:border-pink-400/70 hover:bg-black/70 transition"
-                      title={isOwner ? 'Wallet' : 'Top up wallet'}
+                    <span
+                      className="bg-black/50 backdrop-blur text-[11px] sm:text-xs px-2 py-1 rounded-full flex items-center gap-1 border border-pink-500/30 text-pink-100 tabular-nums max-w-[42vw] sm:max-w-none"
+                      title={
+                        isOwner
+                          ? `Wallet · This live £${Number(stream?.tip_raised_gbp || 0).toFixed(2)} tips (you keep ~80%)`
+                          : 'Your wallet balance'
+                      }
                     >
-                      <span className="w-5 h-5 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center flex-shrink-0">
-                        <Wallet size={11} className="text-white" />
-                      </span>
-                      <span className="text-[11px] sm:text-xs font-semibold truncate">
+                      <DollarSign size={11} className="text-pink-400 flex-shrink-0" />
+                      <span className="truncate">
                         £{Number(myBalance).toFixed(2)}
+                        {isOwner && Number(stream?.tip_raised_gbp || 0) > 0 && (
+                          <span className="text-zinc-400 font-normal hidden sm:inline">
+                            {' '}
+                            · live £{Number(stream?.tip_raised_gbp || 0).toFixed(0)}
+                          </span>
+                        )}
                       </span>
-                      {isOwner && Number(stream?.tip_raised_gbp || 0) > 0 && (
-                        <span className="text-[10px] text-zinc-400 font-medium hidden sm:inline">
-                          · £{Number(stream?.tip_raised_gbp || 0).toFixed(0)} live
-                        </span>
-                      )}
-                      {!isOwner && (
-                        <Plus size={11} className="text-pink-300 flex-shrink-0 hidden sm:block" />
-                      )}
-                    </button>
+                    </span>
                   )}
                   {/* Desktop: follow + share inline */}
                   <div className="hidden sm:flex items-center gap-1.5">
@@ -3920,6 +4140,36 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
               </div>
             )}
 
+            {incomingRaidBanner && !ended && (
+              <div className="absolute top-[18%] inset-x-0 z-[90] flex justify-center pointer-events-none px-4">
+                <div className="w-full max-w-sm rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 text-white px-4 py-3 shadow-2xl border border-white/20 flex items-center gap-3">
+                  {incomingRaidBanner.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={incomingRaidBanner.avatar}
+                      alt=""
+                      className="w-10 h-10 rounded-full object-cover ring-2 ring-white/30"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-black/25 flex items-center justify-center">
+                      <Swords size={18} />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-pink-100">
+                      Incoming raid
+                    </p>
+                    <p className="text-sm font-semibold truncate">
+                      {incomingRaidBanner.name}
+                      {incomingRaidBanner.viewers > 0
+                        ? ` · ${incomingRaidBanner.viewers} viewers`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
 
             
             {/* Private locked out for other viewers */}
@@ -3956,7 +4206,7 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
 
             {/* Private active badge */}
             {!ended && stream?.private_active && (isOwner || isPrivateFan) && (
-              <div className="absolute top-[12.5rem] sm:top-52 right-3 z-25 pointer-events-none max-w-[70%]">
+              <div className="absolute top-[7.5rem] sm:top-36 right-3 z-25 pointer-events-none max-w-[70%]">
                 <div className="bg-pink-600/90 backdrop-blur text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow flex-wrap">
                   <Lock size={12} />
                   PRIVATE
@@ -4030,17 +4280,31 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                         >
                           <p
                             className={`text-xs lg:text-[13px] font-medium px-3 lg:px-3.5 py-1 lg:py-1.5 rounded-full border backdrop-blur-md shadow-sm lg:shadow-md tracking-wide ${
-                              system.type === 'join'
+                              system.type === 'raid'
+                                ? 'text-pink-100 bg-pink-600/90 border-pink-400/40'
+                                : system.type === 'join'
                                 ? 'text-white bg-zinc-800/95 border-zinc-500/70 lg:bg-zinc-800/80 lg:border-white/15'
                                 : 'text-zinc-200 bg-zinc-900/95 border-zinc-700/80 lg:bg-zinc-900/75 lg:border-white/10'
                             }`}
                           >
+                            {system.type === 'raid' ? (
+                              <>
+                                <Swords size={11} className="inline mr-1 -mt-0.5" />
+                                {system.label} raided
+                                {system.count > 0
+                                  ? ` with ${system.count} viewer${system.count === 1 ? '' : 's'}`
+                                  : ''}
+                              </>
+                            ) : (
+                              <>
                             <span className="text-zinc-400 lg:text-zinc-500 font-normal mr-1">
                               ·
                             </span>
                             {system.type === 'join'
                               ? `${system.label} joined`
                               : `${system.label} left`}
+                              </>
+                            )}
                           </p>
                         </div>
                       );
@@ -4248,36 +4512,35 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                     </button>
                   </div>
 
-                  {/* Tip stays available in a paid private for that sub */}
-                  {!isOwner && userId && !privateLockedOut && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTipError('');
-                        setShowTip(true);
-                      }}
-                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
-                      title="Tip"
-                    >
-                      <DollarSign size={20} />
-                    </button>
-                  )}
                   {!isOwner && !stream?.private_active && privateEnabled && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPrivateError('');
-                        setShowPrivate(true);
-                      }}
-                      disabled={!!myPendingPrivate}
-                      className="h-11 w-11 sm:h-12 sm:w-auto sm:px-3 rounded-full bg-zinc-900/90 border border-pink-500/50 text-pink-300 text-xs font-semibold flex items-center justify-center gap-1.5 flex-shrink-0 disabled:opacity-50"
-                      title="Request private"
-                    >
-                      <Lock size={16} className="sm:w-3.5 sm:h-3.5" />
-                      <span className="hidden sm:inline">
-                        {myPendingPrivate ? 'Pending' : 'Private'}
-                      </span>
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTipError('');
+                          setShowTip(true);
+                        }}
+                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-pink-600 to-rose-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/40 active:scale-95 transition"
+                        title="Tip"
+                      >
+                        <DollarSign size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrivateError('');
+                          setShowPrivate(true);
+                        }}
+                        disabled={!!myPendingPrivate}
+                        className="h-11 w-11 sm:h-12 sm:w-auto sm:px-3 rounded-full bg-zinc-900/90 border border-pink-500/50 text-pink-300 text-xs font-semibold flex items-center justify-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+                        title="Request private"
+                      >
+                        <Lock size={16} className="sm:w-3.5 sm:h-3.5" />
+                        <span className="hidden sm:inline">
+                          {myPendingPrivate ? 'Pending' : 'Private'}
+                        </span>
+                      </button>
+                    </>
                   )}
 
                   {(isOwner || isPrivateFan) && stream?.private_active && (
@@ -4424,6 +4687,128 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
         
         
         
+        {/* Host end / raid sheet */}
+        {showEndSheet && isOwner && !ended && (
+          <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/70"
+              aria-label="Close"
+              onClick={() => {
+                if (ending || raidBusy) return;
+                setShowEndSheet(false);
+              }}
+            />
+            <div className="relative w-full sm:max-w-md bg-zinc-900 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
+              <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-4 sm:hidden" />
+              <h3 className="text-lg font-semibold text-center mb-1 flex items-center justify-center gap-2">
+                <Swords size={18} className="text-pink-400" /> End live
+              </h3>
+              <p className="text-sm text-zinc-400 text-center mb-4">
+                Raid another creator to send your viewers there, or end without a raid.
+              </p>
+
+              {raidTargetsLoading ? (
+                <div className="flex items-center justify-center py-8 text-zinc-400">
+                  <Loader2 className="animate-spin mr-2" size={18} />
+                  Finding lives…
+                </div>
+              ) : raidTargets.length === 0 ? (
+                <p className="text-sm text-zinc-500 text-center py-6">
+                  Nobody else is live right now. You can still end this stream.
+                </p>
+              ) : (
+                <div className="space-y-2 mb-4">
+                  {raidTargets.map((t) => {
+                    const n =
+                      t.creator?.display_name ||
+                      (t.creator?.username
+                        ? `@${t.creator.username}`
+                        : 'Creator');
+                    const selected = raidPickingId === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        disabled={raidBusy || ending}
+                        onClick={() => setRaidPickingId(t.id)}
+                        className={`w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 border text-left transition ${
+                          selected
+                            ? 'border-pink-500 bg-pink-600/15'
+                            : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
+                        }`}
+                      >
+                        {t.creator?.avatar_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={t.creator.avatar_url}
+                            alt=""
+                            className="w-11 h-11 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-full bg-pink-700 flex items-center justify-center font-bold">
+                            {n[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold truncate">{n}</p>
+                          <p className="text-xs text-zinc-400 truncate">
+                            {t.title || 'Live now'}
+                          </p>
+                        </div>
+                        <span className="text-xs text-zinc-400 tabular-nums flex items-center gap-1">
+                          <Users size={12} />
+                          {Number(t.viewer_count || 0)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {raidError && (
+                <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 mb-3">
+                  {raidError}
+                </p>
+              )}
+
+              <button
+                type="button"
+                disabled={!raidPickingId || raidBusy || ending}
+                onClick={() => raidPickingId && void raidToLive(raidPickingId)}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
+              >
+                {raidBusy ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Sending raid…
+                  </>
+                ) : (
+                  <>
+                    <Swords size={16} />
+                    Raid selected live
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={ending || raidBusy}
+                onClick={() => void endLiveOnly()}
+                className="w-full mt-2 py-3 rounded-2xl bg-red-600 font-semibold disabled:opacity-50"
+              >
+                {ending ? 'Ending…' : 'End without raid'}
+              </button>
+              <button
+                type="button"
+                disabled={ending || raidBusy}
+                onClick={() => setShowEndSheet(false)}
+                className="w-full py-3 text-sm text-zinc-500"
+              >
+                Keep live going
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Host announce editor */}
         {showAnnounceEditor && isOwner && (
           <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center">
@@ -4847,21 +5232,12 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
               </div>
               <div className="px-5 py-5 space-y-4">
                 {myBalance != null && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowTip(false);
-                      setTopUpError('');
-                      setShowWalletSheet(true);
-                    }}
-                    className="w-full flex items-center justify-between rounded-xl bg-zinc-800/80 border border-zinc-700/80 px-3.5 py-2.5 hover:border-pink-500/40 transition text-left"
-                  >
+                  <div className="flex items-center justify-between rounded-xl bg-zinc-800/80 border border-zinc-700/80 px-3.5 py-2.5">
                     <span className="text-xs text-zinc-400">Your balance</span>
-                    <span className="text-sm font-semibold text-white tabular-nums flex items-center gap-1.5">
+                    <span className="text-sm font-semibold text-white tabular-nums">
                       £{Number(myBalance).toFixed(2)}
-                      <span className="text-[10px] font-medium text-pink-400">Top up</span>
                     </span>
-                  </button>
+                  </div>
                 )}
                 <div className="grid grid-cols-4 gap-2">
                   {TIP_PRESETS.map((a) => {
@@ -4996,165 +5372,6 @@ export default function LiveRoom({ streamId }: { streamId?: string }) {
                   Paid from your wallet balance
                 </p>
               </div>
-            </div>
-          </div>
-        )}
-
-        {showWalletSheet && (
-          <div className="fixed inset-0 z-[225] bg-black/55 flex items-end sm:items-center justify-center px-0 sm:px-4">
-            <button
-              type="button"
-              className="absolute inset-0"
-              aria-label="Close wallet"
-              onClick={() => {
-                if (toppingUp) return;
-                setShowWalletSheet(false);
-                setTopUpError('');
-              }}
-            />
-            <div
-              className="relative w-full sm:max-w-sm bg-zinc-900 border border-zinc-700 sm:rounded-3xl rounded-t-3xl overflow-hidden shadow-2xl"
-              style={{
-                paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
-              }}
-            >
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800">
-                <div>
-                  <p className="text-sm font-semibold">Wallet</p>
-                  <p className="text-[11px] text-zinc-500">
-                    {isOwner ? 'Earnings on this live' : 'Top up without leaving the stream'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={toppingUp}
-                  onClick={() => {
-                    setShowWalletSheet(false);
-                    setTopUpError('');
-                  }}
-                  className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="px-5 py-4 space-y-4">
-                <div className="rounded-2xl bg-gradient-to-br from-pink-600/20 via-zinc-900 to-zinc-900 border border-pink-500/20 px-4 py-3">
-                  <p className="text-[11px] text-zinc-400">
-                    {isOwner ? 'Available to withdraw' : 'Current balance'}
-                  </p>
-                  <p className="text-2xl font-bold tabular-nums mt-0.5">
-                    £{Number(myBalance || 0).toFixed(2)}
-                  </p>
-                  {isOwner && (
-                    <p className="text-[11px] text-zinc-500 mt-1">
-                      This live · £{Number(stream?.tip_raised_gbp || 0).toFixed(2)} tips
-                      <span className="text-zinc-600">
-                        {' '}
-                        · you keep ~£
-                        {(Number(stream?.tip_raised_gbp || 0) * 0.8).toFixed(2)}
-                      </span>
-                    </p>
-                  )}
-                </div>
-
-                {!isOwner && (
-                  <>
-                    <div>
-                      <p className="text-xs text-zinc-500 mb-2">Add funds</p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[10, 25, 50, 100].map((a) => (
-                          <button
-                            key={a}
-                            type="button"
-                            disabled={toppingUp}
-                            onClick={() => {
-                              setTopUpAmount(a);
-                              setCustomTopUp('');
-                              setTopUpError('');
-                            }}
-                            className={`py-2.5 rounded-xl text-sm font-semibold border transition ${
-                              topUpAmount === a && customTopUp === ''
-                                ? 'bg-pink-600 border-pink-500 text-white'
-                                : 'bg-zinc-800 border-zinc-700 text-zinc-200'
-                            }`}
-                          >
-                            £{a}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-zinc-500 mb-1 block">
-                        Custom (min £10)
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">
-                          £
-                        </span>
-                        <input
-                          type="number"
-                          min={10}
-                          step={1}
-                          disabled={toppingUp}
-                          value={customTopUp}
-                          onChange={(e) => {
-                            setCustomTopUp(e.target.value);
-                            setTopUpError('');
-                          }}
-                          placeholder="Other"
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-7 pr-3 py-2.5 text-sm outline-none focus:border-pink-500"
-                        />
-                      </div>
-                    </div>
-                    {topUpError && (
-                      <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-                        {topUpError}
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      disabled={toppingUp}
-                      onClick={() => void startLiveTopUp()}
-                      className="w-full min-h-[46px] rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {toppingUp ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" /> Opening checkout…
-                        </>
-                      ) : (
-                        <>
-                          Add £
-                          {(
-                            customTopUp !== ''
-                              ? Number(customTopUp) || 0
-                              : topUpAmount
-                          ).toFixed(2)}
-                        </>
-                      )}
-                    </button>
-                    <p className="text-[11px] text-zinc-500 text-center">
-                      Secure card payment · you’ll come back to this live
-                    </p>
-                  </>
-                )}
-
-                {isOwner && (
-                  <Link
-                    href="/earnings"
-                    className="block w-full text-center py-3 rounded-2xl border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-800 transition"
-                  >
-                    Open earnings
-                  </Link>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {topUpFlash && (
-          <div className="fixed top-16 inset-x-0 z-[230] flex justify-center pointer-events-none px-4">
-            <div className="bg-pink-600 text-white text-sm font-semibold px-4 py-2 rounded-full shadow-lg">
-              {topUpFlash}
             </div>
           </div>
         )}

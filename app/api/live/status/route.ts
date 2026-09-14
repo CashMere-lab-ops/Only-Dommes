@@ -34,13 +34,24 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'id required' }, { status: 400 });
     }
 
-    const { data: stream } = await admin
+    const selectWithRaid =
+      'id, creator_id, title, status, tip_raised_gbp, tip_goal_gbp, tip_goals, viewer_count, peak_viewers, duration_seconds, started_at, ended_at, created_at, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url, show_join_messages, slow_mode_seconds, raid_target_stream_id, raid_target_creator_id, raid_viewer_count, raided_at, last_raid_from_stream_id, last_raid_from_creator_id, last_raid_viewers, last_raid_at';
+    const selectBase =
+      'id, creator_id, title, status, tip_raised_gbp, tip_goal_gbp, tip_goals, viewer_count, peak_viewers, duration_seconds, started_at, ended_at, created_at, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url, show_join_messages, slow_mode_seconds';
+
+    let streamRes = await admin
       .from('live_streams')
-      .select(
-        'id, creator_id, title, status, tip_raised_gbp, tip_goal_gbp, tip_goals, viewer_count, peak_viewers, duration_seconds, started_at, ended_at, created_at, showcase_user_id, showcase_amount_gbp, showcase_name, showcase_avatar_url, show_join_messages, slow_mode_seconds'
-      )
+      .select(selectWithRaid)
       .eq('id', streamId)
       .single();
+    if (streamRes.error && /column|raid_/i.test(streamRes.error.message || '')) {
+      streamRes = await admin
+        .from('live_streams')
+        .select(selectBase)
+        .eq('id', streamId)
+        .single();
+    }
+    const stream = streamRes.data as any;
 
     if (!stream) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -120,6 +131,63 @@ export async function GET(request: Request) {
     );
     const is_host = stream.creator_id === user.id;
 
+    let raid: any = null;
+    if (stream.raid_target_stream_id) {
+      const { data: target } = await admin
+        .from('live_streams')
+        .select('id, title, status, creator_id, private_active')
+        .eq('id', stream.raid_target_stream_id)
+        .maybeSingle();
+      const { data: tProf } = await admin
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .eq('id', stream.raid_target_creator_id || target?.creator_id)
+        .maybeSingle();
+      raid = {
+        target_stream_id: stream.raid_target_stream_id,
+        target_title: target?.title || null,
+        target_live: !!(
+          target &&
+          !target.private_active &&
+          ['active', 'idle_ready', 'disconnected'].includes(String(target.status))
+        ),
+        target_creator: tProf
+          ? {
+              id: tProf.id,
+              username: tProf.username,
+              display_name: tProf.display_name,
+              avatar_url: tProf.avatar_url,
+            }
+          : null,
+        viewer_count: Number(stream.raid_viewer_count || 0),
+      };
+    }
+
+    let incoming_raid: any = null;
+    if (stream.last_raid_from_creator_id && stream.last_raid_at) {
+      const age = Date.now() - new Date(stream.last_raid_at).getTime();
+      if (age < 90_000) {
+        const { data: fProf } = await admin
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .eq('id', stream.last_raid_from_creator_id)
+          .maybeSingle();
+        incoming_raid = {
+          from_stream_id: stream.last_raid_from_stream_id,
+          viewers: Number(stream.last_raid_viewers || 0),
+          at: stream.last_raid_at,
+          from_creator: fProf
+            ? {
+                id: fProf.id,
+                username: fProf.username,
+                display_name: fProf.display_name,
+                avatar_url: fProf.avatar_url,
+              }
+            : null,
+        };
+      }
+    }
+
     const summaryBase = {
       title: stream.title,
       duration_seconds,
@@ -147,6 +215,8 @@ export async function GET(request: Request) {
       my_rank,
       summary: stream.status === 'ended' ? summaryBase : null,
       preview_summary: summaryBase,
+      raid,
+      incoming_raid,
     });
   } catch (e: any) {
     console.error('live status', e);
