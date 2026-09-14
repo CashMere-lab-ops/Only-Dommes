@@ -1101,6 +1101,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
                 : s
             );
           }
+          if (msg?.type === 'moderation' && msg.user_id) {
             const me = userIdRef.current;
             if (me && String(msg.user_id) === me) {
               const act = msg.action;
