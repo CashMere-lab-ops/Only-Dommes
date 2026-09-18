@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Plus, Trash2, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+  Volume2,
+  VolumeX,
+  Pause,
+} from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
 
@@ -54,6 +62,12 @@ export default function StoriesRail({
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [draft, setDraft] = useState<{
+    file: File;
+    url: string;
+    kind: 'image' | 'video';
+    duration: number;
+  } | null>(null);
   const [open, setOpen] = useState<{ groupIndex: number; storyIndex: number } | null>(
     null
   );
@@ -83,7 +97,7 @@ export default function StoriesRail({
       if (qErr) throw qErr;
       const list = (rows || []) as StoryRow[];
       const creatorIds = [...new Set(list.map((s) => s.creator_id))];
-      let people: Record<string, StoryCreator> = {};
+      const people: Record<string, StoryCreator> = {};
       if (creatorIds.length) {
         const { data: profiles } = await supabase
           .from('profiles')
@@ -180,24 +194,36 @@ export default function StoriesRail({
       if (!ok) return;
     }
 
+    setDraft({
+      file,
+      url: URL.createObjectURL(file),
+      kind: isImage ? 'image' : 'video',
+      duration,
+    });
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const publishDraft = async () => {
+    if (!draft || !userId || uploading) return;
     setUploading(true);
+    setError('');
     try {
       const stamp = Date.now();
-      const ext = (file.name.split('.').pop() || (isImage ? 'jpg' : 'mp4')).toLowerCase();
+      const ext = (
+        draft.file.name.split('.').pop() || (draft.kind === 'image' ? 'jpg' : 'mp4')
+      ).toLowerCase();
       const path = `${userId}/stories/${stamp}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('posts').upload(path, file, {
-        contentType: file.type || undefined,
+      const { error: upErr } = await supabase.storage.from('posts').upload(path, draft.file, {
+        contentType: draft.file.type || undefined,
         upsert: false,
       });
       if (upErr) throw upErr;
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from('posts').getPublicUrl(path);
+      const publicUrl = supabase.storage.from('posts').getPublicUrl(path).data.publicUrl;
 
       let thumb: string | null = null;
-      if (isImage) {
+      if (draft.kind === 'image') {
         try {
-          const t = await createImageThumbnail(file, 640, 0.7);
+          const t = await createImageThumbnail(draft.file, 640, 0.7);
           const tPath = `${userId}/stories/thumb-${stamp}.jpg`;
           const { error: tErr } = await supabase.storage.from('posts').upload(tPath, t, {
             contentType: 'image/jpeg',
@@ -214,18 +240,19 @@ export default function StoriesRail({
       const { error: insErr } = await supabase.from('stories').insert({
         creator_id: userId,
         media_url: publicUrl,
-        media_type: isImage ? 'image' : 'video',
+        media_type: draft.kind,
         thumbnail_url: thumb,
-        duration_seconds: duration,
+        duration_seconds: draft.duration,
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
       if (insErr) throw insErr;
+      URL.revokeObjectURL(draft.url);
+      setDraft(null);
       await load();
     } catch (e: any) {
       setError(e?.message || 'Could not post story');
     } finally {
       setUploading(false);
-      if (fileRef.current) fileRef.current.value = '';
     }
   };
 
@@ -237,8 +264,20 @@ export default function StoriesRail({
   if (!loading && !showAdd && groups.length === 0) return null;
 
   return (
-    <div className="mb-6">
-      <div className="flex items-center gap-3 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1">
+    <div className="mb-7">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-semibold text-zinc-200">Stories</p>
+        {showAdd && (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="text-xs font-medium text-pink-400 hover:text-pink-300"
+          >
+            Add story
+          </button>
+        )}
+      </div>
+      <div className="flex items-start gap-3.5 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1">
         {showAdd && (
           <button
             type="button"
@@ -250,19 +289,19 @@ export default function StoriesRail({
                 fileRef.current?.click();
               }
             }}
-            className="flex-shrink-0 w-[76px] text-center"
+            className="flex-shrink-0 w-[78px] text-center"
           >
-            <div className="relative mx-auto w-[68px] h-[68px]">
+            <div className="relative mx-auto w-[72px] h-[72px]">
               <div
-                className={`w-[68px] h-[68px] rounded-full p-[2.5px] ${
+                className={`w-[72px] h-[72px] rounded-full p-[2.5px] ${
                   myGroup?.unseen
-                    ? 'bg-gradient-to-br from-pink-500 to-rose-500'
+                    ? 'bg-gradient-to-br from-pink-400 via-rose-500 to-amber-400'
                     : myGroup
                       ? 'bg-zinc-600'
                       : 'bg-zinc-800'
                 }`}
               >
-                <div className="w-full h-full rounded-full bg-zinc-950 p-[2px] overflow-hidden">
+                <div className="w-full h-full rounded-full bg-zinc-950 p-[2.5px] overflow-hidden">
                   {myProfile?.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -277,21 +316,22 @@ export default function StoriesRail({
                   )}
                 </div>
               </div>
-              <span className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-pink-600 border-2 border-zinc-950 flex items-center justify-center">
+              <span className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-pink-600 border-[2.5px] border-zinc-950 flex items-center justify-center shadow-lg">
                 {uploading ? (
                   <Loader2 size={12} className="animate-spin" />
                 ) : (
-                  <Plus size={13} />
+                  <Plus size={13} strokeWidth={2.5} />
                 )}
               </span>
             </div>
-            <p className="mt-1.5 text-[11px] text-zinc-300 truncate">Your story</p>
+            <p className="mt-2 text-[11px] text-zinc-300 truncate font-medium">Your story</p>
           </button>
         )}
 
         {loading && groups.length === 0 && (
-          <div className="flex items-center text-zinc-500 text-sm py-4 px-2">
-            <Loader2 size={16} className="animate-spin mr-2" /> Stories
+          <div className="flex items-center text-zinc-500 text-sm py-6 px-2">
+            <Loader2 size={16} className="animate-spin mr-2" />
+            Stories
           </div>
         )}
 
@@ -302,16 +342,16 @@ export default function StoriesRail({
               key={g.creator.id}
               type="button"
               onClick={() => setOpen({ groupIndex: gi, storyIndex: 0 })}
-              className="flex-shrink-0 w-[76px] text-center"
+              className="flex-shrink-0 w-[78px] text-center"
             >
               <div
-                className={`mx-auto w-[68px] h-[68px] rounded-full p-[2.5px] ${
+                className={`mx-auto w-[72px] h-[72px] rounded-full p-[2.5px] ${
                   g.unseen
-                    ? 'bg-gradient-to-br from-pink-500 to-rose-500'
+                    ? 'bg-gradient-to-br from-pink-400 via-rose-500 to-amber-400'
                     : 'bg-zinc-600'
                 }`}
               >
-                <div className="w-full h-full rounded-full bg-zinc-950 p-[2px] overflow-hidden">
+                <div className="w-full h-full rounded-full bg-zinc-950 p-[2.5px] overflow-hidden">
                   {g.creator.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -326,7 +366,7 @@ export default function StoriesRail({
                   )}
                 </div>
               </div>
-              <p className="mt-1.5 text-[11px] text-zinc-300 truncate">
+              <p className="mt-2 text-[11px] text-zinc-300 truncate">
                 {nameOf(g.creator)}
               </p>
             </button>
@@ -341,6 +381,18 @@ export default function StoriesRail({
         className="hidden"
         onChange={(e) => void onPick(e.target.files?.[0] || null)}
       />
+
+      {draft && (
+        <StoryComposer
+          draft={draft}
+          uploading={uploading}
+          onCancel={() => {
+            URL.revokeObjectURL(draft.url);
+            setDraft(null);
+          }}
+          onShare={() => void publishDraft()}
+        />
+      )}
 
       {open && groups[open.groupIndex] && (
         <StoryViewer
@@ -437,7 +489,7 @@ export function ProfileStoryRing({
           live
             ? 'bg-red-500'
             : unseen
-              ? 'bg-gradient-to-br from-pink-500 to-rose-500'
+              ? 'bg-gradient-to-br from-pink-400 via-rose-500 to-amber-400'
               : 'bg-zinc-600'
         }`}
         title="View story"
@@ -454,6 +506,69 @@ export function ProfileStoryRing({
         />
       )}
     </>
+  );
+}
+
+function StoryComposer({
+  draft,
+  uploading,
+  onCancel,
+  onShare,
+}: {
+  draft: { file: File; url: string; kind: 'image' | 'video'; duration: number };
+  uploading: boolean;
+  onCancel: () => void;
+  onShare: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[240] bg-black flex flex-col">
+      <div className="relative flex-1 min-h-0">
+        {draft.kind === 'video' ? (
+          <video
+            src={draft.url}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 w-full h-full object-contain bg-black"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={draft.url}
+            alt=""
+            className="absolute inset-0 w-full h-full object-contain bg-black"
+          />
+        )}
+        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+        <div className="absolute top-0 left-0 right-0 px-4 pt-[max(0.9rem,env(safe-area-inset-top))] flex items-center justify-between z-10">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="w-10 h-10 rounded-full bg-black/45 backdrop-blur flex items-center justify-center"
+          >
+            <X size={18} />
+          </button>
+          <p className="text-sm font-semibold">New story</p>
+          <span className="w-10" />
+        </div>
+      </div>
+      <div className="relative z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
+        <p className="text-[11px] text-zinc-400 mb-3 text-center">
+          Visible for 24 hours · {draft.kind === 'video' ? `${draft.duration}s video` : 'Photo'}
+        </p>
+        <button
+          type="button"
+          onClick={onShare}
+          disabled={uploading}
+          className="w-full h-12 rounded-2xl bg-pink-600 hover:bg-pink-500 disabled:opacity-60 font-semibold flex items-center justify-center gap-2"
+        >
+          {uploading ? <Loader2 size={18} className="animate-spin" /> : null}
+          {uploading ? 'Posting…' : 'Share story'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -477,7 +592,9 @@ function StoryViewer({
   const [si, setSi] = useState(storyIndex);
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const holdRef = useRef(false);
   const group = groups[gi];
   const story = group?.stories[si];
   const isOwn = !!(userId && group && group.creator.id === userId);
@@ -519,12 +636,12 @@ function StoryViewer({
   const goNext = useCallback(() => {
     if (!group) return;
     if (si + 1 < group.stories.length) {
-      setSi(si + 1);
+      setSi((n) => n + 1);
       setProgress(0);
       return;
     }
     if (gi + 1 < groups.length) {
-      setGi(gi + 1);
+      setGi((n) => n + 1);
       setSi(0);
       setProgress(0);
       return;
@@ -534,13 +651,13 @@ function StoryViewer({
 
   const goPrev = useCallback(() => {
     if (si > 0) {
-      setSi(si - 1);
+      setSi((n) => n - 1);
       setProgress(0);
       return;
     }
     if (gi > 0) {
       const prev = groups[gi - 1];
-      setGi(gi - 1);
+      setGi((n) => n - 1);
       setSi(Math.max(0, (prev?.stories.length || 1) - 1));
       setProgress(0);
     }
@@ -548,22 +665,37 @@ function StoryViewer({
 
   useEffect(() => {
     setProgress(0);
+    setPaused(false);
   }, [story?.id]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.muted = muted;
+  }, [muted, story?.id]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (paused) v.pause();
+    else void v.play().catch(() => {});
+  }, [paused, story?.id]);
 
   useEffect(() => {
     if (!story || paused) return;
     if (story.media_type === 'video') return;
     const total = Math.max(3, Number(story.duration_seconds || PHOTO_SECS)) * 1000;
-    const t0 = Date.now();
+    let start = Date.now();
+    let acc = progress;
     const iv = setInterval(() => {
-      const p = Math.min(1, (Date.now() - t0) / total);
+      const p = Math.min(1, acc + (Date.now() - start) / total);
       setProgress(p);
       if (p >= 1) {
         clearInterval(iv);
         goNext();
       }
-    }, 50);
+    }, 40);
     return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story?.id, story?.media_type, paused, goNext]);
 
   const removeStory = async () => {
@@ -578,6 +710,10 @@ function StoryViewer({
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowRight') goNext();
       if (e.key === 'ArrowLeft') goPrev();
+      if (e.key === ' ') {
+        e.preventDefault();
+        setPaused((p) => !p);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -586,9 +722,20 @@ function StoryViewer({
   if (!group || !story) return null;
   const label = nameOf(group.creator);
 
+  const holdStart = () => {
+    holdRef.current = true;
+    setPaused(true);
+  };
+  const holdEnd = () => {
+    if (holdRef.current) {
+      holdRef.current = false;
+      setPaused(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[240] bg-black flex flex-col">
-      <div className="absolute inset-0" onMouseDown={() => setPaused(true)} onMouseUp={() => setPaused(false)} />
+    <div className="fixed inset-0 z-[240] bg-black">
+      <div className="absolute inset-0 bg-zinc-950" />
       {story.media_type === 'video' ? (
         <video
           ref={videoRef}
@@ -596,7 +743,7 @@ function StoryViewer({
           src={story.media_url}
           autoPlay
           playsInline
-          className="absolute inset-0 w-full h-full object-contain bg-black z-[1]"
+          className="absolute inset-0 w-full h-full object-contain z-[1]"
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
             if (v.duration) setProgress(v.currentTime / v.duration);
@@ -609,16 +756,19 @@ function StoryViewer({
           key={story.id}
           src={story.media_url}
           alt=""
-          className="absolute inset-0 w-full h-full object-contain bg-black z-[1]"
+          className="absolute inset-0 w-full h-full object-contain z-[1]"
         />
       )}
 
-      <div className="relative z-10 px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/75 via-black/25 to-transparent z-[2] pointer-events-none" />
+      <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/70 to-transparent z-[2] pointer-events-none" />
+
+      <div className="relative z-10 px-3 pt-[max(0.7rem,env(safe-area-inset-top))]">
         <div className="flex gap-1 mb-3">
           {group.stories.map((s, i) => (
-            <div key={s.id} className="flex-1 h-[3px] rounded-full bg-white/25 overflow-hidden">
+            <div key={s.id} className="flex-1 h-[2.5px] rounded-full bg-white/25 overflow-hidden">
               <div
-                className="h-full bg-white"
+                className="h-full bg-white rounded-full"
                 style={{
                   width:
                     i < si ? '100%' : i === si ? `${Math.round(progress * 100)}%` : '0%',
@@ -627,7 +777,7 @@ function StoryViewer({
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <Link
             href={group.creator.username ? `/${group.creator.username}` : '/'}
             className="flex items-center gap-2 min-w-0"
@@ -638,7 +788,7 @@ function StoryViewer({
               <img
                 src={group.creator.avatar_url}
                 alt=""
-                className="w-8 h-8 rounded-full object-cover"
+                className="w-8 h-8 rounded-full object-cover ring-1 ring-white/30"
               />
             ) : (
               <div className="w-8 h-8 rounded-full bg-pink-600 flex items-center justify-center text-xs font-bold">
@@ -646,40 +796,46 @@ function StoryViewer({
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-sm font-semibold truncate">{label}</p>
-              <p className="text-[10px] text-zinc-300">
-                {timeAgo(story.created_at)} · expires in{' '}
-                {hoursLeft(story.expires_at)}
+              <p className="text-sm font-semibold truncate leading-tight">{label}</p>
+              <p className="text-[10px] text-white/70">
+                {timeAgo(story.created_at)} · {hoursLeft(story.expires_at)} left
               </p>
             </div>
           </Link>
           <div className="ml-auto flex items-center gap-1">
+            {story.media_type === 'video' && (
+              <button
+                type="button"
+                onClick={() => setMuted((m) => !m)}
+                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
+              >
+                {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </button>
+            )}
+            {isOwn && onAdd && (
+              <button
+                type="button"
+                onClick={onAdd}
+                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
+                title="Add story"
+              >
+                <Plus size={16} />
+              </button>
+            )}
             {isOwn && (
-              <>
-                {onAdd && (
-                  <button
-                    type="button"
-                    onClick={onAdd}
-                    className="w-9 h-9 rounded-full bg-black/40 flex items-center justify-center"
-                    title="Add story"
-                  >
-                    <Plus size={16} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void removeStory()}
-                  className="w-9 h-9 rounded-full bg-black/40 flex items-center justify-center text-red-300"
-                  title="Delete"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => void removeStory()}
+                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center text-red-300"
+                title="Delete"
+              >
+                <Trash2 size={16} />
+              </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-full bg-black/40 flex items-center justify-center"
+              className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
             >
               <X size={18} />
             </button>
@@ -689,25 +845,46 @@ function StoryViewer({
 
       <button
         type="button"
-        className="absolute left-0 top-16 bottom-16 w-1/3 z-20"
+        className="absolute left-0 top-20 bottom-20 w-[28%] z-20"
         aria-label="Previous"
         onClick={goPrev}
+        onPointerDown={holdStart}
+        onPointerUp={holdEnd}
+        onPointerCancel={holdEnd}
+        onPointerLeave={holdEnd}
       />
       <button
         type="button"
-        className="absolute right-0 top-16 bottom-16 w-1/3 z-20"
+        className="absolute right-0 top-20 bottom-20 w-[28%] z-20"
         aria-label="Next"
         onClick={goNext}
+        onPointerDown={holdStart}
+        onPointerUp={holdEnd}
+        onPointerCancel={holdEnd}
+        onPointerLeave={holdEnd}
+      />
+      <button
+        type="button"
+        className="absolute left-[28%] right-[28%] top-20 bottom-24 z-20"
+        aria-label="Hold to pause"
+        onPointerDown={holdStart}
+        onPointerUp={holdEnd}
+        onPointerCancel={holdEnd}
+        onPointerLeave={holdEnd}
       />
 
-      <div className="relative z-10 mt-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center justify-between text-xs text-zinc-300">
-        <span className="flex items-center gap-1">
-          <ChevronLeft size={14} />
-          <ChevronRight size={14} />
-          tap sides
-        </span>
+      {paused && (
+        <div className="absolute inset-0 z-[15] pointer-events-none flex items-center justify-center">
+          <div className="w-14 h-14 rounded-full bg-black/45 backdrop-blur flex items-center justify-center">
+            <Pause size={22} fill="white" />
+          </div>
+        </div>
+      )}
+
+      <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center justify-between text-[11px] text-white/70">
+        <span>Hold to pause</span>
         {isOwn && viewsCount != null && (
-          <span>
+          <span className="text-white/85">
             {viewsCount} view{viewsCount === 1 ? '' : 's'}
           </span>
         )}
