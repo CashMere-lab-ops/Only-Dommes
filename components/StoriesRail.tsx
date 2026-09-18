@@ -599,6 +599,16 @@ function StoryViewer({
   const [muted, setMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const holdRef = useRef(false);
+  const holdTimer = useRef<number | null>(null);
+  const gesture = useRef({
+    id: 0,
+    x: 0,
+    y: 0,
+    t: 0,
+    moved: false,
+    mode: 'none' as 'none' | 'hold' | 'vert' | 'horiz',
+  });
+  const [drag, setDrag] = useState({ x: 0, y: 0 });
   const group = groups[gi];
   const story = group?.stories[si];
   const isOwn = !!(userId && group && group.creator.id === userId);
@@ -670,6 +680,7 @@ function StoryViewer({
   useEffect(() => {
     setProgress(0);
     setPaused(false);
+    setDrag({ x: 0, y: 0 });
   }, [story?.id]);
 
   useEffect(() => {
@@ -726,15 +737,92 @@ function StoryViewer({
   if (!group || !story) return null;
   const label = nameOf(group.creator);
 
-  const holdStart = (e: React.PointerEvent) => {
-    e.preventDefault();
-    holdRef.current = true;
-    setPaused(true);
+  const clearHoldTimer = () => {
+    if (holdTimer.current) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
   };
-  const holdEnd = () => {
-    if (holdRef.current) {
+
+  const onGestureDown = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    gesture.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      t: Date.now(),
+      moved: false,
+      mode: 'none',
+    };
+    setDrag({ x: 0, y: 0 });
+    clearHoldTimer();
+    holdTimer.current = window.setTimeout(() => {
+      if (gesture.current.mode === 'none' && !gesture.current.moved) {
+        gesture.current.mode = 'hold';
+        holdRef.current = true;
+        setPaused(true);
+      }
+    }, 160);
+  };
+
+  const onGestureMove = (e: React.PointerEvent) => {
+    if (gesture.current.id !== e.pointerId) return;
+    const dx = e.clientX - gesture.current.x;
+    const dy = e.clientY - gesture.current.y;
+    if (Math.hypot(dx, dy) < 12) return;
+    gesture.current.moved = true;
+    clearHoldTimer();
+    if (gesture.current.mode === 'hold') {
       holdRef.current = false;
       setPaused(false);
+    }
+    if (gesture.current.mode === 'none' || gesture.current.mode === 'hold') {
+      gesture.current.mode = Math.abs(dy) > Math.abs(dx) * 1.1 ? 'vert' : 'horiz';
+    }
+    if (gesture.current.mode === 'vert') {
+      setDrag({ x: 0, y: Math.max(0, dy) });
+    } else if (gesture.current.mode === 'horiz') {
+      setDrag({ x: dx, y: 0 });
+    }
+  };
+
+  const onGestureUp = (e: React.PointerEvent) => {
+    if (gesture.current.id !== e.pointerId) return;
+    clearHoldTimer();
+    const dx = e.clientX - gesture.current.x;
+    const dy = e.clientY - gesture.current.y;
+    const dt = Date.now() - gesture.current.t;
+    const mode = gesture.current.mode;
+    const moved = gesture.current.moved;
+    gesture.current.id = 0;
+
+    if (mode === 'hold') {
+      holdRef.current = false;
+      setPaused(false);
+      setDrag({ x: 0, y: 0 });
+      return;
+    }
+    if (mode === 'vert' && dy > 80) {
+      onClose();
+      return;
+    }
+    if (mode === 'horiz') {
+      setDrag({ x: 0, y: 0 });
+      if (dx < -48) goNext();
+      else if (dx > 48) goPrev();
+      return;
+    }
+    setDrag({ x: 0, y: 0 });
+    if (!moved && dt < 320) {
+      const w = window.innerWidth || 1;
+      if (e.clientX < w * 0.34) goPrev();
+      else goNext();
     }
   };
 
@@ -744,6 +832,17 @@ function StoryViewer({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="absolute inset-0 bg-zinc-950" />
+      <div
+        className="absolute inset-0 z-[1] will-change-transform"
+        style={{
+          transform: `translate(${drag.x * 0.35}px, ${drag.y}px) scale(${Math.max(
+            0.86,
+            1 - drag.y / 1400
+          )})`,
+          opacity: Math.max(0.35, 1 - drag.y / 520),
+          transition: drag.x === 0 && drag.y === 0 ? 'transform 180ms ease, opacity 180ms ease' : 'none',
+        }}
+      >
       {story.media_type === 'video' ? (
         <video
           ref={videoRef}
@@ -772,11 +871,12 @@ function StoryViewer({
           onContextMenu={(e) => e.preventDefault()}
         />
       )}
+      </div>
 
       <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/75 via-black/25 to-transparent z-[2] pointer-events-none" />
       <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/70 to-transparent z-[2] pointer-events-none" />
 
-      <div className="relative z-10 px-3 pt-[max(0.7rem,env(safe-area-inset-top))]">
+      <div className="relative z-30 px-3 pt-[max(0.7rem,env(safe-area-inset-top))]">
         <div className="flex gap-1 mb-3">
           {group.stories.map((s, i) => (
             <div key={s.id} className="flex-1 h-[2.5px] rounded-full bg-white/25 overflow-hidden">
@@ -856,37 +956,13 @@ function StoryViewer({
         </div>
       </div>
 
-      <button
-        type="button"
-        className="absolute left-0 top-20 bottom-20 w-[28%] z-20 touch-none select-none [-webkit-touch-callout:none]"
-        aria-label="Previous"
+      <div
+        className="absolute left-0 right-0 top-16 bottom-0 z-20 touch-none select-none [-webkit-touch-callout:none]"
         onContextMenu={(e) => e.preventDefault()}
-        onClick={goPrev}
-        onPointerDown={holdStart}
-        onPointerUp={holdEnd}
-        onPointerCancel={holdEnd}
-        onPointerLeave={holdEnd}
-      />
-      <button
-        type="button"
-        className="absolute right-0 top-20 bottom-20 w-[28%] z-20 touch-none select-none [-webkit-touch-callout:none]"
-        aria-label="Next"
-        onContextMenu={(e) => e.preventDefault()}
-        onClick={goNext}
-        onPointerDown={holdStart}
-        onPointerUp={holdEnd}
-        onPointerCancel={holdEnd}
-        onPointerLeave={holdEnd}
-      />
-      <button
-        type="button"
-        className="absolute left-[28%] right-[28%] top-20 bottom-24 z-20 touch-none select-none [-webkit-touch-callout:none]"
-        aria-label="Hold to pause"
-        onContextMenu={(e) => e.preventDefault()}
-        onPointerDown={holdStart}
-        onPointerUp={holdEnd}
-        onPointerCancel={holdEnd}
-        onPointerLeave={holdEnd}
+        onPointerDown={onGestureDown}
+        onPointerMove={onGestureMove}
+        onPointerUp={onGestureUp}
+        onPointerCancel={onGestureUp}
       />
 
       {paused && (
@@ -897,8 +973,8 @@ function StoryViewer({
         </div>
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center justify-between text-[11px] text-white/70">
-        <span>Hold to pause</span>
+      <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center justify-between text-[11px] text-white/70 pointer-events-none">
+        <span>Swipe down to close</span>
         {isOwn && viewsCount != null && (
           <span className="text-white/85">
             {viewsCount} view{viewsCount === 1 ? '' : 's'}
