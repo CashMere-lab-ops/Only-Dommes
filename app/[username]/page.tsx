@@ -8,6 +8,7 @@ import {
   MoreHorizontal, Share2, Ban, Flag, Link as LinkIcon, X
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import { ProfileStoryRing } from '../../components/StoriesRail';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
 import { applyUserBlock } from '../../lib/blocks';
@@ -349,7 +350,7 @@ export default function PublicProfilePage() {
                 ? 'Wallet is short. Add a backup card or top up to subscribe.'
                 : `Not enough balance. Need £${Number(data.needed || 0).toFixed(2)}. Open wallet?`
             );
-            if (go) router.push('/wallet');
+            if (go) router.push('/wallet?card=1');
             return;
           }
           throw new Error(data.error || 'Could not subscribe');
@@ -626,24 +627,33 @@ export default function PublicProfilePage() {
           <div className="flex flex-col sm:flex-row gap-6 mb-6">
             <div className="flex flex-col items-center gap-3 flex-shrink-0">
               <div className="relative">
-                <div
-                  className={`w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ${
-                    liveStream
-                      ? 'ring-4 ring-red-500 ring-offset-2 ring-offset-zinc-950 shadow-[0_0_24px_rgba(239,68,68,0.45)]'
-                      : 'ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950'
-                  }`}
+                <ProfileStoryRing
+                  profileId={profile.id}
+                  userId={currentUser?.id || null}
+                  avatarUrl={profile.avatar_url}
+                  name={displayName}
+                  username={profile.username}
+                  live={!!liveStream}
                 >
-                  {profile.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={profile.avatar_url}
-                      alt={displayName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    initial
-                  )}
-                </div>
+                  <div
+                    className={`w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ${
+                      liveStream
+                        ? 'ring-4 ring-red-500 ring-offset-2 ring-offset-zinc-950 shadow-[0_0_24px_rgba(239,68,68,0.45)]'
+                        : 'ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950'
+                    }`}
+                  >
+                    {profile.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={profile.avatar_url}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      initial
+                    )}
+                  </div>
+                </ProfileStoryRing>
                 {liveStream && (
                   <Link
                     href={`/live/${liveStream.id}`}

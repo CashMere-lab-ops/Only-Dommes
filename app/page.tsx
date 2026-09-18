@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Radio, Users, Loader2, Video, Search, Heart } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import FeedPosts from '../components/FeedPosts';
+import StoriesRail from '../components/StoriesRail';
 import { createClient } from '../lib/supabase';
 
 type LiveCard = {
@@ -45,6 +46,7 @@ export default function Home() {
   const [lives, setLives] = useState<LiveCard[]>([]);
   const [posts, setPosts] = useState<PostCard[]>([]);
   const [profile, setProfile] = useState<any>(null);
+  const [isCreator, setIsCreator] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,10 +60,11 @@ export default function Home() {
       if (user) {
         const { data: me } = await supabase
           .from('profiles')
-          .select('username, display_name, avatar_url')
+          .select('id, username, display_name, avatar_url, account_type')
           .eq('id', user.id)
           .single();
         setProfile(me);
+        setIsCreator(me?.account_type === 'creator');
       }
 
       if (!user) {
@@ -168,6 +171,24 @@ export default function Home() {
               Discover →
             </Link>
           </div>
+
+          {userId && ready && (
+            <StoriesRail
+              userId={userId}
+              isCreator={isCreator}
+              myProfile={
+                profile
+                  ? {
+                      id: userId,
+                      username: profile.username,
+                      display_name: profile.display_name,
+                      avatar_url: profile.avatar_url,
+                    }
+                  : null
+              }
+              followingIds={followingIds}
+            />
+          )}
 
           {!userId && ready && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center mb-8">
