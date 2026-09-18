@@ -521,7 +521,10 @@ function StoryComposer({
   onShare: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[240] bg-black flex flex-col">
+    <div
+      className="fixed inset-0 z-[240] bg-black flex flex-col select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <div className="relative flex-1 min-h-0">
         {draft.kind === 'video' ? (
           <video
@@ -530,14 +533,15 @@ function StoryComposer({
             loop
             muted
             playsInline
-            className="absolute inset-0 w-full h-full object-contain bg-black"
+            className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none"
           />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={draft.url}
             alt=""
-            className="absolute inset-0 w-full h-full object-contain bg-black"
+            draggable={false}
+            className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none select-none [-webkit-touch-callout:none]"
           />
         )}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
@@ -722,7 +726,8 @@ function StoryViewer({
   if (!group || !story) return null;
   const label = nameOf(group.creator);
 
-  const holdStart = () => {
+  const holdStart = (e: React.PointerEvent) => {
+    e.preventDefault();
     holdRef.current = true;
     setPaused(true);
   };
@@ -734,7 +739,10 @@ function StoryViewer({
   };
 
   return (
-    <div className="fixed inset-0 z-[240] bg-black">
+    <div
+      className="fixed inset-0 z-[240] bg-black select-none [-webkit-user-select:none] [-webkit-touch-callout:none] overscroll-none"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <div className="absolute inset-0 bg-zinc-950" />
       {story.media_type === 'video' ? (
         <video
@@ -743,7 +751,10 @@ function StoryViewer({
           src={story.media_url}
           autoPlay
           playsInline
-          className="absolute inset-0 w-full h-full object-contain z-[1]"
+          className="absolute inset-0 w-full h-full object-contain z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
+          controls={false}
+          disablePictureInPicture
+          onContextMenu={(e) => e.preventDefault()}
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
             if (v.duration) setProgress(v.currentTime / v.duration);
@@ -756,7 +767,9 @@ function StoryViewer({
           key={story.id}
           src={story.media_url}
           alt=""
-          className="absolute inset-0 w-full h-full object-contain z-[1]"
+          className="absolute inset-0 w-full h-full object-contain z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
+          draggable={false}
+          onContextMenu={(e) => e.preventDefault()}
         />
       )}
 
@@ -845,8 +858,9 @@ function StoryViewer({
 
       <button
         type="button"
-        className="absolute left-0 top-20 bottom-20 w-[28%] z-20"
+        className="absolute left-0 top-20 bottom-20 w-[28%] z-20 touch-none select-none [-webkit-touch-callout:none]"
         aria-label="Previous"
+        onContextMenu={(e) => e.preventDefault()}
         onClick={goPrev}
         onPointerDown={holdStart}
         onPointerUp={holdEnd}
@@ -855,8 +869,9 @@ function StoryViewer({
       />
       <button
         type="button"
-        className="absolute right-0 top-20 bottom-20 w-[28%] z-20"
+        className="absolute right-0 top-20 bottom-20 w-[28%] z-20 touch-none select-none [-webkit-touch-callout:none]"
         aria-label="Next"
+        onContextMenu={(e) => e.preventDefault()}
         onClick={goNext}
         onPointerDown={holdStart}
         onPointerUp={holdEnd}
@@ -865,8 +880,9 @@ function StoryViewer({
       />
       <button
         type="button"
-        className="absolute left-[28%] right-[28%] top-20 bottom-24 z-20"
+        className="absolute left-[28%] right-[28%] top-20 bottom-24 z-20 touch-none select-none [-webkit-touch-callout:none]"
         aria-label="Hold to pause"
+        onContextMenu={(e) => e.preventDefault()}
         onPointerDown={holdStart}
         onPointerUp={holdEnd}
         onPointerCancel={holdEnd}
