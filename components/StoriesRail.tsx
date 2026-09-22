@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
+import { createNotification } from '../lib/notifications';
 
 export type StoryRow = {
   id: string;
@@ -23,6 +24,8 @@ export type StoryRow = {
   media_type: 'image' | 'video';
   thumbnail_url?: string | null;
   duration_seconds?: number;
+  caption?: string | null;
+  visibility?: 'everyone' | 'followers' | 'subscribers' | null;
   created_at: string;
   expires_at: string;
 };
@@ -69,6 +72,8 @@ export default function StoriesRail({
     url: string;
     kind: 'image' | 'video';
     duration: number;
+    caption: string;
+    visibility: 'everyone' | 'followers' | 'subscribers';
   } | null>(null);
   const [open, setOpen] = useState<{ groupIndex: number; storyIndex: number } | null>(
     null
@@ -90,7 +95,7 @@ export default function StoriesRail({
       const { data: rows, error: qErr } = await supabase
         .from('stories')
         .select(
-          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, created_at, expires_at'
+          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, visibility, created_at, expires_at'
         )
         .in('creator_id', ids)
         .gt('expires_at', new Date().toISOString())
@@ -156,6 +161,14 @@ export default function StoriesRail({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!isCreator || typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('addstory') !== '1') return;
+    const t = window.setTimeout(() => fileRef.current?.click(), 250);
+    window.history.replaceState({}, '', window.location.pathname);
+    return () => window.clearTimeout(t);
+  }, [isCreator]);
+
   const onPick = async (file: File | null) => {
     if (!file || !userId || uploading) return;
     setError('');
@@ -201,6 +214,8 @@ export default function StoriesRail({
       url: URL.createObjectURL(file),
       kind: isImage ? 'image' : 'video',
       duration,
+      caption: '',
+      visibility: 'everyone',
     });
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -245,6 +260,8 @@ export default function StoriesRail({
         media_type: draft.kind,
         thumbnail_url: thumb,
         duration_seconds: draft.duration,
+        caption: draft.caption || null,
+        visibility: draft.visibility || 'everyone',
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
       if (insErr) throw insErr;
@@ -393,6 +410,7 @@ export default function StoriesRail({
             setDraft(null);
           }}
           onShare={() => void publishDraft()}
+          onMeta={(patch) => setDraft((d) => (d ? { ...d, ...patch } : d))}
         />
       )}
 
@@ -441,7 +459,7 @@ export function ProfileStoryRing({
       const { data } = await supabase
         .from('stories')
         .select(
-          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, created_at, expires_at'
+          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, visibility, created_at, expires_at'
         )
         .eq('creator_id', profileId)
         .gt('expires_at', new Date().toISOString())
@@ -516,11 +534,23 @@ function StoryComposer({
   uploading,
   onCancel,
   onShare,
+  onMeta,
 }: {
-  draft: { file: File; url: string; kind: 'image' | 'video'; duration: number };
+  draft: {
+    file: File;
+    url: string;
+    kind: 'image' | 'video';
+    duration: number;
+    caption: string;
+    visibility: 'everyone' | 'followers' | 'subscribers';
+  };
   uploading: boolean;
   onCancel: () => void;
   onShare: () => void;
+  onMeta: (patch: {
+    caption?: string;
+    visibility?: 'everyone' | 'followers' | 'subscribers';
+  }) => void;
 }) {
   return (
     <div
@@ -560,8 +590,42 @@ function StoryComposer({
           <span className="w-10" />
         </div>
       </div>
-      <div className="relative z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
-        <p className="text-[11px] text-zinc-400 mb-3 text-center">
+      <div className="relative z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 space-y-3">
+        {draft.caption.trim() ? (
+          <p className="absolute left-5 right-5 bottom-[11.5rem] text-center text-white text-lg font-semibold drop-shadow-lg pointer-events-none">
+            {draft.caption}
+          </p>
+        ) : null}
+        <input
+          value={draft.caption}
+          onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
+          maxLength={80}
+          placeholder="Add a caption…"
+          className="w-full h-11 rounded-xl bg-white/10 border border-white/15 px-3 text-sm outline-none placeholder:text-white/40"
+        />
+        <div className="flex gap-1.5">
+          {(
+            [
+              ['everyone', 'Everyone'],
+              ['followers', 'Followers'],
+              ['subscribers', 'Subs'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onMeta({ visibility: id })}
+              className={`flex-1 h-9 rounded-full text-xs font-medium ${
+                draft.visibility === id
+                  ? 'bg-pink-600 text-white'
+                  : 'bg-white/10 text-white/70'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-zinc-400 text-center">
           Visible for 24 hours · {draft.kind === 'video' ? `${draft.duration}s video` : 'Photo'}
         </p>
         <button
@@ -623,6 +687,8 @@ function StoryViewer({
   const [replying, setReplying] = useState(false);
   const [replySent, setReplySent] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [myReact, setMyReact] = useState<string | null>(null);
+  const [floatEmoji, setFloatEmoji] = useState<string | null>(null);
 
   const markViewed = useCallback(
     async (row: StoryRow) => {
@@ -695,6 +761,8 @@ function StoryViewer({
     setReplySent(false);
     setReplyOpen(false);
     setShowViewers(false);
+    setMyReact(null);
+    setFloatEmoji(null);
   }, [story?.id]);
 
   useEffect(() => {
@@ -800,6 +868,29 @@ function StoryViewer({
       alert(e?.message || 'Could not send reply');
     } finally {
       setReplying(false);
+    }
+  };
+
+  const sendReact = async (emoji: string) => {
+    if (!userId || !story || isOwn) return;
+    setMyReact(emoji);
+    setFloatEmoji(emoji);
+    window.setTimeout(() => setFloatEmoji(null), 900);
+    try {
+      await supabase.from('story_reactions').upsert(
+        { story_id: story.id, user_id: userId, emoji },
+        { onConflict: 'story_id,user_id' }
+      );
+      await createNotification({
+        userId: story.creator_id,
+        actorId: userId,
+        type: 'like',
+        title: `Reacted ${emoji} to your story`,
+        body: null,
+        link: `/${group?.creator.username || ''}`,
+      });
+    } catch {
+      /* ignore */
     }
   };
 
@@ -958,6 +1049,11 @@ function StoryViewer({
 
       <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/75 via-black/25 to-transparent z-[2] pointer-events-none" />
       <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/70 to-transparent z-[2] pointer-events-none" />
+      {story.caption ? (
+        <p className="absolute left-6 right-6 bottom-28 z-[16] text-center text-white text-lg font-semibold drop-shadow-lg pointer-events-none">
+          {story.caption}
+        </p>
+      ) : null}
 
       <div className="relative z-30 px-3 pt-[max(0.7rem,env(safe-area-inset-top))]">
         <div className="flex gap-1 mb-3">
@@ -1050,6 +1146,12 @@ function StoryViewer({
         />
       )}
 
+      {floatEmoji && (
+        <div className="absolute inset-0 z-[18] pointer-events-none flex items-center justify-center">
+          <span className="text-6xl animate-bounce">{floatEmoji}</span>
+        </div>
+      )}
+
       {paused && (
         <div className="absolute inset-0 z-[15] pointer-events-none flex items-center justify-center">
           <div className="w-14 h-14 rounded-full bg-black/45 backdrop-blur flex items-center justify-center">
@@ -1071,8 +1173,25 @@ function StoryViewer({
               : `${viewsCount} view${viewsCount === 1 ? '' : 's'}`}
           </button>
         ) : userId ? (
-          replySent ? (
-            <p className="text-sm text-pink-300 font-medium">Reply sent</p>
+          <div className="space-y-2">
+          {!replyOpen && (
+            <div className="flex items-center justify-center gap-2">
+              {['❤️', '🔥', '😍'].map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => void sendReact(e)}
+                  className={`w-11 h-11 rounded-full text-lg ${
+                    myReact === e ? 'bg-white/25' : 'bg-white/10'
+                  }`}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          )}
+          {replySent ? (
+            <p className="text-sm text-pink-300 font-medium text-center">Reply sent</p>
           ) : replyOpen ? (
             <form
               className="flex items-center gap-2"
@@ -1122,7 +1241,8 @@ function StoryViewer({
             >
               Reply to {label}…
             </button>
-          )
+          )}
+          </div>
         ) : null}
       </div>
 

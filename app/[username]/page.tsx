@@ -654,6 +654,14 @@ export default function PublicProfilePage() {
                     )}
                   </div>
                 </ProfileStoryRing>
+                {isOwnProfile && profile.account_type === 'creator' && (
+                  <Link
+                    href="/?addstory=1"
+                    className="mt-2 text-xs font-medium text-pink-400 hover:text-pink-300"
+                  >
+                    Add story
+                  </Link>
+                )}
                 {liveStream && (
                   <Link
                     href={`/live/${liveStream.id}`}
