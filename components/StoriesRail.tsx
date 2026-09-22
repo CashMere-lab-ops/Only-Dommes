@@ -680,8 +680,17 @@ function StoryViewer({
   const isOwn = !!(userId && group && group.creator.id === userId);
   const [viewsCount, setViewsCount] = useState<number | null>(null);
   const [viewers, setViewers] = useState<
-    { id: string; name: string; username?: string | null; avatar?: string | null; at: string }[]
+    {
+      id: string;
+      name: string;
+      username?: string | null;
+      avatar?: string | null;
+      at: string;
+      emoji?: string | null;
+    }[]
   >([]);
+  const [reactCounts, setReactCounts] = useState<Record<string, number>>({});
+  const lastTapRef = useRef(0);
   const [showViewers, setShowViewers] = useState(false);
   const [reply, setReply] = useState('');
   const [replying, setReplying] = useState(false);
@@ -720,6 +729,16 @@ function StoryViewer({
         .select('*', { count: 'exact', head: true })
         .eq('story_id', story.id);
       setViewsCount(count || 0);
+      const { data: reacts } = await supabase
+        .from('story_reactions')
+        .select('emoji')
+        .eq('story_id', story.id);
+      const counts: Record<string, number> = {};
+      (reacts || []).forEach((r: any) => {
+        const e = String(r.emoji || '❤️');
+        counts[e] = (counts[e] || 0) + 1;
+      });
+      setReactCounts(counts);
     })();
   }, [isOwn, story?.id, supabase]);
 
@@ -763,6 +782,7 @@ function StoryViewer({
     setShowViewers(false);
     setMyReact(null);
     setFloatEmoji(null);
+    setReactCounts({});
   }, [story?.id]);
 
   useEffect(() => {
@@ -827,6 +847,14 @@ function StoryViewer({
         people[p.id] = p;
       });
     }
+    const { data: reacts } = await supabase
+      .from('story_reactions')
+      .select('user_id, emoji')
+      .eq('story_id', story.id);
+    const emojiBy: Record<string, string> = {};
+    (reacts || []).forEach((r: any) => {
+      if (r.user_id) emojiBy[r.user_id] = r.emoji || '❤️';
+    });
     setViewers(
       (rows || []).map((r: any) => {
         const p = people[r.viewer_id] || {};
@@ -836,6 +864,7 @@ function StoryViewer({
           username: p.username,
           avatar: p.avatar_url || null,
           at: r.viewed_at,
+          emoji: emojiBy[r.viewer_id] || null,
         };
       })
     );
@@ -994,6 +1023,13 @@ function StoryViewer({
     }
     setDrag({ x: 0, y: 0 });
     if (!moved && dt < 320) {
+      const now = Date.now();
+      if (!isOwn && now - lastTapRef.current < 280) {
+        lastTapRef.current = 0;
+        void sendReact('❤️');
+        return;
+      }
+      lastTapRef.current = now;
       const w = window.innerWidth || 1;
       if (e.clientX < w * 0.34) goPrev();
       else goNext();
@@ -1171,6 +1207,12 @@ function StoryViewer({
             {viewsCount == null
               ? 'Views'
               : `${viewsCount} view${viewsCount === 1 ? '' : 's'}`}
+            {Object.entries(reactCounts).map(([e, n]) => (
+              <span key={e} className="text-white/80">
+                {e}
+                {n}
+              </span>
+            ))}
           </button>
         ) : userId ? (
           <div className="space-y-2">
@@ -1292,6 +1334,7 @@ function StoryViewer({
                       <p className="text-sm font-medium truncate">{v.name}</p>
                       <p className="text-[11px] text-zinc-500">{timeAgo(v.at)}</p>
                     </div>
+                    {v.emoji ? <span className="text-lg">{v.emoji}</span> : null}
                   </Link>
                 ))
               )}
