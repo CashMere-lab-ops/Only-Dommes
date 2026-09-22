@@ -9,13 +9,11 @@ import {
   X,
   Volume2,
   VolumeX,
-  Pause,
   Send,
   Eye,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
-import { createNotification } from '../lib/notifications';
 
 export type StoryRow = {
   id: string;
@@ -686,18 +684,13 @@ function StoryViewer({
       username?: string | null;
       avatar?: string | null;
       at: string;
-      emoji?: string | null;
     }[]
   >([]);
-  const [reactCounts, setReactCounts] = useState<Record<string, number>>({});
-  const lastTapRef = useRef(0);
   const [showViewers, setShowViewers] = useState(false);
   const [reply, setReply] = useState('');
   const [replying, setReplying] = useState(false);
   const [replySent, setReplySent] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
-  const [myReact, setMyReact] = useState<string | null>(null);
-  const [floatEmoji, setFloatEmoji] = useState<string | null>(null);
 
   const markViewed = useCallback(
     async (row: StoryRow) => {
@@ -729,16 +722,6 @@ function StoryViewer({
         .select('*', { count: 'exact', head: true })
         .eq('story_id', story.id);
       setViewsCount(count || 0);
-      const { data: reacts } = await supabase
-        .from('story_reactions')
-        .select('emoji')
-        .eq('story_id', story.id);
-      const counts: Record<string, number> = {};
-      (reacts || []).forEach((r: any) => {
-        const e = String(r.emoji || '❤️');
-        counts[e] = (counts[e] || 0) + 1;
-      });
-      setReactCounts(counts);
     })();
   }, [isOwn, story?.id, supabase]);
 
@@ -780,9 +763,6 @@ function StoryViewer({
     setReplySent(false);
     setReplyOpen(false);
     setShowViewers(false);
-    setMyReact(null);
-    setFloatEmoji(null);
-    setReactCounts({});
   }, [story?.id]);
 
   useEffect(() => {
@@ -847,14 +827,6 @@ function StoryViewer({
         people[p.id] = p;
       });
     }
-    const { data: reacts } = await supabase
-      .from('story_reactions')
-      .select('user_id, emoji')
-      .eq('story_id', story.id);
-    const emojiBy: Record<string, string> = {};
-    (reacts || []).forEach((r: any) => {
-      if (r.user_id) emojiBy[r.user_id] = r.emoji || '❤️';
-    });
     setViewers(
       (rows || []).map((r: any) => {
         const p = people[r.viewer_id] || {};
@@ -864,7 +836,6 @@ function StoryViewer({
           username: p.username,
           avatar: p.avatar_url || null,
           at: r.viewed_at,
-          emoji: emojiBy[r.viewer_id] || null,
         };
       })
     );
@@ -897,29 +868,6 @@ function StoryViewer({
       alert(e?.message || 'Could not send reply');
     } finally {
       setReplying(false);
-    }
-  };
-
-  const sendReact = async (emoji: string) => {
-    if (!userId || !story || isOwn) return;
-    setMyReact(emoji);
-    setFloatEmoji(emoji);
-    window.setTimeout(() => setFloatEmoji(null), 900);
-    try {
-      await supabase.from('story_reactions').upsert(
-        { story_id: story.id, user_id: userId, emoji },
-        { onConflict: 'story_id,user_id' }
-      );
-      await createNotification({
-        userId: story.creator_id,
-        actorId: userId,
-        type: 'like',
-        title: `Reacted ${emoji} to your story`,
-        body: null,
-        link: `/${group?.creator.username || ''}`,
-      });
-    } catch {
-      /* ignore */
     }
   };
 
@@ -1017,21 +965,14 @@ function StoryViewer({
     }
     if (mode === 'horiz') {
       setDrag({ x: 0, y: 0 });
-      if (dx < -48) goNext();
-      else if (dx > 48) goPrev();
+      if (dx < -56) goNext();
+      else if (dx > 56) goPrev();
       return;
     }
     setDrag({ x: 0, y: 0 });
-    if (!moved && dt < 320) {
-      const now = Date.now();
-      if (!isOwn && now - lastTapRef.current < 280) {
-        lastTapRef.current = 0;
-        void sendReact('❤️');
-        return;
-      }
-      lastTapRef.current = now;
+    if (!moved && dt < 280) {
       const w = window.innerWidth || 1;
-      if (e.clientX < w * 0.34) goPrev();
+      if (e.clientX < w * 0.32) goPrev();
       else goNext();
     }
   };
@@ -1045,12 +986,16 @@ function StoryViewer({
       <div
         className="absolute inset-0 z-[1] will-change-transform"
         style={{
-          transform: `translate(${drag.x * 0.35}px, ${drag.y}px) scale(${Math.max(
-            0.86,
-            1 - drag.y / 1400
+          transform: `translate3d(${drag.x}px, ${drag.y}px, 0) scale(${Math.max(
+            0.88,
+            1 - drag.y / 1800
           )})`,
-          opacity: Math.max(0.35, 1 - drag.y / 520),
-          transition: drag.x === 0 && drag.y === 0 ? 'transform 180ms ease, opacity 180ms ease' : 'none',
+          borderRadius: drag.y > 8 ? 18 : 0,
+          opacity: Math.max(0.4, 1 - drag.y / 600),
+          transition:
+            drag.x === 0 && drag.y === 0
+              ? 'transform 220ms cubic-bezier(0.22,1,0.36,1), opacity 220ms ease, border-radius 220ms ease'
+              : 'none',
         }}
       >
       {story.media_type === 'video' ? (
@@ -1182,20 +1127,6 @@ function StoryViewer({
         />
       )}
 
-      {floatEmoji && (
-        <div className="absolute inset-0 z-[18] pointer-events-none flex items-center justify-center">
-          <span className="text-6xl animate-bounce">{floatEmoji}</span>
-        </div>
-      )}
-
-      {paused && (
-        <div className="absolute inset-0 z-[15] pointer-events-none flex items-center justify-center">
-          <div className="w-14 h-14 rounded-full bg-black/45 backdrop-blur flex items-center justify-center">
-            <Pause size={22} fill="white" />
-          </div>
-        </div>
-      )}
-
       <div className="absolute bottom-0 left-0 right-0 z-30 px-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2">
         {isOwn ? (
           <button
@@ -1207,33 +1138,11 @@ function StoryViewer({
             {viewsCount == null
               ? 'Views'
               : `${viewsCount} view${viewsCount === 1 ? '' : 's'}`}
-            {Object.entries(reactCounts).map(([e, n]) => (
-              <span key={e} className="text-white/80">
-                {e}
-                {n}
-              </span>
-            ))}
           </button>
         ) : userId ? (
-          <div className="space-y-2">
-          {!replyOpen && (
-            <div className="flex items-center justify-center gap-2">
-              {['❤️', '🔥', '😍'].map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => void sendReact(e)}
-                  className={`w-11 h-11 rounded-full text-lg ${
-                    myReact === e ? 'bg-white/25' : 'bg-white/10'
-                  }`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          )}
+          <div>
           {replySent ? (
-            <p className="text-sm text-pink-300 font-medium text-center">Reply sent</p>
+            <p className="text-sm text-white/70 text-center">Sent</p>
           ) : replyOpen ? (
             <form
               className="flex items-center gap-2"
@@ -1279,7 +1188,7 @@ function StoryViewer({
                 setReplyOpen(true);
                 setPaused(true);
               }}
-              className="w-full h-11 rounded-full border border-white/20 bg-white/8 text-left px-4 text-sm text-white/70"
+              className="w-full h-11 rounded-full border border-white/25 bg-black/25 backdrop-blur-md text-left px-4 text-sm text-white/75"
             >
               Reply to {label}…
             </button>
@@ -1334,7 +1243,6 @@ function StoryViewer({
                       <p className="text-sm font-medium truncate">{v.name}</p>
                       <p className="text-[11px] text-zinc-500">{timeAgo(v.at)}</p>
                     </div>
-                    {v.emoji ? <span className="text-lg">{v.emoji}</span> : null}
                   </Link>
                 ))
               )}
