@@ -10,6 +10,8 @@ import {
   Volume2,
   VolumeX,
   Pause,
+  Send,
+  Eye,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
@@ -613,6 +615,14 @@ function StoryViewer({
   const story = group?.stories[si];
   const isOwn = !!(userId && group && group.creator.id === userId);
   const [viewsCount, setViewsCount] = useState<number | null>(null);
+  const [viewers, setViewers] = useState<
+    { id: string; name: string; username?: string | null; avatar?: string | null; at: string }[]
+  >([]);
+  const [showViewers, setShowViewers] = useState(false);
+  const [reply, setReply] = useState('');
+  const [replying, setReplying] = useState(false);
+  const [replySent, setReplySent] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
 
   const markViewed = useCallback(
     async (row: StoryRow) => {
@@ -681,7 +691,15 @@ function StoryViewer({
     setProgress(0);
     setPaused(false);
     setDrag({ x: 0, y: 0 });
+    setReply('');
+    setReplySent(false);
+    setReplyOpen(false);
+    setShowViewers(false);
   }, [story?.id]);
+
+  useEffect(() => {
+    if (replyOpen || showViewers) setPaused(true);
+  }, [replyOpen, showViewers]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -718,6 +736,71 @@ function StoryViewer({
     if (!confirm('Delete this story?')) return;
     await supabase.from('stories').delete().eq('id', story.id);
     onClose();
+  };
+
+  const openViewers = async () => {
+    if (!story || !isOwn) return;
+    setShowViewers(true);
+    setPaused(true);
+    const { data: rows } = await supabase
+      .from('story_views')
+      .select('viewer_id, viewed_at')
+      .eq('story_id', story.id)
+      .order('viewed_at', { ascending: false })
+      .limit(80);
+    const ids = [...new Set((rows || []).map((r: any) => r.viewer_id))];
+    let people: Record<string, any> = {};
+    if (ids.length) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .in('id', ids);
+      (profiles || []).forEach((p: any) => {
+        people[p.id] = p;
+      });
+    }
+    setViewers(
+      (rows || []).map((r: any) => {
+        const p = people[r.viewer_id] || {};
+        return {
+          id: r.viewer_id,
+          name: p.display_name || (p.username ? `@${p.username}` : 'Fan'),
+          username: p.username,
+          avatar: p.avatar_url || null,
+          at: r.viewed_at,
+        };
+      })
+    );
+  };
+
+  const sendReply = async () => {
+    const text = reply.trim();
+    if (!text || !userId || !story || isOwn || replying) return;
+    setReplying(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Login required');
+      const res = await fetch('/api/stories/reply', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ story_id: story.id, text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not send reply');
+      setReply('');
+      setReplySent(true);
+      setReplyOpen(false);
+      setPaused(false);
+    } catch (e: any) {
+      alert(e?.message || 'Could not send reply');
+    } finally {
+      setReplying(false);
+    }
   };
 
   useEffect(() => {
@@ -956,14 +1039,16 @@ function StoryViewer({
         </div>
       </div>
 
-      <div
-        className="absolute left-0 right-0 top-16 bottom-0 z-20 touch-none select-none [-webkit-touch-callout:none]"
-        onContextMenu={(e) => e.preventDefault()}
-        onPointerDown={onGestureDown}
-        onPointerMove={onGestureMove}
-        onPointerUp={onGestureUp}
-        onPointerCancel={onGestureUp}
-      />
+      {!replyOpen && !showViewers && (
+        <div
+          className="absolute left-0 right-0 top-16 bottom-24 z-20 touch-none select-none [-webkit-touch-callout:none]"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={onGestureDown}
+          onPointerMove={onGestureMove}
+          onPointerUp={onGestureUp}
+          onPointerCancel={onGestureUp}
+        />
+      )}
 
       {paused && (
         <div className="absolute inset-0 z-[15] pointer-events-none flex items-center justify-center">
@@ -973,14 +1058,127 @@ function StoryViewer({
         </div>
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex items-center justify-between text-[11px] text-white/70 pointer-events-none">
-        <span>Swipe down to close</span>
-        {isOwn && viewsCount != null && (
-          <span className="text-white/85">
-            {viewsCount} view{viewsCount === 1 ? '' : 's'}
-          </span>
-        )}
+      <div className="absolute bottom-0 left-0 right-0 z-30 px-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2">
+        {isOwn ? (
+          <button
+            type="button"
+            onClick={() => void openViewers()}
+            className="flex items-center gap-2 text-sm text-white/90"
+          >
+            <Eye size={16} />
+            {viewsCount == null
+              ? 'Views'
+              : `${viewsCount} view${viewsCount === 1 ? '' : 's'}`}
+          </button>
+        ) : userId ? (
+          replySent ? (
+            <p className="text-sm text-pink-300 font-medium">Reply sent</p>
+          ) : replyOpen ? (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void sendReply();
+              }}
+            >
+              <input
+                autoFocus
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                maxLength={200}
+                placeholder="Reply…"
+                className="flex-1 h-11 rounded-full bg-white/10 border border-white/15 px-4 text-sm outline-none placeholder:text-white/40"
+              />
+              <button
+                type="submit"
+                disabled={!reply.trim() || replying}
+                className="w-11 h-11 rounded-full bg-pink-600 disabled:opacity-40 flex items-center justify-center"
+              >
+                {replying ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Send size={16} />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReplyOpen(false);
+                  setPaused(false);
+                }}
+                className="text-xs text-white/60 px-1"
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setReplyOpen(true);
+                setPaused(true);
+              }}
+              className="w-full h-11 rounded-full border border-white/20 bg-white/8 text-left px-4 text-sm text-white/70"
+            >
+              Reply to {label}…
+            </button>
+          )
+        ) : null}
       </div>
+
+      {showViewers && (
+        <div className="absolute inset-0 z-40 bg-black/50 flex items-end">
+          <div className="w-full max-h-[62vh] rounded-t-3xl bg-zinc-950 border-t border-zinc-800 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-semibold text-sm">
+                {viewsCount || viewers.length} view
+                {(viewsCount || viewers.length) === 1 ? '' : 's'}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowViewers(false);
+                  setPaused(false);
+                }}
+                className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[50vh] space-y-1">
+              {viewers.length === 0 ? (
+                <p className="text-sm text-zinc-500 py-8 text-center">No views yet</p>
+              ) : (
+                viewers.map((v) => (
+                  <Link
+                    key={v.id + v.at}
+                    href={v.username ? `/${v.username}` : '/'}
+                    className="flex items-center gap-3 py-2.5"
+                    onClick={onClose}
+                  >
+                    {v.avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={v.avatar}
+                        alt=""
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold">
+                        {v.name[0]?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{v.name}</p>
+                      <p className="text-[11px] text-zinc-500">{timeAgo(v.at)}</p>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
