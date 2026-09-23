@@ -658,8 +658,10 @@ function StoryViewer({
   const supabase = createClient();
   const [gi, setGi] = useState(groupIndex);
   const [si, setSi] = useState(storyIndex);
-  const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [holdUi, setHoldUi] = useState(false);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const progressValue = useRef(0);
   const [muted, setMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const holdRef = useRef(false);
@@ -729,13 +731,11 @@ function StoryViewer({
     if (!group) return;
     if (si + 1 < group.stories.length) {
       setSi((n) => n + 1);
-      setProgress(0);
       return;
     }
     if (gi + 1 < groups.length) {
       setGi((n) => n + 1);
       setSi(0);
-      setProgress(0);
       return;
     }
     onClose();
@@ -744,20 +744,22 @@ function StoryViewer({
   const goPrev = useCallback(() => {
     if (si > 0) {
       setSi((n) => n - 1);
-      setProgress(0);
       return;
     }
     if (gi > 0) {
       const prev = groups[gi - 1];
       setGi((n) => n - 1);
       setSi(Math.max(0, (prev?.stories.length || 1) - 1));
-      setProgress(0);
     }
   }, [si, gi, groups]);
 
   useEffect(() => {
-    setProgress(0);
+    progressValue.current = 0;
+    if (progressBarRef.current) {
+      progressBarRef.current.style.transform = 'scaleX(0)';
+    }
     setPaused(false);
+    setHoldUi(false);
     setDrag({ x: 0, y: 0 });
     setReply('');
     setReplySent(false);
@@ -783,20 +785,36 @@ function StoryViewer({
 
   useEffect(() => {
     if (!story || paused) return;
-    if (story.media_type === 'video') return;
-    const total = Math.max(3, Number(story.duration_seconds || PHOTO_SECS)) * 1000;
-    let start = Date.now();
-    let acc = progress;
-    const iv = setInterval(() => {
-      const p = Math.min(1, acc + (Date.now() - start) / total);
-      setProgress(p);
-      if (p >= 1) {
-        clearInterval(iv);
-        goNext();
+    let raf = 0;
+    const paint = (p: number) => {
+      progressValue.current = p;
+      if (progressBarRef.current) {
+        progressBarRef.current.style.transform = `scaleX(${p})`;
       }
-    }, 40);
-    return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    };
+    if (story.media_type === 'video') {
+      const tick = () => {
+        const v = videoRef.current;
+        if (v && v.duration) paint(Math.min(1, v.currentTime / v.duration));
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(raf);
+    }
+    const total = Math.max(3, Number(story.duration_seconds || PHOTO_SECS)) * 1000;
+    const from = progressValue.current;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min(1, from + (now - t0) / total);
+      paint(p);
+      if (p >= 1) {
+        goNext();
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [story?.id, story?.media_type, paused, goNext]);
 
   const removeStory = async () => {
@@ -918,8 +936,9 @@ function StoryViewer({
         gesture.current.mode = 'hold';
         holdRef.current = true;
         setPaused(true);
+        setHoldUi(true);
       }
-    }, 160);
+    }, 140);
   };
 
   const onGestureMove = (e: React.PointerEvent) => {
@@ -932,12 +951,13 @@ function StoryViewer({
     if (gesture.current.mode === 'hold') {
       holdRef.current = false;
       setPaused(false);
+      setHoldUi(false);
     }
     if (gesture.current.mode === 'none' || gesture.current.mode === 'hold') {
       gesture.current.mode = Math.abs(dy) > Math.abs(dx) * 1.1 ? 'vert' : 'horiz';
     }
     if (gesture.current.mode === 'vert') {
-      setDrag({ x: 0, y: Math.max(0, dy) });
+      setDrag({ x: 0, y: dy });
     } else if (gesture.current.mode === 'horiz') {
       setDrag({ x: dx, y: 0 });
     }
@@ -956,11 +976,22 @@ function StoryViewer({
     if (mode === 'hold') {
       holdRef.current = false;
       setPaused(false);
+      setHoldUi(false);
       setDrag({ x: 0, y: 0 });
       return;
     }
-    if (mode === 'vert' && dy > 80) {
-      onClose();
+    if (mode === 'vert') {
+      setDrag({ x: 0, y: 0 });
+      if (dy > 80) {
+        onClose();
+        return;
+      }
+      if (dy < -56 && userId && !isOwn) {
+        setReplyOpen(true);
+        setPaused(true);
+        setHoldUi(false);
+        return;
+      }
       return;
     }
     if (mode === 'horiz') {
@@ -986,12 +1017,13 @@ function StoryViewer({
       <div
         className="absolute inset-0 z-[1] will-change-transform"
         style={{
-          transform: `translate3d(${drag.x}px, ${drag.y}px, 0) scale(${Math.max(
-            0.88,
-            1 - drag.y / 1800
-          )})`,
+          transform: `translate3d(${drag.x}px, ${
+            drag.y > 0 ? drag.y : drag.y * 0.4
+          }px, 0) scale(${
+            drag.y > 0 ? Math.max(0.88, 1 - drag.y / 1800) : 1
+          })`,
           borderRadius: drag.y > 8 ? 18 : 0,
-          opacity: Math.max(0.4, 1 - drag.y / 600),
+          opacity: drag.y > 0 ? Math.max(0.4, 1 - drag.y / 600) : 1,
           transition:
             drag.x === 0 && drag.y === 0
               ? 'transform 220ms cubic-bezier(0.22,1,0.36,1), opacity 220ms ease, border-radius 220ms ease'
@@ -1009,10 +1041,6 @@ function StoryViewer({
           controls={false}
           disablePictureInPicture
           onContextMenu={(e) => e.preventDefault()}
-          onTimeUpdate={(e) => {
-            const v = e.currentTarget;
-            if (v.duration) setProgress(v.currentTime / v.duration);
-          }}
           onEnded={goNext}
         />
       ) : (
@@ -1028,23 +1056,40 @@ function StoryViewer({
       )}
       </div>
 
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/75 via-black/25 to-transparent z-[2] pointer-events-none" />
-      <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/70 to-transparent z-[2] pointer-events-none" />
+      <div
+        className={`absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/75 via-black/25 to-transparent z-[2] pointer-events-none transition-opacity duration-200 ${
+          holdUi ? 'opacity-0' : 'opacity-100'
+        }`}
+      />
+      <div
+        className={`absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/70 to-transparent z-[2] pointer-events-none transition-opacity duration-200 ${
+          holdUi ? 'opacity-0' : 'opacity-100'
+        }`}
+      />
       {story.caption ? (
-        <p className="absolute left-6 right-6 bottom-28 z-[16] text-center text-white text-lg font-semibold drop-shadow-lg pointer-events-none">
+        <p
+          className={`absolute left-6 right-6 bottom-28 z-[16] text-center text-white text-lg font-semibold drop-shadow-lg pointer-events-none transition-opacity duration-200 ${
+            holdUi ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
           {story.caption}
         </p>
       ) : null}
 
-      <div className="relative z-30 px-3 pt-[max(0.7rem,env(safe-area-inset-top))]">
-        <div className="flex gap-1 mb-3">
+      <div
+        className={`relative z-30 px-3 pt-[max(0.7rem,env(safe-area-inset-top))] transition-opacity duration-200 ${
+          holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}
+      >
+        <div className="flex gap-[3px] mb-3">
           {group.stories.map((s, i) => (
-            <div key={s.id} className="flex-1 h-[2.5px] rounded-full bg-white/25 overflow-hidden">
+            <div key={s.id} className="flex-1 h-[2px] rounded-full bg-white/30 overflow-hidden">
               <div
-                className="h-full bg-white rounded-full"
+                ref={i === si ? progressBarRef : undefined}
+                className="h-full w-full bg-white rounded-full origin-left will-change-transform"
                 style={{
-                  width:
-                    i < si ? '100%' : i === si ? `${Math.round(progress * 100)}%` : '0%',
+                  transform:
+                    i < si ? 'scaleX(1)' : i === si ? 'scaleX(0)' : 'scaleX(0)',
                 }}
               />
             </div>
@@ -1127,7 +1172,11 @@ function StoryViewer({
         />
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 z-30 px-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2">
+      <div
+        className={`absolute bottom-0 left-0 right-0 z-30 px-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2 transition-opacity duration-200 ${
+          holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}
+      >
         {isOwn ? (
           <button
             type="button"
