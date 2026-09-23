@@ -55,6 +55,41 @@ function nameOf(c: StoryCreator) {
   return c.display_name || (c.username ? `@${c.username}` : 'Creator');
 }
 
+async function cropToStoryFrame(
+  url: string,
+  panX: number,
+  panY: number,
+  zoom: number
+) {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('Could not load image'));
+    el.src = url;
+  });
+  const fw = 1080;
+  const fh = 1920;
+  const z = Math.max(1, Math.min(3, zoom || 1));
+  const cover = Math.max(fw / img.width, fh / img.height) * z;
+  const dw = img.width * cover;
+  const dh = img.height * cover;
+  const dx = (fw - dw) / 2 + panX * fw;
+  const dy = (fh - dh) / 2 + panY * fh;
+  const canvas = document.createElement('canvas');
+  canvas.width = fw;
+  canvas.height = fh;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Crop failed');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, fw, fh);
+  ctx.drawImage(img, dx, dy, dw, dh);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/jpeg', 0.92)
+  );
+  if (!blob) throw new Error('Crop failed');
+  return new File([blob], `story-${Date.now()}.jpg`, { type: 'image/jpeg' });
+}
+
 function captionClass(style?: string | null) {
   if (style === 'neon') {
     return 'text-pink-300 text-2xl font-black tracking-wide drop-shadow-[0_0_12px_rgba(244,114,182,0.85)]';
@@ -91,6 +126,9 @@ export default function StoriesRail({
     captionX: number;
     captionY: number;
     captionStyle: 'classic' | 'neon' | 'box';
+    cropX: number;
+    cropY: number;
+    cropZoom: number;
     visibility: 'everyone' | 'followers' | 'subscribers';
   } | null>(null);
   const [open, setOpen] = useState<{ groupIndex: number; storyIndex: number } | null>(
@@ -242,6 +280,9 @@ export default function StoriesRail({
       captionX: 50,
       captionY: 70,
       captionStyle: 'classic' as const,
+      cropX: 0,
+      cropY: 0,
+      cropZoom: 1,
       visibility: 'everyone' as const,
     };
   };
@@ -264,12 +305,21 @@ export default function StoriesRail({
     setError('');
     try {
       const stamp = Date.now();
+      let fileToUpload = draft.file;
+      if (draft.kind === 'image') {
+        fileToUpload = await cropToStoryFrame(
+          draft.url,
+          draft.cropX,
+          draft.cropY,
+          draft.cropZoom
+        );
+      }
       const ext = (
-        draft.file.name.split('.').pop() || (draft.kind === 'image' ? 'jpg' : 'mp4')
+        fileToUpload.name.split('.').pop() || (draft.kind === 'image' ? 'jpg' : 'mp4')
       ).toLowerCase();
       const path = `${userId}/stories/${stamp}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('posts').upload(path, draft.file, {
-        contentType: draft.file.type || undefined,
+      const { error: upErr } = await supabase.storage.from('posts').upload(path, fileToUpload, {
+        contentType: fileToUpload.type || undefined,
         upsert: false,
       });
       if (upErr) throw upErr;
@@ -278,7 +328,7 @@ export default function StoriesRail({
       let thumb: string | null = null;
       if (draft.kind === 'image') {
         try {
-          const t = await createImageThumbnail(draft.file, 640, 0.7);
+          const t = await createImageThumbnail(fileToUpload, 640, 0.7);
           const tPath = `${userId}/stories/thumb-${stamp}.jpg`;
           const { error: tErr } = await supabase.storage.from('posts').upload(tPath, t, {
             contentType: 'image/jpeg',
@@ -921,6 +971,9 @@ function StoryComposer({
     captionX: number;
     captionY: number;
     captionStyle: 'classic' | 'neon' | 'box';
+    cropX: number;
+    cropY: number;
+    cropZoom: number;
     visibility: 'everyone' | 'followers' | 'subscribers';
   };
   uploading: boolean;
@@ -931,11 +984,15 @@ function StoryComposer({
     captionX?: number;
     captionY?: number;
     captionStyle?: 'classic' | 'neon' | 'box';
+    cropX?: number;
+    cropY?: number;
+    cropZoom?: number;
     visibility?: 'everyone' | 'followers' | 'subscribers';
   }) => void;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const panRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   const onTextDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -974,7 +1031,7 @@ function StoryComposer({
             loop
             muted
             playsInline
-            className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none"
+            className="absolute inset-0 w-full h-full object-cover bg-black pointer-events-none"
           />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
@@ -982,7 +1039,40 @@ function StoryComposer({
             src={draft.url}
             alt=""
             draggable={false}
-            className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none select-none [-webkit-touch-callout:none]"
+            className="absolute inset-0 w-full h-full object-cover bg-black select-none [-webkit-touch-callout:none] origin-center"
+            style={{
+              transform: `translate(${draft.cropX * 100}%, ${draft.cropY * 100}%) scale(${draft.cropZoom})`,
+            }}
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest('[data-story-text]')) return;
+              panRef.current = {
+                x: e.clientX,
+                y: e.clientY,
+                px: draft.cropX,
+                py: draft.cropY,
+              };
+              try {
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              } catch {
+                /* ignore */
+              }
+            }}
+            onPointerMove={(e) => {
+              if (!panRef.current || !stageRef.current) return;
+              const box = stageRef.current.getBoundingClientRect();
+              const dx = (e.clientX - panRef.current.x) / box.width;
+              const dy = (e.clientY - panRef.current.y) / box.height;
+              onMeta({
+                cropX: Math.max(-0.35, Math.min(0.35, panRef.current.px + dx)),
+                cropY: Math.max(-0.35, Math.min(0.35, panRef.current.py + dy)),
+              });
+            }}
+            onPointerUp={() => {
+              panRef.current = null;
+            }}
+            onPointerCancel={() => {
+              panRef.current = null;
+            }}
           />
         )}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
@@ -990,6 +1080,7 @@ function StoryComposer({
         {draft.caption.trim() ? (
           <button
             type="button"
+            data-story-text="1"
             className={`absolute z-20 max-w-[80%] px-1 text-center leading-tight ${captionClass(
               draft.captionStyle
             )}`}
@@ -1071,11 +1162,36 @@ function StoryComposer({
             </button>
           ))}
         </div>
+        {draft.kind === 'image' && (
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                onMeta({ cropZoom: Math.max(1, Number((draft.cropZoom - 0.15).toFixed(2))) })
+              }
+              className="w-9 h-9 rounded-full bg-white/10 text-lg"
+            >
+              −
+            </button>
+            <p className="text-[11px] text-zinc-400 w-24 text-center">
+              Drag to crop · {Math.round(draft.cropZoom * 100)}%
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                onMeta({ cropZoom: Math.min(3, Number((draft.cropZoom + 0.15).toFixed(2))) })
+              }
+              className="w-9 h-9 rounded-full bg-white/10 text-lg"
+            >
+              +
+            </button>
+          </div>
+        )}
         <p className="text-[11px] text-zinc-400 text-center">
           Visible 24 hours ·{' '}
           {draft.kind === 'video'
             ? `${draft.duration}s video (max ${MAX_VIDEO_SECS}s)`
-            : 'Photo'}
+            : '9:16 photo'}
         </p>
         <button
           type="button"
@@ -1497,7 +1613,7 @@ function StoryViewer({
           src={story.media_url}
           autoPlay
           playsInline
-          className="absolute inset-0 w-full h-full object-contain z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
+          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
           controls={false}
           disablePictureInPicture
           onContextMenu={(e) => e.preventDefault()}
@@ -1517,7 +1633,7 @@ function StoryViewer({
           key={story.id}
           src={story.media_url}
           alt=""
-          className="absolute inset-0 w-full h-full object-contain z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
+          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
           draggable={false}
           onContextMenu={(e) => e.preventDefault()}
         />
