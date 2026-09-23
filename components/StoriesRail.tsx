@@ -11,6 +11,9 @@ import {
   VolumeX,
   Send,
   Eye,
+  Camera,
+  Image as ImageIcon,
+  SwitchCamera,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
@@ -78,6 +81,10 @@ export default function StoriesRail({
     null
   );
   const [queue, setQueue] = useState<File[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+
+  const openAdd = () => setAddOpen(true);
 
   const load = useCallback(async () => {
     if (!userId) {
@@ -164,7 +171,7 @@ export default function StoriesRail({
   useEffect(() => {
     if (!isCreator || typeof window === 'undefined') return;
     if (new URLSearchParams(window.location.search).get('addstory') !== '1') return;
-    const t = window.setTimeout(() => fileRef.current?.click(), 250);
+    const t = window.setTimeout(() => setAddOpen(true), 250);
     window.history.replaceState({}, '', window.location.pathname);
     return () => window.clearTimeout(t);
   }, [isCreator]);
@@ -309,7 +316,7 @@ export default function StoriesRail({
         {showAdd && (
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
+            onClick={openAdd}
             className="text-xs font-medium text-pink-400 hover:text-pink-300"
           >
             Add story
@@ -327,7 +334,7 @@ export default function StoriesRail({
                   const idx = groups.findIndex((g) => g.creator.id === userId);
                   setOpen({ groupIndex: Math.max(0, idx), storyIndex: 0 });
                 } else {
-                  fileRef.current?.click();
+                  openAdd();
                 }
               }}
               className="block w-full"
@@ -361,7 +368,7 @@ export default function StoriesRail({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  fileRef.current?.click();
+                  openAdd();
                 }}
                 className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-pink-600 border-[2.5px] border-zinc-950 flex items-center justify-center shadow-lg"
                 title="Add another story"
@@ -432,6 +439,63 @@ export default function StoriesRail({
         onChange={(e) => void onPickFiles(e.target.files)}
       />
 
+      {addOpen && (
+        <div
+          className="fixed inset-0 z-[230] bg-black/60 flex items-end sm:items-center justify-center"
+          onClick={() => setAddOpen(false)}
+        >
+          <div
+            className="w-full sm:max-w-sm bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold mb-3">New story</p>
+            <button
+              type="button"
+              onClick={() => {
+                setAddOpen(false);
+                setCameraOpen(true);
+              }}
+              className="w-full h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center gap-3 px-4 mb-2"
+            >
+              <Camera size={18} className="text-pink-400" />
+              <span className="text-sm font-medium">Camera</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddOpen(false);
+                fileRef.current?.click();
+              }}
+              className="w-full h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center gap-3 px-4"
+            >
+              <ImageIcon size={18} className="text-pink-400" />
+              <span className="text-sm font-medium">Photo library</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddOpen(false)}
+              className="w-full h-11 mt-2 text-sm text-zinc-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {cameraOpen && (
+        <StoryCamera
+          onClose={() => setCameraOpen(false)}
+          onLibrary={() => {
+            setCameraOpen(false);
+            fileRef.current?.click();
+          }}
+          onCapture={(file) => {
+            setCameraOpen(false);
+            void onPickFiles([file]);
+          }}
+        />
+      )}
+
       {draft && (
         <StoryComposer
           draft={draft}
@@ -455,7 +519,7 @@ export default function StoriesRail({
             setOpen(null);
             void load();
           }}
-          onAdd={() => fileRef.current?.click()}
+          onAdd={openAdd}
         />
       )}
     </div>
@@ -557,6 +621,265 @@ export function ProfileStoryRing({
         />
       )}
     </>
+  );
+}
+
+function pickRecorderMime() {
+  const types = [
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm',
+  ];
+  if (typeof MediaRecorder === 'undefined') return '';
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+}
+
+function StoryCamera({
+  onClose,
+  onLibrary,
+  onCapture,
+}: {
+  onClose: () => void;
+  onLibrary: () => void;
+  onCapture: (file: File) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const tickRef = useRef<number | null>(null);
+  const [facing, setFacing] = useState<'user' | 'environment'>('user');
+  const [mode, setMode] = useState<'photo' | 'video'>('photo');
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [secs, setSecs] = useState(0);
+
+  const stopStream = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
+
+  const startCam = useCallback(async (face: 'user' | 'environment') => {
+    setError('');
+    setReady(false);
+    stopStream();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: {
+          facingMode: face,
+          width: { ideal: 1080 },
+          height: { ideal: 1920 },
+        },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
+      }
+      setReady(true);
+    } catch {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: face },
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setReady(true);
+      } catch {
+        setError('Camera permission needed');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void startCam(facing);
+    return () => {
+      if (tickRef.current) window.clearInterval(tickRef.current);
+      try {
+        recRef.current?.stop();
+      } catch {
+        /* ignore */
+      }
+      stopStream();
+    };
+  }, [facing, startCam]);
+
+  const takePhoto = async () => {
+    const v = videoRef.current;
+    if (!v || !ready) return;
+    const w = v.videoWidth || 1080;
+    const h = v.videoHeight || 1920;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    if (facing === 'user') {
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(v, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.92)
+    );
+    if (!blob) return;
+    stopStream();
+    onCapture(new File([blob], `story-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+  };
+
+  const stopRec = () => {
+    if (tickRef.current) {
+      window.clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+    setRecording(false);
+    try {
+      recRef.current?.stop();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const startRec = () => {
+    const stream = streamRef.current;
+    if (!stream || recording) return;
+    const mime = pickRecorderMime();
+    let rec: MediaRecorder;
+    try {
+      rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch {
+      setError('Recording not supported on this browser');
+      return;
+    }
+    chunksRef.current = [];
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size) chunksRef.current.push(e.data);
+    };
+    rec.onstop = () => {
+      const type = rec.mimeType || mime || 'video/webm';
+      const blob = new Blob(chunksRef.current, { type });
+      const ext = type.includes('mp4') ? 'mp4' : 'webm';
+      stopStream();
+      onCapture(new File([blob], `story-${Date.now()}.${ext}`, { type }));
+    };
+    recRef.current = rec;
+    rec.start(200);
+    setSecs(0);
+    setRecording(true);
+    tickRef.current = window.setInterval(() => {
+      setSecs((n) => {
+        if (n + 1 >= MAX_VIDEO_SECS) {
+          stopRec();
+          return MAX_VIDEO_SECS;
+        }
+        return n + 1;
+      });
+    }, 1000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[245] bg-black flex flex-col">
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        className={`absolute inset-0 w-full h-full object-cover ${
+          facing === 'user' ? 'scale-x-[-1]' : ''
+        }`}
+      />
+      <div className="relative z-10 flex items-center justify-between px-4 pt-[max(0.8rem,env(safe-area-inset-top))]">
+        <button
+          type="button"
+          onClick={() => {
+            stopStream();
+            onClose();
+          }}
+          className="w-10 h-10 rounded-full bg-black/40 backdrop-blur flex items-center justify-center"
+        >
+          <X size={18} />
+        </button>
+        <p className="text-sm font-semibold">
+          {recording ? `${secs}s` : mode === 'photo' ? 'Photo' : 'Video'}
+        </p>
+        <button
+          type="button"
+          onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
+          className="w-10 h-10 rounded-full bg-black/40 backdrop-blur flex items-center justify-center"
+        >
+          <SwitchCamera size={18} />
+        </button>
+      </div>
+
+      {error ? (
+        <p className="relative z-10 text-center text-sm text-red-300 mt-4">{error}</p>
+      ) : null}
+
+      <div className="relative z-10 mt-auto px-5 pb-[max(1.2rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-center gap-8 mb-5">
+          <button
+            type="button"
+            onClick={() => !recording && setMode('photo')}
+            className={`text-xs font-semibold ${
+              mode === 'photo' ? 'text-white' : 'text-white/45'
+            }`}
+          >
+            PHOTO
+          </button>
+          <button
+            type="button"
+            onClick={() => !recording && setMode('video')}
+            className={`text-xs font-semibold ${
+              mode === 'video' ? 'text-pink-400' : 'text-white/45'
+            }`}
+          >
+            VIDEO
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onLibrary}
+            className="w-11 h-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center"
+          >
+            <ImageIcon size={18} />
+          </button>
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={() => {
+              if (mode === 'photo') void takePhoto();
+              else if (recording) stopRec();
+              else startRec();
+            }}
+            className={`w-[74px] h-[74px] rounded-full border-[4px] flex items-center justify-center ${
+              recording ? 'border-red-500' : 'border-white'
+            }`}
+          >
+            <span
+              className={`${
+                recording
+                  ? 'w-7 h-7 rounded-md bg-red-500'
+                  : mode === 'video'
+                    ? 'w-14 h-14 rounded-full bg-red-500'
+                    : 'w-14 h-14 rounded-full bg-white'
+              }`}
+            />
+          </button>
+          <span className="w-11" />
+        </div>
+        <p className="text-[11px] text-white/50 text-center mt-3">
+          {mode === 'photo' ? 'Tap to capture' : recording ? 'Tap to stop' : `Tap to record · max ${MAX_VIDEO_SECS}s`}
+        </p>
+      </div>
+    </div>
   );
 }
 
