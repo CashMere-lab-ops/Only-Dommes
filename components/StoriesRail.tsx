@@ -699,12 +699,20 @@ function StoryViewer({
   const barsWrapRef = useRef<HTMLDivElement | null>(null);
   const progressValue = useRef(0);
 
+  const syncBars = (activeP = 0) => {
+    const wrap = barsWrapRef.current;
+    if (!wrap) return;
+    wrap.querySelectorAll<HTMLElement>('[data-story-bar]').forEach((el) => {
+      const state = el.getAttribute('data-story-bar');
+      if (state === 'done') el.style.transform = 'scaleX(1)';
+      else if (state === 'active') el.style.transform = `scaleX(${Math.max(0, Math.min(1, activeP))})`;
+      else el.style.transform = 'scaleX(0)';
+    });
+  };
+
   const paintProgress = (p: number) => {
     progressValue.current = Math.max(0, Math.min(1, p));
-    const el = barsWrapRef.current?.querySelector(
-      '[data-story-bar="active"]'
-    ) as HTMLElement | null;
-    if (el) el.style.transform = `scaleX(${progressValue.current})`;
+    syncBars(progressValue.current);
   };
   const [muted, setMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -799,7 +807,7 @@ function StoryViewer({
 
   useEffect(() => {
     progressValue.current = 0;
-    paintProgress(0);
+    const id = window.requestAnimationFrame(() => syncBars(0));
     setPaused(false);
     setHoldUi(false);
     setDrag({ x: 0, y: 0 });
@@ -807,7 +815,8 @@ function StoryViewer({
     setReplySent(false);
     setReplyOpen(false);
     setShowViewers(false);
-  }, [story?.id]);
+    return () => window.cancelAnimationFrame(id);
+  }, [story?.id, si]);
 
   useEffect(() => {
     if (replyOpen || showViewers) setPaused(true);
@@ -1131,9 +1140,7 @@ function StoryViewer({
               <div
                 data-story-bar={i === si ? 'active' : i < si ? 'done' : 'idle'}
                 className="h-full w-full bg-white rounded-full origin-left"
-                style={{
-                  transform: i < si ? 'scaleX(1)' : 'scaleX(0)',
-                }}
+                style={{ transform: 'scaleX(0)' }}
               />
             </div>
           ))}
