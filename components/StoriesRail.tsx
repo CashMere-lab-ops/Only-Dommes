@@ -26,6 +26,9 @@ export type StoryRow = {
   thumbnail_url?: string | null;
   duration_seconds?: number;
   caption?: string | null;
+  caption_x?: number | null;
+  caption_y?: number | null;
+  caption_style?: 'classic' | 'neon' | 'box' | string | null;
   visibility?: 'everyone' | 'followers' | 'subscribers' | null;
   created_at: string;
   expires_at: string;
@@ -52,6 +55,16 @@ function nameOf(c: StoryCreator) {
   return c.display_name || (c.username ? `@${c.username}` : 'Creator');
 }
 
+function captionClass(style?: string | null) {
+  if (style === 'neon') {
+    return 'text-pink-300 text-2xl font-black tracking-wide drop-shadow-[0_0_12px_rgba(244,114,182,0.85)]';
+  }
+  if (style === 'box') {
+    return 'text-white text-lg font-semibold bg-black/70 px-3 py-1.5 rounded-xl';
+  }
+  return 'text-white text-xl font-bold drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]';
+}
+
 export default function StoriesRail({
   userId,
   isCreator,
@@ -75,6 +88,9 @@ export default function StoriesRail({
     kind: 'image' | 'video';
     duration: number;
     caption: string;
+    captionX: number;
+    captionY: number;
+    captionStyle: 'classic' | 'neon' | 'box';
     visibility: 'everyone' | 'followers' | 'subscribers';
   } | null>(null);
   const [open, setOpen] = useState<{ groupIndex: number; storyIndex: number } | null>(
@@ -102,7 +118,7 @@ export default function StoriesRail({
       const { data: rows, error: qErr } = await supabase
         .from('stories')
         .select(
-          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, visibility, created_at, expires_at'
+          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, caption_x, caption_y, caption_style, visibility, created_at, expires_at'
         )
         .in('creator_id', ids)
         .gt('expires_at', new Date().toISOString())
@@ -223,6 +239,9 @@ export default function StoriesRail({
       kind: (isImage ? 'image' : 'video') as 'image' | 'video',
       duration,
       caption: '',
+      captionX: 50,
+      captionY: 70,
+      captionStyle: 'classic' as const,
       visibility: 'everyone' as const,
     };
   };
@@ -280,6 +299,9 @@ export default function StoriesRail({
         thumbnail_url: thumb,
         duration_seconds: draft.duration,
         caption: draft.caption || null,
+        caption_x: draft.captionX,
+        caption_y: draft.captionY,
+        caption_style: draft.captionStyle,
         visibility: draft.visibility || 'everyone',
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
@@ -554,7 +576,7 @@ export function ProfileStoryRing({
       const { data } = await supabase
         .from('stories')
         .select(
-          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, visibility, created_at, expires_at'
+          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, caption_x, caption_y, caption_style, visibility, created_at, expires_at'
         )
         .eq('creator_id', profileId)
         .gt('expires_at', new Date().toISOString())
@@ -896,6 +918,9 @@ function StoryComposer({
     kind: 'image' | 'video';
     duration: number;
     caption: string;
+    captionX: number;
+    captionY: number;
+    captionStyle: 'classic' | 'neon' | 'box';
     visibility: 'everyone' | 'followers' | 'subscribers';
   };
   uploading: boolean;
@@ -903,15 +928,45 @@ function StoryComposer({
   onShare: () => void;
   onMeta: (patch: {
     caption?: string;
+    captionX?: number;
+    captionY?: number;
+    captionStyle?: 'classic' | 'neon' | 'box';
     visibility?: 'everyone' | 'followers' | 'subscribers';
   }) => void;
 }) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+
+  const onTextDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+  const onTextMove = (e: React.PointerEvent) => {
+    if (!dragRef.current || !stageRef.current) return;
+    const box = stageRef.current.getBoundingClientRect();
+    const x = ((e.clientX - box.left) / box.width) * 100;
+    const y = ((e.clientY - box.top) / box.height) * 100;
+    onMeta({
+      captionX: Math.max(8, Math.min(92, x)),
+      captionY: Math.max(10, Math.min(88, y)),
+    });
+  };
+  const onTextUp = () => {
+    dragRef.current = null;
+  };
+
   return (
     <div
       className="fixed inset-0 z-[240] bg-black flex flex-col select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="relative flex-1 min-h-0">
+      <div ref={stageRef} className="relative flex-1 min-h-0 overflow-hidden">
         {draft.kind === 'video' ? (
           <video
             src={draft.url}
@@ -932,6 +987,26 @@ function StoryComposer({
         )}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+        {draft.caption.trim() ? (
+          <button
+            type="button"
+            className={`absolute z-20 max-w-[80%] px-1 text-center leading-tight ${captionClass(
+              draft.captionStyle
+            )}`}
+            style={{
+              left: `${draft.captionX}%`,
+              top: `${draft.captionY}%`,
+              transform: 'translate(-50%, -50%)',
+              touchAction: 'none',
+            }}
+            onPointerDown={onTextDown}
+            onPointerMove={onTextMove}
+            onPointerUp={onTextUp}
+            onPointerCancel={onTextUp}
+          >
+            {draft.caption}
+          </button>
+        ) : null}
         <div className="absolute top-0 left-0 right-0 px-4 pt-[max(0.9rem,env(safe-area-inset-top))] flex items-center justify-between z-10">
           <button
             type="button"
@@ -945,18 +1020,35 @@ function StoryComposer({
         </div>
       </div>
       <div className="relative z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 space-y-3">
-        {draft.caption.trim() ? (
-          <p className="absolute left-5 right-5 bottom-[11.5rem] text-center text-white text-lg font-semibold drop-shadow-lg pointer-events-none">
-            {draft.caption}
-          </p>
-        ) : null}
         <input
           value={draft.caption}
           onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
           maxLength={80}
-          placeholder="Add a caption…"
+          placeholder="Add text — then drag it on the photo"
           className="w-full h-11 rounded-xl bg-white/10 border border-white/15 px-3 text-sm outline-none placeholder:text-white/40"
         />
+        <div className="flex gap-1.5">
+          {(
+            [
+              ['classic', 'Classic'],
+              ['neon', 'Neon'],
+              ['box', 'Box'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onMeta({ captionStyle: id })}
+              className={`flex-1 h-9 rounded-full text-xs font-medium ${
+                draft.captionStyle === id
+                  ? 'bg-white text-black'
+                  : 'bg-white/10 text-white/70'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-1.5">
           {(
             [
@@ -1444,9 +1536,14 @@ function StoryViewer({
       />
       {story.caption ? (
         <p
-          className={`absolute left-6 right-6 bottom-28 z-[16] text-center text-white text-lg font-semibold drop-shadow-lg pointer-events-none transition-opacity duration-200 ${
+          className={`absolute z-[16] max-w-[80%] text-center leading-tight pointer-events-none transition-opacity duration-200 ${
             holdUi ? 'opacity-0' : 'opacity-100'
-          }`}
+          } ${captionClass(story.caption_style)}`}
+          style={{
+            left: `${Number(story.caption_x ?? 50)}%`,
+            top: `${Number(story.caption_y ?? 72)}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
         >
           {story.caption}
         </p>
