@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
+import { ProfileStoryRing, HighlightRail } from '../../components/StoriesRail';
 import { createClient } from '../../lib/supabase';
 
 export default function MyAccountPage() {
@@ -104,14 +105,22 @@ export default function MyAccountPage() {
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
             <div className="flex flex-col sm:flex-row gap-6 mb-6">
               <div className="flex flex-col items-center gap-3 flex-shrink-0">
-                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950">
-                  {profile?.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    initial
-                  )}
-                </div>
+                <ProfileStoryRing
+                  profileId={profile.id}
+                  userId={profile.id}
+                  avatarUrl={profile.avatar_url}
+                  name={displayName}
+                  username={profile.username}
+                >
+                  <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950">
+                    {profile?.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      initial
+                    )}
+                  </div>
+                </ProfileStoryRing>
                 {profile?.x_username && (
                   <a
                     href={`https://x.com/${profile.x_username}`}
@@ -155,6 +164,17 @@ export default function MyAccountPage() {
                 )}
               </div>
             </div>
+
+            {profile?.id && (
+              <HighlightRail
+                profileId={profile.id}
+                userId={profile.id}
+                name={displayName}
+                username={profile.username}
+                avatarUrl={profile.avatar_url}
+                isOwner
+              />
+            )}
 
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-8">
