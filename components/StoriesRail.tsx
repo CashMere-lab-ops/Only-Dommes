@@ -716,16 +716,24 @@ export function HighlightRail({
   const [rows, setRows] = useState<{ id: string; title: string; cover_url?: string | null }[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [items, setItems] = useState<StoryRow[]>([]);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('story_highlights')
         .select('id, title, cover_url')
         .eq('creator_id', profileId)
         .order('created_at', { ascending: true });
-      if (alive) setRows((data || []) as any);
+      if (!alive) return;
+      if (error) {
+        setLoadError(error.message || 'Could not load highlights');
+        setRows([]);
+        return;
+      }
+      setLoadError('');
+      setRows((data || []) as any);
     })();
     return () => {
       alive = false;
@@ -766,7 +774,7 @@ export function HighlightRail({
     setRows((prev) => prev.filter((r) => r.id !== id));
   };
 
-  if (!rows.length) return null;
+  if (!rows.length && !isOwner && !loadError) return null;
 
   const group: StoryGroup = {
     creator: {
@@ -781,6 +789,19 @@ export function HighlightRail({
 
   return (
     <div className="mb-8">
+      <p className="text-sm font-semibold text-zinc-200 mb-3">Highlights</p>
+      {loadError && (
+        <p className="text-xs text-red-400 mb-2">
+          {loadError.includes('does not exist')
+            ? 'Run sql/story_highlights.sql in Supabase, then refresh.'
+            : loadError}
+        </p>
+      )}
+      {!rows.length && isOwner && !loadError && (
+        <p className="text-sm text-zinc-500 mb-2">
+          Open one of your stories and tap the bookmark to save a highlight here.
+        </p>
+      )}
       <div className="flex items-start gap-3.5 overflow-x-auto scrollbar-none pb-1">
         {rows.map((h) => (
           <button
