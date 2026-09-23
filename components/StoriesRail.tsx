@@ -42,7 +42,8 @@ export type StoryGroup = {
 };
 
 const PHOTO_SECS = 5;
-const MAX_VIDEO_SECS = 20;
+const MAX_VIDEO_SECS = 60;
+const MAX_STORY_FILE_MB = 80;
 
 function nameOf(c: StoryCreator) {
   return c.display_name || (c.username ? `@${c.username}` : 'Creator');
@@ -76,6 +77,7 @@ export default function StoriesRail({
   const [open, setOpen] = useState<{ groupIndex: number; storyIndex: number } | null>(
     null
   );
+  const [queue, setQueue] = useState<File[]>([]);
 
   const load = useCallback(async () => {
     if (!userId) {
@@ -167,20 +169,17 @@ export default function StoriesRail({
     return () => window.clearTimeout(t);
   }, [isCreator]);
 
-  const onPick = async (file: File | null) => {
-    if (!file || !userId || uploading) return;
-    setError('');
+  const prepareFile = async (file: File) => {
     const isImage = file.type.startsWith('image/');
     const isVideo = file.type.startsWith('video/');
     if (!isImage && !isVideo) {
       setError('Photo or video only');
-      return;
+      return null;
     }
-    if (file.size > 40 * 1024 * 1024) {
-      setError('Max 40MB');
-      return;
+    if (file.size > MAX_STORY_FILE_MB * 1024 * 1024) {
+      setError(`Max ${MAX_STORY_FILE_MB}MB`);
+      return null;
     }
-
     let duration = PHOTO_SECS;
     if (isVideo) {
       const ok = await new Promise<boolean>((resolve) => {
@@ -189,12 +188,17 @@ export default function StoriesRail({
         v.onloadedmetadata = () => {
           const d = Number(v.duration || 0);
           URL.revokeObjectURL(v.src);
-          if (d > MAX_VIDEO_SECS) {
-            setError(`Videos must be ${MAX_VIDEO_SECS}s or less`);
+          if (!Number.isFinite(d) || d <= 0) {
+            setError('Could not read video');
             resolve(false);
             return;
           }
-          duration = Math.max(1, Math.min(MAX_VIDEO_SECS, Math.ceil(d || PHOTO_SECS)));
+          if (d > MAX_VIDEO_SECS + 0.4) {
+            setError(`Video stories can be up to ${MAX_VIDEO_SECS} seconds`);
+            resolve(false);
+            return;
+          }
+          duration = Math.max(1, Math.min(MAX_VIDEO_SECS, Math.ceil(d)));
           resolve(true);
         };
         v.onerror = () => {
@@ -204,17 +208,27 @@ export default function StoriesRail({
         };
         v.src = URL.createObjectURL(file);
       });
-      if (!ok) return;
+      if (!ok) return null;
     }
-
-    setDraft({
+    return {
       file,
       url: URL.createObjectURL(file),
-      kind: isImage ? 'image' : 'video',
+      kind: (isImage ? 'image' : 'video') as 'image' | 'video',
       duration,
       caption: '',
-      visibility: 'everyone',
-    });
+      visibility: 'everyone' as const,
+    };
+  };
+
+  const onPickFiles = async (files: FileList | File[] | null) => {
+    if (!files || !userId || uploading) return;
+    setError('');
+    const list = Array.from(files).slice(0, 10);
+    if (!list.length) return;
+    const first = await prepareFile(list[0]);
+    if (!first) return;
+    setQueue(list.slice(1));
+    setDraft(first);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -264,7 +278,15 @@ export default function StoriesRail({
       });
       if (insErr) throw insErr;
       URL.revokeObjectURL(draft.url);
-      setDraft(null);
+      const rest = queue.slice();
+      setQueue([]);
+      if (rest.length) {
+        const next = await prepareFile(rest[0]);
+        setQueue(rest.slice(1));
+        setDraft(next);
+      } else {
+        setDraft(null);
+      }
       await load();
     } catch (e: any) {
       setError(e?.message || 'Could not post story');
@@ -296,19 +318,20 @@ export default function StoriesRail({
       </div>
       <div className="flex items-start gap-3.5 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1">
         {showAdd && (
-          <button
-            type="button"
-            onClick={() => {
-              if (myGroup && myGroup.stories.length) {
-                const idx = groups.findIndex((g) => g.creator.id === userId);
-                setOpen({ groupIndex: Math.max(0, idx), storyIndex: 0 });
-              } else {
-                fileRef.current?.click();
-              }
-            }}
-            className="flex-shrink-0 w-[78px] text-center"
-          >
+          <div className="flex-shrink-0 w-[78px] text-center">
             <div className="relative mx-auto w-[72px] h-[72px]">
+            <button
+              type="button"
+              onClick={() => {
+                if (myGroup && myGroup.stories.length) {
+                  const idx = groups.findIndex((g) => g.creator.id === userId);
+                  setOpen({ groupIndex: Math.max(0, idx), storyIndex: 0 });
+                } else {
+                  fileRef.current?.click();
+                }
+              }}
+              className="block w-full"
+            >
               <div
                 className={`w-[72px] h-[72px] rounded-full p-[2.5px] ${
                   myGroup?.unseen
@@ -333,16 +356,25 @@ export default function StoriesRail({
                   )}
                 </div>
               </div>
-              <span className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-pink-600 border-[2.5px] border-zinc-950 flex items-center justify-center shadow-lg">
+            </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileRef.current?.click();
+                }}
+                className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-pink-600 border-[2.5px] border-zinc-950 flex items-center justify-center shadow-lg"
+                title="Add another story"
+              >
                 {uploading ? (
                   <Loader2 size={12} className="animate-spin" />
                 ) : (
                   <Plus size={13} strokeWidth={2.5} />
                 )}
-              </span>
+              </button>
             </div>
             <p className="mt-2 text-[11px] text-zinc-300 truncate font-medium">Your story</p>
-          </button>
+          </div>
         )}
 
         {loading && groups.length === 0 && (
@@ -395,8 +427,9 @@ export default function StoriesRail({
         ref={fileRef}
         type="file"
         accept="image/*,video/*"
+        multiple
         className="hidden"
-        onChange={(e) => void onPick(e.target.files?.[0] || null)}
+        onChange={(e) => void onPickFiles(e.target.files)}
       />
 
       {draft && (
@@ -624,7 +657,10 @@ function StoryComposer({
           ))}
         </div>
         <p className="text-[11px] text-zinc-400 text-center">
-          Visible for 24 hours · {draft.kind === 'video' ? `${draft.duration}s video` : 'Photo'}
+          Visible 24 hours ·{' '}
+          {draft.kind === 'video'
+            ? `${draft.duration}s video (max ${MAX_VIDEO_SECS}s)`
+            : 'Photo'}
         </p>
         <button
           type="button"
@@ -957,7 +993,7 @@ function StoryViewer({
       gesture.current.mode = Math.abs(dy) > Math.abs(dx) * 1.1 ? 'vert' : 'horiz';
     }
     if (gesture.current.mode === 'vert') {
-      setDrag({ x: 0, y: dy });
+      setDrag({ x: 0, y: Math.max(0, dy) });
     } else if (gesture.current.mode === 'horiz') {
       setDrag({ x: dx, y: 0 });
     }
@@ -982,16 +1018,7 @@ function StoryViewer({
     }
     if (mode === 'vert') {
       setDrag({ x: 0, y: 0 });
-      if (dy > 80) {
-        onClose();
-        return;
-      }
-      if (dy < -56 && userId && !isOwn) {
-        setReplyOpen(true);
-        setPaused(true);
-        setHoldUi(false);
-        return;
-      }
+      if (dy > 80) onClose();
       return;
     }
     if (mode === 'horiz') {
@@ -1041,6 +1068,21 @@ function StoryViewer({
           controls={false}
           disablePictureInPicture
           onContextMenu={(e) => e.preventDefault()}
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.duration && progressBarRef.current) {
+              progressBarRef.current.style.transform = `scaleX(${Math.min(1, v.currentTime / v.duration)})`;
+            }
+          }}
+          onTimeUpdate={(e) => {
+            const v = e.currentTarget;
+            if (!v.duration) return;
+            const p = Math.min(1, v.currentTime / v.duration);
+            progressValue.current = p;
+            if (progressBarRef.current) {
+              progressBarRef.current.style.transform = `scaleX(${p})`;
+            }
+          }}
           onEnded={goNext}
         />
       ) : (
