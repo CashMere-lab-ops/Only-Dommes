@@ -8,7 +8,7 @@ import {
   MoreHorizontal, Share2, Ban, Flag, Link as LinkIcon, X
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
-import { ProfileStoryRing } from '../../components/StoriesRail';
+import { ProfileStoryRing, HighlightRail } from '../../components/StoriesRail';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
 import { applyUserBlock } from '../../lib/blocks';
@@ -834,6 +834,17 @@ export default function PublicProfilePage() {
                 </div>
               </div>
             </Link>
+          )}
+
+          {profile.account_type === 'creator' && (
+            <HighlightRail
+              profileId={profile.id}
+              userId={currentUser?.id || null}
+              name={displayName}
+              username={profile.username}
+              avatarUrl={profile.avatar_url}
+              isOwner={isOwnProfile}
+            />
           )}
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">

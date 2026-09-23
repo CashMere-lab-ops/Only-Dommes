@@ -14,6 +14,7 @@ import {
   Camera,
   Image as ImageIcon,
   SwitchCamera,
+  Bookmark,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
@@ -696,6 +697,137 @@ export function ProfileStoryRing({
   );
 }
 
+export function HighlightRail({
+  profileId,
+  userId,
+  name,
+  username,
+  avatarUrl,
+  isOwner,
+}: {
+  profileId: string;
+  userId: string | null;
+  name: string;
+  username?: string | null;
+  avatarUrl?: string | null;
+  isOwner?: boolean;
+}) {
+  const supabase = createClient();
+  const [rows, setRows] = useState<{ id: string; title: string; cover_url?: string | null }[]>([]);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [items, setItems] = useState<StoryRow[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('story_highlights')
+        .select('id, title, cover_url')
+        .eq('creator_id', profileId)
+        .order('created_at', { ascending: true });
+      if (alive) setRows((data || []) as any);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [profileId, supabase]);
+
+  const openHighlight = async (id: string) => {
+    const { data } = await supabase
+      .from('story_highlight_items')
+      .select(
+        'id, media_url, media_type, thumbnail_url, caption, caption_x, caption_y, caption_style, duration_seconds, created_at'
+      )
+      .eq('highlight_id', id)
+      .order('created_at', { ascending: true });
+    const list: StoryRow[] = (data || []).map((r: any) => ({
+      id: r.id,
+      creator_id: profileId,
+      media_url: r.media_url,
+      media_type: r.media_type,
+      thumbnail_url: r.thumbnail_url,
+      caption: r.caption,
+      caption_x: r.caption_x,
+      caption_y: r.caption_y,
+      caption_style: r.caption_style,
+      duration_seconds: r.duration_seconds,
+      created_at: r.created_at,
+      expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+    }));
+    if (!list.length) return;
+    setItems(list);
+    setOpenId(id);
+  };
+
+  const removeHighlight = async (id: string) => {
+    if (!isOwner) return;
+    if (!confirm('Delete this highlight?')) return;
+    await supabase.from('story_highlights').delete().eq('id', id);
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  if (!rows.length) return null;
+
+  const group: StoryGroup = {
+    creator: {
+      id: profileId,
+      username,
+      display_name: name,
+      avatar_url: avatarUrl,
+    },
+    stories: items,
+    unseen: 0,
+  };
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-start gap-3.5 overflow-x-auto scrollbar-none pb-1">
+        {rows.map((h) => (
+          <button
+            key={h.id}
+            type="button"
+            onClick={() => void openHighlight(h.id)}
+            onContextMenu={(e) => {
+              if (!isOwner) return;
+              e.preventDefault();
+              void removeHighlight(h.id);
+            }}
+            className="flex-shrink-0 w-[72px] text-center"
+          >
+            <div className="mx-auto w-[64px] h-[64px] rounded-full p-[2px] bg-zinc-700">
+              <div className="w-full h-full rounded-full bg-zinc-950 p-[2px] overflow-hidden">
+                {h.cover_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={h.cover_url} alt="" className="w-full h-full object-cover rounded-full" />
+                ) : (
+                  <div className="w-full h-full rounded-full bg-zinc-800" />
+                )}
+              </div>
+            </div>
+            <p className="mt-1.5 text-[11px] text-zinc-300 truncate">{h.title}</p>
+          </button>
+        ))}
+      </div>
+      {isOwner && (
+        <p className="text-[10px] text-zinc-600 mt-1">Hold a highlight to delete</p>
+      )}
+      {openId && items.length > 0 && (
+        <StoryViewer
+          groups={[group]}
+          groupIndex={0}
+          storyIndex={0}
+          userId={userId}
+          permanent
+          onClose={() => {
+            setOpenId(null);
+            setItems([]);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function pickRecorderMime() {
   const types = [
     'video/mp4;codecs=avc1.42E01E',
@@ -1214,6 +1346,7 @@ function StoryViewer({
   userId,
   onClose,
   onAdd,
+  permanent = false,
 }: {
   groups: StoryGroup[];
   groupIndex: number;
@@ -1221,6 +1354,7 @@ function StoryViewer({
   userId: string | null;
   onClose: () => void;
   onAdd?: () => void;
+  permanent?: boolean;
 }) {
   const supabase = createClient();
   const [gi, setGi] = useState(groupIndex);
@@ -1276,10 +1410,17 @@ function StoryViewer({
   const [replying, setReplying] = useState(false);
   const [replySent, setReplySent] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [hlOpen, setHlOpen] = useState(false);
+  const [highlights, setHighlights] = useState<{ id: string; title: string; cover_url?: string | null }[]>(
+    []
+  );
+  const [hlTitle, setHlTitle] = useState('');
+  const [hlBusy, setHlBusy] = useState(false);
+  const [hlSaved, setHlSaved] = useState(false);
 
   const markViewed = useCallback(
     async (row: StoryRow) => {
-      if (!userId || userId === row.creator_id) return;
+      if (permanent || !userId || userId === row.creator_id) return;
       try {
         await supabase.from('story_views').upsert(
           { story_id: row.id, viewer_id: userId },
@@ -1350,8 +1491,8 @@ function StoryViewer({
   }, [story?.id, si]);
 
   useEffect(() => {
-    if (replyOpen || showViewers) setPaused(true);
-  }, [replyOpen, showViewers]);
+    if (replyOpen || showViewers || hlOpen) setPaused(true);
+  }, [replyOpen, showViewers, hlOpen]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -1403,10 +1544,85 @@ function StoryViewer({
   }, [story?.id, story?.media_type, paused, goNext]);
 
   const removeStory = async () => {
-    if (!story || !isOwn) return;
+    if (permanent || !story || !isOwn) return;
     if (!confirm('Delete this story?')) return;
     await supabase.from('stories').delete().eq('id', story.id);
     onClose();
+  };
+
+  const loadHighlights = async () => {
+    if (!userId) return;
+    const { data } = await supabase
+      .from('story_highlights')
+      .select('id, title, cover_url')
+      .eq('creator_id', userId)
+      .order('created_at', { ascending: false });
+    setHighlights((data || []) as any);
+  };
+
+  const snapshotItem = (row: StoryRow) => ({
+    media_url: row.media_url,
+    media_type: row.media_type,
+    thumbnail_url: row.thumbnail_url || null,
+    caption: row.caption || null,
+    caption_x: row.caption_x ?? 50,
+    caption_y: row.caption_y ?? 72,
+    caption_style: row.caption_style || 'classic',
+    duration_seconds: row.duration_seconds || PHOTO_SECS,
+  });
+
+  const addToHighlight = async (highlightId: string) => {
+    if (!story) return;
+    setHlBusy(true);
+    try {
+      const { error } = await supabase.from('story_highlight_items').insert({
+        highlight_id: highlightId,
+        ...snapshotItem(story),
+      });
+      if (error) throw error;
+      const hl = highlights.find((h) => h.id === highlightId);
+      if (hl && !hl.cover_url) {
+        await supabase
+          .from('story_highlights')
+          .update({ cover_url: story.thumbnail_url || story.media_url })
+          .eq('id', highlightId);
+      }
+      setHlSaved(true);
+      setHlOpen(false);
+    } catch (e: any) {
+      alert(e?.message || 'Could not add to highlight');
+    } finally {
+      setHlBusy(false);
+    }
+  };
+
+  const createHighlight = async () => {
+    const title = hlTitle.trim() || 'Highlights';
+    if (!userId || !story) return;
+    setHlBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from('story_highlights')
+        .insert({
+          creator_id: userId,
+          title,
+          cover_url: story.thumbnail_url || story.media_url,
+        })
+        .select('id')
+        .single();
+      if (error || !data) throw error || new Error('Could not create');
+      await supabase.from('story_highlight_items').insert({
+        highlight_id: data.id,
+        ...snapshotItem(story),
+      });
+      setHlTitle('');
+      setHlSaved(true);
+      setHlOpen(false);
+    } catch (e: any) {
+      alert(e?.message || 'Could not create highlight');
+    } finally {
+      setHlBusy(false);
+    }
   };
 
   const openViewers = async () => {
@@ -1702,7 +1918,7 @@ function StoryViewer({
             <div className="min-w-0">
               <p className="text-sm font-semibold truncate leading-tight">{label}</p>
               <p className="text-[10px] text-white/70">
-                {timeAgo(story.created_at)} · {hoursLeft(story.expires_at)} left
+                {permanent ? 'Highlight' : `${timeAgo(story.created_at)} · ${hoursLeft(story.expires_at)} left`}
               </p>
             </div>
           </Link>
@@ -1716,7 +1932,7 @@ function StoryViewer({
                 {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
             )}
-            {isOwn && onAdd && (
+            {isOwn && !permanent && onAdd && (
               <button
                 type="button"
                 onClick={onAdd}
@@ -1726,7 +1942,21 @@ function StoryViewer({
                 <Plus size={16} />
               </button>
             )}
-            {isOwn && (
+            {isOwn && !permanent && (
+              <button
+                type="button"
+                onClick={() => {
+                  setHlOpen(true);
+                  setPaused(true);
+                  void loadHighlights();
+                }}
+                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
+                title="Highlight"
+              >
+                <Bookmark size={16} />
+              </button>
+            )}
+            {isOwn && !permanent && (
               <button
                 type="button"
                 onClick={() => void removeStory()}
@@ -1747,7 +1977,7 @@ function StoryViewer({
         </div>
       </div>
 
-      {!replyOpen && !showViewers && (
+      {!replyOpen && !showViewers && !hlOpen && (
         <div
           className="absolute left-0 right-0 top-16 bottom-24 z-20 touch-none select-none [-webkit-touch-callout:none]"
           onContextMenu={(e) => e.preventDefault()}
@@ -1763,7 +1993,9 @@ function StoryViewer({
           holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
       >
-        {isOwn ? (
+        {hlSaved ? (
+          <p className="text-sm text-white/70">Saved to highlight</p>
+        ) : isOwn && !permanent ? (
           <button
             type="button"
             onClick={() => void openViewers()}
@@ -1831,6 +2063,65 @@ function StoryViewer({
           </div>
         ) : null}
       </div>
+
+      {hlOpen && (
+        <div className="absolute inset-0 z-40 bg-black/55 flex items-end">
+          <div className="w-full max-h-[70vh] rounded-t-3xl bg-zinc-950 border-t border-zinc-800 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-semibold text-sm">Add to highlight</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setHlOpen(false);
+                  setPaused(false);
+                }}
+                className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <input
+                value={hlTitle}
+                onChange={(e) => setHlTitle(e.target.value.slice(0, 24))}
+                placeholder="New highlight name"
+                className="flex-1 h-11 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-sm outline-none"
+              />
+              <button
+                type="button"
+                disabled={hlBusy}
+                onClick={() => void createHighlight()}
+                className="h-11 px-4 rounded-xl bg-pink-600 text-sm font-semibold disabled:opacity-50"
+              >
+                Create
+              </button>
+            </div>
+            <div className="space-y-1 overflow-y-auto max-h-[40vh]">
+              {highlights.length === 0 ? (
+                <p className="text-sm text-zinc-500 py-6 text-center">No highlights yet</p>
+              ) : (
+                highlights.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    disabled={hlBusy}
+                    onClick={() => void addToHighlight(h.id)}
+                    className="w-full flex items-center gap-3 py-2.5 text-left"
+                  >
+                    <div className="w-11 h-11 rounded-full overflow-hidden bg-zinc-800">
+                      {h.cover_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={h.cover_url} alt="" className="w-full h-full object-cover" />
+                      ) : null}
+                    </div>
+                    <span className="text-sm font-medium truncate">{h.title}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showViewers && (
         <div className="absolute inset-0 z-40 bg-black/50 flex items-end">
