@@ -696,8 +696,16 @@ function StoryViewer({
   const [si, setSi] = useState(storyIndex);
   const [paused, setPaused] = useState(false);
   const [holdUi, setHoldUi] = useState(false);
-  const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const barsWrapRef = useRef<HTMLDivElement | null>(null);
   const progressValue = useRef(0);
+
+  const paintProgress = (p: number) => {
+    progressValue.current = Math.max(0, Math.min(1, p));
+    const el = barsWrapRef.current?.querySelector(
+      '[data-story-bar="active"]'
+    ) as HTMLElement | null;
+    if (el) el.style.transform = `scaleX(${progressValue.current})`;
+  };
   const [muted, setMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const holdRef = useRef(false);
@@ -791,9 +799,7 @@ function StoryViewer({
 
   useEffect(() => {
     progressValue.current = 0;
-    if (progressBarRef.current) {
-      progressBarRef.current.style.transform = 'scaleX(0)';
-    }
+    paintProgress(0);
     setPaused(false);
     setHoldUi(false);
     setDrag({ x: 0, y: 0 });
@@ -822,27 +828,27 @@ function StoryViewer({
   useEffect(() => {
     if (!story || paused) return;
     let raf = 0;
-    const paint = (p: number) => {
-      progressValue.current = p;
-      if (progressBarRef.current) {
-        progressBarRef.current.style.transform = `scaleX(${p})`;
-      }
-    };
+    let stopped = false;
     if (story.media_type === 'video') {
       const tick = () => {
+        if (stopped) return;
         const v = videoRef.current;
-        if (v && v.duration) paint(Math.min(1, v.currentTime / v.duration));
+        if (v && v.duration) paintProgress(v.currentTime / v.duration);
         raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(raf);
+      return () => {
+        stopped = true;
+        cancelAnimationFrame(raf);
+      };
     }
     const total = Math.max(3, Number(story.duration_seconds || PHOTO_SECS)) * 1000;
     const from = progressValue.current;
     const t0 = performance.now();
     const tick = (now: number) => {
+      if (stopped) return;
       const p = Math.min(1, from + (now - t0) / total);
-      paint(p);
+      paintProgress(p);
       if (p >= 1) {
         goNext();
         return;
@@ -850,7 +856,10 @@ function StoryViewer({
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+    };
   }, [story?.id, story?.media_type, paused, goNext]);
 
   const removeStory = async () => {
@@ -1070,18 +1079,11 @@ function StoryViewer({
           onContextMenu={(e) => e.preventDefault()}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
-            if (v.duration && progressBarRef.current) {
-              progressBarRef.current.style.transform = `scaleX(${Math.min(1, v.currentTime / v.duration)})`;
-            }
+            if (v.duration) paintProgress(v.currentTime / v.duration);
           }}
           onTimeUpdate={(e) => {
             const v = e.currentTarget;
-            if (!v.duration) return;
-            const p = Math.min(1, v.currentTime / v.duration);
-            progressValue.current = p;
-            if (progressBarRef.current) {
-              progressBarRef.current.style.transform = `scaleX(${p})`;
-            }
+            if (v.duration) paintProgress(v.currentTime / v.duration);
           }}
           onEnded={goNext}
         />
@@ -1123,15 +1125,14 @@ function StoryViewer({
           holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
       >
-        <div className="flex gap-[3px] mb-3">
+        <div ref={barsWrapRef} className="flex gap-[3px] mb-3">
           {group.stories.map((s, i) => (
             <div key={s.id} className="flex-1 h-[2px] rounded-full bg-white/30 overflow-hidden">
               <div
-                ref={i === si ? progressBarRef : undefined}
-                className="h-full w-full bg-white rounded-full origin-left will-change-transform"
+                data-story-bar={i === si ? 'active' : i < si ? 'done' : 'idle'}
+                className="h-full w-full bg-white rounded-full origin-left"
                 style={{
-                  transform:
-                    i < si ? 'scaleX(1)' : i === si ? 'scaleX(0)' : 'scaleX(0)',
+                  transform: i < si ? 'scaleX(1)' : 'scaleX(0)',
                 }}
               />
             </div>
