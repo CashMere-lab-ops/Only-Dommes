@@ -30,6 +30,7 @@ export type StoryRow = {
   caption_x?: number | null;
   caption_y?: number | null;
   caption_style?: 'classic' | 'neon' | 'box' | string | null;
+  sticker?: 'subscribe' | 'live' | 'shop' | string | null;
   visibility?: 'everyone' | 'followers' | 'subscribers' | null;
   created_at: string;
   expires_at: string;
@@ -127,6 +128,7 @@ export default function StoriesRail({
     captionX: number;
     captionY: number;
     captionStyle: 'classic' | 'neon' | 'box';
+    sticker: 'subscribe' | 'live' | 'shop' | null;
     cropX: number;
     cropY: number;
     cropZoom: number;
@@ -157,7 +159,7 @@ export default function StoriesRail({
       const { data: rows, error: qErr } = await supabase
         .from('stories')
         .select(
-          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, caption_x, caption_y, caption_style, visibility, created_at, expires_at'
+          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, caption_x, caption_y, caption_style, sticker, visibility, created_at, expires_at'
         )
         .in('creator_id', ids)
         .gt('expires_at', new Date().toISOString())
@@ -281,6 +283,7 @@ export default function StoriesRail({
       captionX: 50,
       captionY: 70,
       captionStyle: 'classic' as const,
+      sticker: null,
       cropX: 0,
       cropY: 0,
       cropZoom: 1,
@@ -353,6 +356,7 @@ export default function StoriesRail({
         caption_x: draft.captionX,
         caption_y: draft.captionY,
         caption_style: draft.captionStyle,
+        sticker: draft.sticker,
         visibility: draft.visibility || 'everyone',
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
@@ -627,7 +631,7 @@ export function ProfileStoryRing({
       const { data } = await supabase
         .from('stories')
         .select(
-          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, caption_x, caption_y, caption_style, visibility, created_at, expires_at'
+          'id, creator_id, media_url, media_type, thumbnail_url, duration_seconds, caption, caption_x, caption_y, caption_style, sticker, visibility, created_at, expires_at'
         )
         .eq('creator_id', profileId)
         .gt('expires_at', new Date().toISOString())
@@ -744,7 +748,7 @@ export function HighlightRail({
     const { data } = await supabase
       .from('story_highlight_items')
       .select(
-        'id, media_url, media_type, thumbnail_url, caption, caption_x, caption_y, caption_style, duration_seconds, created_at'
+        'id, media_url, media_type, thumbnail_url, caption, caption_x, caption_y, caption_style, sticker, duration_seconds, created_at'
       )
       .eq('highlight_id', id)
       .order('created_at', { ascending: true });
@@ -758,6 +762,7 @@ export function HighlightRail({
       caption_x: r.caption_x,
       caption_y: r.caption_y,
       caption_style: r.caption_style,
+      sticker: r.sticker,
       duration_seconds: r.duration_seconds,
       created_at: r.created_at,
       expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
@@ -1124,6 +1129,7 @@ function StoryComposer({
     captionX: number;
     captionY: number;
     captionStyle: 'classic' | 'neon' | 'box';
+    sticker: 'subscribe' | 'live' | 'shop' | null;
     cropX: number;
     cropY: number;
     cropZoom: number;
@@ -1137,6 +1143,7 @@ function StoryComposer({
     captionX?: number;
     captionY?: number;
     captionStyle?: 'classic' | 'neon' | 'box';
+    sticker?: 'subscribe' | 'live' | 'shop' | null;
     cropX?: number;
     cropY?: number;
     cropZoom?: number;
@@ -1251,6 +1258,17 @@ function StoryComposer({
             {draft.caption}
           </button>
         ) : null}
+        {draft.sticker ? (
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-4 z-20 pointer-events-none">
+            <span className="inline-flex items-center h-9 px-4 rounded-full bg-pink-600 text-sm font-semibold">
+              {draft.sticker === 'subscribe'
+                ? 'Subscribe'
+                : draft.sticker === 'live'
+                  ? 'Join live'
+                  : 'Shop'}
+            </span>
+          </div>
+        ) : null}
         <div className="absolute top-0 left-0 right-0 px-4 pt-[max(0.9rem,env(safe-area-inset-top))] flex items-center justify-between z-10">
           <button
             type="button"
@@ -1307,6 +1325,29 @@ function StoryComposer({
               onClick={() => onMeta({ visibility: id })}
               className={`flex-1 h-9 rounded-full text-xs font-medium ${
                 draft.visibility === id
+                  ? 'bg-pink-600 text-white'
+                  : 'bg-white/10 text-white/70'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5">
+          {(
+            [
+              [null, 'No sticker'],
+              ['subscribe', 'Subscribe'],
+              ['live', 'Live'],
+              ['shop', 'Shop'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onMeta({ sticker: id })}
+              className={`flex-1 h-9 rounded-full text-[11px] font-medium ${
+                draft.sticker === id
                   ? 'bg-pink-600 text-white'
                   : 'bg-white/10 text-white/70'
               }`}
@@ -1438,6 +1479,7 @@ function StoryViewer({
   const [hlTitle, setHlTitle] = useState('');
   const [hlBusy, setHlBusy] = useState(false);
   const [hlSaved, setHlSaved] = useState(false);
+  const [liveHref, setLiveHref] = useState<string | null>(null);
 
   const markViewed = useCallback(
     async (row: StoryRow) => {
@@ -1457,6 +1499,24 @@ function StoryViewer({
   useEffect(() => {
     if (story) void markViewed(story);
   }, [story?.id, markViewed]);
+
+  useEffect(() => {
+    setLiveHref(null);
+    if (!story || story.sticker !== 'live') return;
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('live_streams')
+        .select('id')
+        .eq('creator_id', story.creator_id)
+        .eq('status', 'live')
+        .maybeSingle();
+      if (alive) setLiveHref(data?.id ? `/live/${data.id}` : '/live');
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [story?.id, story?.sticker, story?.creator_id, supabase]);
 
   useEffect(() => {
     if (!isOwn || !story) {
@@ -1589,6 +1649,7 @@ function StoryViewer({
     caption_x: row.caption_x ?? 50,
     caption_y: row.caption_y ?? 72,
     caption_style: row.caption_style || 'classic',
+    sticker: row.sticker || null,
     duration_seconds: row.duration_seconds || PHOTO_SECS,
   });
 
@@ -2007,6 +2068,32 @@ function StoryViewer({
           onPointerUp={onGestureUp}
           onPointerCancel={onGestureUp}
         />
+      )}
+
+      {story.sticker && !isOwn && (
+        <div
+          className={`absolute left-0 right-0 bottom-24 z-[25] flex justify-center transition-opacity duration-200 ${
+            holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
+        >
+          <Link
+            href={
+              story.sticker === 'live'
+                ? liveHref || '/live'
+                : story.sticker === 'shop'
+                  ? '/shop'
+                  : `/${group.creator.username || ''}`
+            }
+            onClick={onClose}
+            className="h-10 px-5 rounded-full bg-pink-600 text-sm font-semibold flex items-center"
+          >
+            {story.sticker === 'subscribe'
+              ? 'Subscribe'
+              : story.sticker === 'live'
+                ? 'Join live'
+                : 'Shop'}
+          </Link>
+        </div>
       )}
 
       <div
