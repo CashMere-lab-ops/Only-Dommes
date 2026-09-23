@@ -19,6 +19,7 @@ import {
 import { createClient } from '../lib/supabase';
 import { createNotification } from '../lib/notifications';
 import { applyUserBlock } from '../lib/blocks';
+import { queuePostToStory } from './StoriesRail';
 import { spendFromWallet, handleInsufficientBalance } from '../lib/wallet';
 
 const TIP_AMOUNTS = [5, 10, 20, 50];
@@ -463,6 +464,15 @@ export default function FeedPosts({
                   >
                     <DollarSign size={20} />
                     <span className="text-sm">Tip</span>
+                  </button>
+                )}
+                {profile?.account_type === 'creator' && (post.media_url || post.thumbnail_url) && (
+                  <button
+                    type="button"
+                    onClick={() => queuePostToStory(post)}
+                    className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 text-sm"
+                  >
+                    Story
                   </button>
                 )}
                 <button

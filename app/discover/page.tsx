@@ -12,6 +12,7 @@ import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
 import { applyUserBlock } from '../../lib/blocks';
+import { queuePostToStory } from '../../components/StoriesRail';
 import {
   spendFromWallet,
   handleInsufficientBalance,
@@ -856,6 +857,15 @@ export default function DiscoverPage() {
                             <DollarSign size={20} className="group-hover:scale-110 transition" />
                             <span className="text-sm">Tip</span>
                           </button>
+                          {isCreator && (post.media_url || post.thumbnail_url) && (
+                            <button
+                              type="button"
+                              onClick={() => queuePostToStory(post)}
+                              className="flex items-center gap-1.5 text-zinc-400 hover:text-pink-400 text-sm"
+                            >
+                              Story
+                            </button>
+                          )}
                           <button
                             onClick={() => handleShare(post)}
                             className="text-zinc-400 hover:text-pink-400 transition group ml-auto"

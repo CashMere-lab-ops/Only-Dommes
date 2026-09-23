@@ -57,6 +57,34 @@ function nameOf(c: StoryCreator) {
   return c.display_name || (c.username ? `@${c.username}` : 'Creator');
 }
 
+export function queuePostToStory(post: {
+  media_url?: string | null;
+  thumbnail_url?: string | null;
+  media_type?: string | null;
+  content?: string | null;
+}) {
+  const url = post.media_url || post.thumbnail_url;
+  if (!url) {
+    alert('This post has no photo or video to add');
+    return;
+  }
+  try {
+    sessionStorage.setItem(
+      'wod-story-share',
+      JSON.stringify({
+        url,
+        thumb: post.thumbnail_url || url,
+        kind: post.media_type === 'video' && post.media_url ? 'video' : 'image',
+        caption: String(post.content || '').slice(0, 80),
+      })
+    );
+  } catch {
+    alert('Could not open story');
+    return;
+  }
+  window.location.href = '/?addstory=1';
+}
+
 async function cropToStoryFrame(
   url: string,
   panX: number,
@@ -227,10 +255,55 @@ export default function StoriesRail({
 
   useEffect(() => {
     if (!isCreator || typeof window === 'undefined') return;
-    if (new URLSearchParams(window.location.search).get('addstory') !== '1') return;
-    const t = window.setTimeout(() => setAddOpen(true), 250);
+    const shareRaw = sessionStorage.getItem('wod-story-share');
+    const wantAdd = new URLSearchParams(window.location.search).get('addstory') === '1';
+    if (!shareRaw && !wantAdd) return;
     window.history.replaceState({}, '', window.location.pathname);
-    return () => window.clearTimeout(t);
+    if (!shareRaw) {
+      const t = window.setTimeout(() => setAddOpen(true), 250);
+      return () => window.clearTimeout(t);
+    }
+    sessionStorage.removeItem('wod-story-share');
+    let cancelled = false;
+    (async () => {
+      try {
+        const parsed = JSON.parse(shareRaw) as {
+          url: string;
+          thumb?: string;
+          kind?: string;
+          caption?: string;
+        };
+        const tryUrl = parsed.kind === 'video' ? parsed.url : parsed.url;
+        const res = await fetch(tryUrl);
+        if (!res.ok) throw new Error('fetch');
+        const blob = await res.blob();
+        const file = new File(
+          [blob],
+          parsed.kind === 'video' ? 'share.mp4' : 'share.jpg',
+          { type: blob.type || (parsed.kind === 'video' ? 'video/mp4' : 'image/jpeg') }
+        );
+        let next = await prepareFile(file);
+        if (!next && parsed.thumb && parsed.thumb !== tryUrl) {
+          const r2 = await fetch(parsed.thumb);
+          const b2 = await r2.blob();
+          next = await prepareFile(
+            new File([b2], 'share.jpg', { type: b2.type || 'image/jpeg' })
+          );
+        }
+        if (cancelled || !next) {
+          setError('Could not add that post to a story');
+          return;
+        }
+        next.caption = parsed.caption || '';
+        setDraft(next);
+      } catch {
+        if (!cancelled) setError('Could not add that post to a story');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCreator]);
 
   const prepareFile = async (file: File) => {
