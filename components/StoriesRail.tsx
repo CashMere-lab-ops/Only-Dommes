@@ -460,23 +460,25 @@ export default function StoriesRail({
   if (!loading && !showAdd && groups.length === 0) return null;
 
   return (
-    <div className="mb-7">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold text-zinc-200">Stories</p>
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-3.5 px-0.5">
+        <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-zinc-500">
+          Stories
+        </p>
         {showAdd && (
           <button
             type="button"
             onClick={openAdd}
-            className="text-xs font-medium text-pink-400 hover:text-pink-300"
+            className="text-[11px] font-medium tracking-wide text-zinc-400 hover:text-white transition-colors"
           >
-            Add story
+            New
           </button>
         )}
       </div>
-      <div className="flex items-start gap-3.5 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1">
+      <div className="flex items-start gap-4 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1">
         {showAdd && (
-          <div className="flex-shrink-0 w-[78px] text-center">
-            <div className="relative mx-auto w-[72px] h-[72px]">
+          <div className="flex-shrink-0 w-[74px] text-center">
+            <div className="relative mx-auto w-[68px] h-[68px]">
             <button
               type="button"
               onClick={() => {
@@ -490,9 +492,9 @@ export default function StoriesRail({
               className="block w-full"
             >
               <div
-                className={`w-[72px] h-[72px] rounded-full p-[2.5px] ${
+                className={`w-[68px] h-[68px] rounded-full p-[2px] ${
                   myGroup?.unseen
-                    ? 'bg-gradient-to-br from-pink-400 via-rose-500 to-amber-400'
+                    ? 'bg-[conic-gradient(from_200deg,#f9a8d4,#fb7185,#fbbf24,#f9a8d4)]'
                     : myGroup
                       ? 'bg-zinc-600'
                       : 'bg-zinc-800'
@@ -530,16 +532,17 @@ export default function StoriesRail({
                 )}
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-zinc-300 truncate font-medium">Your story</p>
+            <p className="mt-1.5 text-[10px] text-zinc-400 truncate tracking-wide">Your story</p>
           </div>
         )}
 
-        {loading && groups.length === 0 && (
-          <div className="flex items-center text-zinc-500 text-sm py-6 px-2">
-            <Loader2 size={16} className="animate-spin mr-2" />
-            Stories
-          </div>
-        )}
+        {loading && groups.length === 0 &&
+          [0, 1, 2, 3].map((n) => (
+            <div key={n} className="flex-shrink-0 w-[74px] text-center">
+              <div className="mx-auto w-[68px] h-[68px] rounded-full bg-zinc-900 animate-pulse" />
+              <div className="mx-auto mt-2 h-2 w-10 rounded bg-zinc-900 animate-pulse" />
+            </div>
+          ))}
 
         {others.map((g) => {
           const gi = groups.findIndex((x) => x.creator.id === g.creator.id);
@@ -548,16 +551,16 @@ export default function StoriesRail({
               key={g.creator.id}
               type="button"
               onClick={() => setOpen({ groupIndex: gi, storyIndex: 0 })}
-              className="flex-shrink-0 w-[78px] text-center"
+              className="flex-shrink-0 w-[74px] text-center"
             >
               <div
-                className={`mx-auto w-[72px] h-[72px] rounded-full p-[2.5px] ${
+                className={`mx-auto w-[68px] h-[68px] rounded-full p-[2px] ${
                   g.unseen
-                    ? 'bg-gradient-to-br from-pink-400 via-rose-500 to-amber-400'
-                    : 'bg-zinc-600'
+                    ? 'bg-[conic-gradient(from_200deg,#f9a8d4,#fb7185,#fbbf24,#f9a8d4)]'
+                    : 'bg-zinc-700'
                 }`}
               >
-                <div className="w-full h-full rounded-full bg-zinc-950 p-[2.5px] overflow-hidden">
+                <div className="w-full h-full rounded-full bg-zinc-950 p-[2px] overflow-hidden">
                   {g.creator.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -572,7 +575,7 @@ export default function StoriesRail({
                   )}
                 </div>
               </div>
-              <p className="mt-2 text-[11px] text-zinc-300 truncate">
+              <p className="mt-1.5 text-[10px] text-zinc-400 truncate tracking-wide">
                 {nameOf(g.creator)}
               </p>
             </button>
@@ -595,10 +598,13 @@ export default function StoriesRail({
           onClick={() => setAddOpen(false)}
         >
           <div
-            className="w-full sm:max-w-sm bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-3xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            className="w-full sm:max-w-sm bg-zinc-950/95 backdrop-blur-xl border border-white/10 rounded-t-[28px] sm:rounded-[28px] p-5 pb-[max(1.1rem,env(safe-area-inset-bottom))]"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-sm font-semibold mb-3">New story</p>
+            <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+            <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-zinc-500 mb-4 text-center">
+              New story
+            </p>
             <button
               type="button"
               onClick={() => {
@@ -867,7 +873,9 @@ export function HighlightRail({
 
   return (
     <div className="mb-8">
-      <p className="text-sm font-semibold text-zinc-200 mb-3">Highlights</p>
+      <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-zinc-500 mb-3">
+        Highlights
+      </p>
       {loadError && (
         <p className="text-xs text-red-400 mb-2">
           {loadError.includes('does not exist')
@@ -1467,7 +1475,7 @@ function StoryComposer({
           className="w-full h-12 rounded-2xl bg-pink-600 hover:bg-pink-500 disabled:opacity-60 font-semibold flex items-center justify-center gap-2"
         >
           {uploading ? <Loader2 size={18} className="animate-spin" /> : null}
-          {uploading ? 'Posting…' : 'Share story'}
+          {uploading ? 'Posting' : 'Share'}
         </button>
       </div>
     </div>
@@ -2041,9 +2049,9 @@ function StoryViewer({
           holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
       >
-        <div ref={barsWrapRef} className="flex gap-[3px] mb-3">
+        <div ref={barsWrapRef} className="flex gap-[2px] mb-3">
           {group.stories.map((s, i) => (
-            <div key={s.id} className="flex-1 h-[2px] rounded-full bg-white/30 overflow-hidden">
+            <div key={s.id} className="flex-1 h-[1.5px] rounded-full bg-white/25 overflow-hidden">
               <div
                 data-story-bar={i === si ? 'active' : i < si ? 'done' : 'idle'}
                 className="h-full w-full bg-white rounded-full origin-left"
