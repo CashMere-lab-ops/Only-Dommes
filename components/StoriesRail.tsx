@@ -15,6 +15,7 @@ import {
   Image as ImageIcon,
   SwitchCamera,
   Bookmark,
+  MoreHorizontal,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
@@ -1560,6 +1561,7 @@ function StoryViewer({
   const [hlTitle, setHlTitle] = useState('');
   const [hlBusy, setHlBusy] = useState(false);
   const [hlSaved, setHlSaved] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [liveHref, setLiveHref] = useState<string | null>(null);
 
   const markViewed = useCallback(
@@ -1649,12 +1651,13 @@ function StoryViewer({
     setReplySent(false);
     setReplyOpen(false);
     setShowViewers(false);
+    setManageOpen(false);
     return () => window.cancelAnimationFrame(id);
   }, [story?.id, si]);
 
   useEffect(() => {
-    if (replyOpen || showViewers || hlOpen) setPaused(true);
-  }, [replyOpen, showViewers, hlOpen]);
+    if (replyOpen || showViewers || hlOpen || manageOpen) setPaused(true);
+  }, [replyOpen, showViewers, hlOpen, manageOpen]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -2060,7 +2063,7 @@ function StoryViewer({
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <Link
             href={group.creator.username ? `/${group.creator.username}` : '/'}
             className="flex items-center gap-2 min-w-0"
@@ -2071,68 +2074,55 @@ function StoryViewer({
               <img
                 src={group.creator.avatar_url}
                 alt=""
-                className="w-8 h-8 rounded-full object-cover ring-1 ring-white/30"
+                className="w-7 h-7 rounded-full object-cover"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-pink-600 flex items-center justify-center text-xs font-bold">
+              <div className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center text-[11px] font-semibold">
                 {label[0]?.toUpperCase()}
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-sm font-semibold truncate leading-tight">{label}</p>
-              <p className="text-[10px] text-white/70">
-                {permanent ? 'Highlight' : `${timeAgo(story.created_at)} · ${hoursLeft(story.expires_at)} left`}
-              </p>
+              <p className="text-[13px] font-medium truncate leading-tight">{label}</p>
+              {isOwn && !permanent ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void openViewers();
+                  }}
+                  className="text-[10px] text-white/55"
+                >
+                  {viewsCount == null ? 'Seen' : `${viewsCount} seen`}
+                </button>
+              ) : holdUi ? (
+                <p className="text-[10px] text-white/50">{timeAgo(story.created_at)}</p>
+              ) : null}
             </div>
           </Link>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-0.5">
             {story.media_type === 'video' && (
               <button
                 type="button"
                 onClick={() => setMuted((m) => !m)}
-                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
+                className="w-9 h-9 flex items-center justify-center text-white/80"
               >
                 {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
             )}
-            {isOwn && !permanent && onAdd && (
-              <button
-                type="button"
-                onClick={onAdd}
-                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
-                title="Add story"
-              >
-                <Plus size={16} />
-              </button>
-            )}
             {isOwn && !permanent && (
               <button
                 type="button"
-                onClick={() => {
-                  setHlOpen(true);
-                  setPaused(true);
-                  void loadHighlights();
-                }}
-                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
-                title="Highlight"
+                onClick={() => setManageOpen(true)}
+                className="w-9 h-9 flex items-center justify-center text-white/80"
               >
-                <Bookmark size={16} />
-              </button>
-            )}
-            {isOwn && !permanent && (
-              <button
-                type="button"
-                onClick={() => void removeStory()}
-                className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center text-red-300"
-                title="Delete"
-              >
-                <Trash2 size={16} />
+                <MoreHorizontal size={18} />
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-full bg-black/35 backdrop-blur flex items-center justify-center"
+              className="w-9 h-9 flex items-center justify-center text-white/90"
             >
               <X size={18} />
             </button>
@@ -2140,7 +2130,7 @@ function StoryViewer({
         </div>
       </div>
 
-      {!replyOpen && !showViewers && !hlOpen && (
+      {!replyOpen && !showViewers && !hlOpen && !manageOpen && (
         <div
           className="absolute left-0 right-0 top-16 bottom-24 z-20 touch-none select-none [-webkit-touch-callout:none]"
           onContextMenu={(e) => e.preventDefault()}
@@ -2166,7 +2156,7 @@ function StoryViewer({
                   : `/${group.creator.username || ''}`
             }
             onClick={onClose}
-            className="h-10 px-5 rounded-full bg-pink-600 text-sm font-semibold flex items-center"
+            className="h-9 px-4 rounded-full bg-white text-black text-[13px] font-semibold flex items-center"
           >
             {story.sticker === 'subscribe'
               ? 'Subscribe'
@@ -2183,18 +2173,9 @@ function StoryViewer({
         }`}
       >
         {hlSaved ? (
-          <p className="text-sm text-white/70">Saved to highlight</p>
+          <p className="text-[13px] text-white/60">Saved</p>
         ) : isOwn && !permanent ? (
-          <button
-            type="button"
-            onClick={() => void openViewers()}
-            className="flex items-center gap-2 text-sm text-white/90"
-          >
-            <Eye size={16} />
-            {viewsCount == null
-              ? 'Views'
-              : `${viewsCount} view${viewsCount === 1 ? '' : 's'}`}
-          </button>
+          <div className="h-2" />
         ) : userId ? (
           <div>
           {replySent ? (
@@ -2244,7 +2225,7 @@ function StoryViewer({
                 setReplyOpen(true);
                 setPaused(true);
               }}
-              className="w-full h-11 rounded-full border border-white/25 bg-black/25 backdrop-blur-md text-left px-4 text-sm text-white/75"
+              className="w-full h-10 rounded-full border border-white/15 bg-black/20 text-left px-4 text-[13px] text-white/60"
             >
               Reply to {label}…
             </button>
@@ -2252,6 +2233,60 @@ function StoryViewer({
           </div>
         ) : null}
       </div>
+
+      {manageOpen && (
+        <div className="absolute inset-0 z-40 bg-black/50 flex items-end">
+          <div className="w-full rounded-t-3xl bg-zinc-950 border-t border-white/10 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <div className="w-10 h-1 rounded-full bg-white/15 mx-auto mb-4" />
+            {onAdd && (
+              <button
+                type="button"
+                onClick={() => {
+                  setManageOpen(false);
+                  onAdd();
+                }}
+                className="w-full h-12 rounded-2xl bg-zinc-900 text-sm font-medium mb-2 flex items-center justify-center gap-2"
+              >
+                <Plus size={16} />
+                Add story
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setManageOpen(false);
+                setHlOpen(true);
+                void loadHighlights();
+              }}
+              className="w-full h-12 rounded-2xl bg-zinc-900 text-sm font-medium mb-2 flex items-center justify-center gap-2"
+            >
+              <Bookmark size={16} />
+              Highlight
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setManageOpen(false);
+                void removeStory();
+              }}
+              className="w-full h-12 rounded-2xl bg-zinc-900 text-sm font-medium text-red-400 mb-2 flex items-center justify-center gap-2"
+            >
+              <Trash2 size={16} />
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setManageOpen(false);
+                setPaused(false);
+              }}
+              className="w-full h-11 text-sm text-zinc-500"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {hlOpen && (
         <div className="absolute inset-0 z-40 bg-black/55 flex items-end">
