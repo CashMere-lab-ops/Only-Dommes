@@ -1859,7 +1859,14 @@ function StoryViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (replyOpen) {
+          setReplyOpen(false);
+          setReply('');
+          return;
+        }
+        onClose();
+      }
       if (e.key === 'ArrowRight') goNext();
       if (e.key === 'ArrowLeft') goPrev();
       if (e.key === ' ') {
@@ -1869,7 +1876,7 @@ function StoryViewer({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, goNext, goPrev]);
+  }, [onClose, goNext, goPrev, replyOpen]);
 
   if (!group || !story) return null;
   const label = nameOf(group.creator);
@@ -2133,6 +2140,18 @@ function StoryViewer({
           </div>
         </div>
       </div>
+
+      {replyOpen && (
+        <button
+          type="button"
+          className="absolute inset-0 z-20"
+          aria-label="Close reply"
+          onClick={() => {
+            setReplyOpen(false);
+            setReply('');
+          }}
+        />
+      )}
 
       {!replyOpen && !showViewers && !hlOpen && !manageOpen && (
         <div
