@@ -1272,10 +1272,10 @@ function StoryComposer({
 
   return (
     <div
-      className="fixed inset-0 z-[240] bg-black flex flex-col select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
+      className="fixed inset-0 z-[240] bg-black select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div ref={stageRef} className="relative flex-1 min-h-0 overflow-hidden">
+      <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {draft.kind === 'video' ? (
           <video
             src={draft.url}
@@ -1329,7 +1329,7 @@ function StoryComposer({
           />
         )}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
         {draft.caption.trim() ? (
           <button
             type="button"
@@ -1352,7 +1352,7 @@ function StoryComposer({
           </button>
         ) : null}
         {draft.sticker ? (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-4 z-20 pointer-events-none">
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-28 z-20 pointer-events-none">
             <span className="inline-flex items-center h-9 px-4 rounded-full bg-white text-black text-sm font-semibold">
               {draft.sticker === 'subscribe'
                 ? 'Subscribe'
@@ -1477,40 +1477,40 @@ function StoryComposer({
             ))}
           </div>
         )}
-      </div>
-      <div className="relative z-10 px-5 pb-[max(1.1rem,env(safe-area-inset-bottom))] pt-3 bg-black">
-        <div className="flex items-center justify-around mb-4">
-          {(
-            [
-              ['text', Type, 'Text'],
-              ['crop', Crop, 'Crop'],
-              ['sticker', Bookmark, 'Sticker'],
-              ['audience', Lock, 'Who'],
-            ] as const
-          ).map(([id, Icon, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTool((t) => (t === id ? 'none' : id))}
-              disabled={id === 'crop' && draft.kind !== 'image'}
-              className={`flex flex-col items-center gap-1 disabled:opacity-30 ${
-                tool === id ? 'text-white' : 'text-white/45'
-              }`}
-            >
-              <Icon size={20} strokeWidth={1.7} />
-              <span className="text-[10px] tracking-wide">{label}</span>
-            </button>
-          ))}
+        <div className="absolute left-3 right-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 flex items-center gap-2">
+          <div className="flex-1 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-around px-2">
+            {(
+              [
+                ['text', Type, 'Text'],
+                ['crop', Crop, 'Crop'],
+                ['sticker', Bookmark, 'Sticker'],
+                ['audience', Lock, 'Who'],
+              ] as const
+            ).map(([id, Icon, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTool((t) => (t === id ? 'none' : id))}
+                disabled={id === 'crop' && draft.kind !== 'image'}
+                className={`w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-30 ${
+                  tool === id ? 'text-white bg-white/15' : 'text-white/55'
+                }`}
+                title={label}
+              >
+                <Icon size={18} strokeWidth={1.7} />
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={onShare}
+            disabled={uploading}
+            className="h-12 px-5 rounded-full bg-white text-black text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 shrink-0"
+          >
+            {uploading ? <Loader2 size={16} className="animate-spin" /> : null}
+            {uploading ? 'Posting' : 'Share'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onShare}
-          disabled={uploading}
-          className="w-full h-12 rounded-full bg-white text-black font-semibold disabled:opacity-60 flex items-center justify-center gap-2"
-        >
-          {uploading ? <Loader2 size={18} className="animate-spin" /> : null}
-          {uploading ? 'Posting' : 'Share'}
-        </button>
       </div>
     </div>
   );
