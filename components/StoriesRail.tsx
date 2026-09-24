@@ -1656,7 +1656,8 @@ function StoryViewer({
   }, [story?.id, si]);
 
   useEffect(() => {
-    if (replyOpen || showViewers || hlOpen || manageOpen) setPaused(true);
+    const blocked = replyOpen || showViewers || hlOpen || manageOpen;
+    setPaused(blocked);
   }, [replyOpen, showViewers, hlOpen, manageOpen]);
 
   useEffect(() => {
