@@ -2083,21 +2083,24 @@ function StoryViewer({
             )}
             <div className="min-w-0">
               <p className="text-[13px] font-medium truncate leading-tight">{label}</p>
-              {isOwn && !permanent ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    void openViewers();
-                  }}
-                  className="text-[10px] text-white/55"
-                >
-                  {viewsCount == null ? 'Seen' : `${viewsCount} seen`}
-                </button>
-              ) : holdUi ? (
-                <p className="text-[10px] text-white/50">{timeAgo(story.created_at)}</p>
-              ) : null}
+              <div className="flex items-center gap-1.5 text-[10px] text-white/55">
+                <span>{permanent ? 'Highlight' : timeAgo(story.created_at)}</span>
+                {isOwn && !permanent ? (
+                  <>
+                    <span>·</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void openViewers();
+                      }}
+                    >
+                      {viewsCount == null ? 'Seen' : `${viewsCount} seen`}
+                    </button>
+                  </>
+                ) : null}
+              </div>
             </div>
           </Link>
           <div className="ml-auto flex items-center gap-0.5">
