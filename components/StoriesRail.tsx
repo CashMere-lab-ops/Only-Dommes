@@ -16,6 +16,9 @@ import {
   SwitchCamera,
   Bookmark,
   MoreHorizontal,
+  Type,
+  Crop,
+  Lock,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
@@ -1260,6 +1263,13 @@ function StoryComposer({
     dragRef.current = null;
   };
 
+  const [tool, setTool] = useState<'none' | 'text' | 'crop' | 'sticker' | 'audience'>('none');
+  const textRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (tool === 'text') textRef.current?.focus();
+  }, [tool]);
+
   return (
     <div
       className="fixed inset-0 z-[240] bg-black flex flex-col select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
@@ -1286,6 +1296,7 @@ function StoryComposer({
               transform: `translate(${draft.cropX * 100}%, ${draft.cropY * 100}%) scale(${draft.cropZoom})`,
             }}
             onPointerDown={(e) => {
+              if (tool !== 'crop') return;
               if ((e.target as HTMLElement).closest('[data-story-text]')) return;
               panRef.current = {
                 x: e.clientX,
@@ -1342,7 +1353,7 @@ function StoryComposer({
         ) : null}
         {draft.sticker ? (
           <div className="absolute left-1/2 -translate-x-1/2 bottom-4 z-20 pointer-events-none">
-            <span className="inline-flex items-center h-9 px-4 rounded-full bg-pink-600 text-sm font-semibold">
+            <span className="inline-flex items-center h-9 px-4 rounded-full bg-white text-black text-sm font-semibold">
               {draft.sticker === 'subscribe'
                 ? 'Subscribe'
                 : draft.sticker === 'live'
@@ -1351,129 +1362,151 @@ function StoryComposer({
             </span>
           </div>
         ) : null}
-        <div className="absolute top-0 left-0 right-0 px-4 pt-[max(0.9rem,env(safe-area-inset-top))] flex items-center justify-between z-10">
+        <div className="absolute top-0 left-0 right-0 px-4 pt-[max(0.9rem,env(safe-area-inset-top))] flex items-center z-10">
           <button
             type="button"
             onClick={onCancel}
-            className="w-10 h-10 rounded-full bg-black/45 backdrop-blur flex items-center justify-center"
+            className="w-10 h-10 rounded-full bg-black/35 flex items-center justify-center"
           >
             <X size={18} />
           </button>
-          <p className="text-sm font-semibold">New story</p>
-          <span className="w-10" />
         </div>
-      </div>
-      <div className="relative z-10 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 space-y-3">
-        <input
-          value={draft.caption}
-          onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
-          maxLength={80}
-          placeholder="Add text — then drag it on the photo"
-          className="w-full h-11 rounded-xl bg-white/10 border border-white/15 px-3 text-sm outline-none placeholder:text-white/40"
-        />
-        <div className="flex gap-1.5">
-          {(
-            [
-              ['classic', 'Classic'],
-              ['neon', 'Neon'],
-              ['box', 'Box'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onMeta({ captionStyle: id })}
-              className={`flex-1 h-9 rounded-full text-xs font-medium ${
-                draft.captionStyle === id
-                  ? 'bg-white text-black'
-                  : 'bg-white/10 text-white/70'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1.5">
-          {(
-            [
-              ['everyone', 'Everyone'],
-              ['followers', 'Followers'],
-              ['subscribers', 'Subs'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onMeta({ visibility: id })}
-              className={`flex-1 h-9 rounded-full text-xs font-medium ${
-                draft.visibility === id
-                  ? 'bg-pink-600 text-white'
-                  : 'bg-white/10 text-white/70'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1.5">
-          {(
-            [
-              [null, 'No sticker'],
-              ['subscribe', 'Subscribe'],
-              ['live', 'Live'],
-              ['shop', 'Shop'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => onMeta({ sticker: id })}
-              className={`flex-1 h-9 rounded-full text-[11px] font-medium ${
-                draft.sticker === id
-                  ? 'bg-pink-600 text-white'
-                  : 'bg-white/10 text-white/70'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {draft.kind === 'image' && (
-          <div className="flex items-center justify-center gap-3">
+        {tool === 'text' && (
+          <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 space-y-2">
+            <input
+              ref={textRef}
+              value={draft.caption}
+              onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
+              maxLength={80}
+              placeholder="Type here"
+              className="w-full h-11 rounded-full bg-black/45 border border-white/10 px-4 text-sm outline-none placeholder:text-white/35"
+            />
+            <div className="flex justify-center gap-2">
+              {(
+                [
+                  ['classic', 'Classic'],
+                  ['neon', 'Neon'],
+                  ['box', 'Box'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onMeta({ captionStyle: id })}
+                  className={`h-8 px-3 rounded-full text-[11px] ${
+                    draft.captionStyle === id ? 'bg-white text-black' : 'bg-white/10 text-white/70'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {tool === 'crop' && draft.kind === 'image' && (
+          <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
             <button
               type="button"
               onClick={() =>
                 onMeta({ cropZoom: Math.max(1, Number((draft.cropZoom - 0.15).toFixed(2))) })
               }
-              className="w-9 h-9 rounded-full bg-white/10 text-lg"
+              className="w-9 h-9 rounded-full bg-black/45 text-lg"
             >
               −
             </button>
-            <p className="text-[11px] text-zinc-400 w-24 text-center">
-              Drag to crop · {Math.round(draft.cropZoom * 100)}%
-            </p>
+            <p className="text-[11px] text-white/60">Drag to frame</p>
             <button
               type="button"
               onClick={() =>
                 onMeta({ cropZoom: Math.min(3, Number((draft.cropZoom + 0.15).toFixed(2))) })
               }
-              className="w-9 h-9 rounded-full bg-white/10 text-lg"
+              className="w-9 h-9 rounded-full bg-black/45 text-lg"
             >
               +
             </button>
           </div>
         )}
-        <p className="text-[11px] text-zinc-400 text-center">
-          Visible 24 hours ·{' '}
-          {draft.kind === 'video'
-            ? `${draft.duration}s video (max ${MAX_VIDEO_SECS}s)`
-            : '9:16 photo'}
-        </p>
+        {tool === 'sticker' && (
+          <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex gap-2 justify-center">
+            {(
+              [
+                [null, 'None'],
+                ['subscribe', 'Subscribe'],
+                ['live', 'Live'],
+                ['shop', 'Shop'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  onMeta({ sticker: id });
+                  setTool('none');
+                }}
+                className={`h-8 px-3 rounded-full text-[11px] ${
+                  draft.sticker === id ? 'bg-white text-black' : 'bg-black/45 text-white/80'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {tool === 'audience' && (
+          <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex gap-2 justify-center">
+            {(
+              [
+                ['everyone', 'Everyone'],
+                ['followers', 'Followers'],
+                ['subscribers', 'Subs'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  onMeta({ visibility: id });
+                  setTool('none');
+                }}
+                className={`h-8 px-3 rounded-full text-[11px] ${
+                  draft.visibility === id ? 'bg-white text-black' : 'bg-black/45 text-white/80'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="relative z-10 px-5 pb-[max(1.1rem,env(safe-area-inset-bottom))] pt-3 bg-black">
+        <div className="flex items-center justify-around mb-4">
+          {(
+            [
+              ['text', Type, 'Text'],
+              ['crop', Crop, 'Crop'],
+              ['sticker', Bookmark, 'Sticker'],
+              ['audience', Lock, 'Who'],
+            ] as const
+          ).map(([id, Icon, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTool((t) => (t === id ? 'none' : id))}
+              disabled={id === 'crop' && draft.kind !== 'image'}
+              className={`flex flex-col items-center gap-1 disabled:opacity-30 ${
+                tool === id ? 'text-white' : 'text-white/45'
+              }`}
+            >
+              <Icon size={20} strokeWidth={1.7} />
+              <span className="text-[10px] tracking-wide">{label}</span>
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           onClick={onShare}
           disabled={uploading}
-          className="w-full h-12 rounded-2xl bg-pink-600 hover:bg-pink-500 disabled:opacity-60 font-semibold flex items-center justify-center gap-2"
+          className="w-full h-12 rounded-full bg-white text-black font-semibold disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {uploading ? <Loader2 size={18} className="animate-spin" /> : null}
           {uploading ? 'Posting' : 'Share'}
