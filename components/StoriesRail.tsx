@@ -1554,6 +1554,7 @@ function StoryViewer({
   const [replying, setReplying] = useState(false);
   const [replySent, setReplySent] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [replyFocus, setReplyFocus] = useState(false);
   const [hlOpen, setHlOpen] = useState(false);
   const [highlights, setHighlights] = useState<{ id: string; title: string; cover_url?: string | null }[]>(
     []
@@ -1650,15 +1651,16 @@ function StoryViewer({
     setReply('');
     setReplySent(false);
     setReplyOpen(false);
+    setReplyFocus(false);
     setShowViewers(false);
     setManageOpen(false);
     return () => window.cancelAnimationFrame(id);
   }, [story?.id, si]);
 
   useEffect(() => {
-    const blocked = replyOpen || showViewers || hlOpen || manageOpen;
+    const blocked = replyFocus || showViewers || hlOpen || manageOpen;
     setPaused(blocked);
-  }, [replyOpen, showViewers, hlOpen, manageOpen]);
+  }, [replyFocus, showViewers, hlOpen, manageOpen]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -2215,6 +2217,13 @@ function StoryViewer({
                 autoFocus
                 value={reply}
                 onChange={(e) => setReply(e.target.value)}
+                onFocus={() => setReplyFocus(true)}
+                onBlur={() => {
+                  setReplyFocus(false);
+                  window.setTimeout(() => {
+                    setReplyOpen(false);
+                  }, 180);
+                }}
                 maxLength={200}
                 placeholder="Reply…"
                 className="flex-1 h-11 rounded-full bg-white/10 border border-white/15 px-4 text-sm outline-none placeholder:text-white/40"
@@ -2234,7 +2243,7 @@ function StoryViewer({
                 type="button"
                 onClick={() => {
                   setReplyOpen(false);
-                  setPaused(false);
+                  setReplyFocus(false);
                 }}
                 className="text-xs text-white/60 px-1"
               >
@@ -2246,7 +2255,7 @@ function StoryViewer({
               type="button"
               onClick={() => {
                 setReplyOpen(true);
-                setPaused(true);
+                setReplyFocus(true);
               }}
               className="w-full h-10 rounded-full border border-white/15 bg-black/20 text-left px-4 text-[13px] text-white/60"
             >
