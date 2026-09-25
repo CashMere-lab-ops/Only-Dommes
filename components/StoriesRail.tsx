@@ -1330,27 +1330,58 @@ function StoryComposer({
         )}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
         <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
-        {draft.caption.trim() ? (
-          <button
-            type="button"
+        {(tool === 'text' || draft.caption.trim()) && (
+          <div
             data-story-text="1"
-            className={`absolute z-20 max-w-[80%] px-1 text-center leading-tight ${captionClass(
-              draft.captionStyle
-            )}`}
+            className="absolute z-20 max-w-[80%] text-center"
             style={{
               left: `${draft.captionX}%`,
               top: `${draft.captionY}%`,
               transform: 'translate(-50%, -50%)',
-              touchAction: 'none',
+              touchAction: tool === 'text' ? 'auto' : 'none',
             }}
-            onPointerDown={onTextDown}
-            onPointerMove={onTextMove}
-            onPointerUp={onTextUp}
-            onPointerCancel={onTextUp}
+            onPointerDown={tool === 'text' ? undefined : onTextDown}
+            onPointerMove={tool === 'text' ? undefined : onTextMove}
+            onPointerUp={tool === 'text' ? undefined : onTextUp}
+            onPointerCancel={tool === 'text' ? undefined : onTextUp}
           >
-            {draft.caption}
-          </button>
-        ) : null}
+            {tool === 'text' ? (
+              <input
+                ref={textRef}
+                value={draft.caption}
+                onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
+                maxLength={80}
+                placeholder="Text"
+                className={`w-[70vw] max-w-sm bg-transparent outline-none text-center caret-white placeholder:text-white/35 ${captionClass(
+                  draft.captionStyle
+                )}`}
+              />
+            ) : (
+              <p className={captionClass(draft.captionStyle)}>{draft.caption}</p>
+            )}
+            {tool === 'text' && (
+              <div className="flex justify-center gap-2.5 mt-3">
+                {(
+                  [
+                    ['classic', 'bg-white'],
+                    ['neon', 'bg-pink-400'],
+                    ['box', 'bg-zinc-500'],
+                  ] as const
+                ).map(([id, dot]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => onMeta({ captionStyle: id })}
+                    className={`w-3.5 h-3.5 rounded-full ${dot} ${
+                      draft.captionStyle === id ? 'ring-2 ring-white ring-offset-2 ring-offset-black' : 'opacity-60'
+                    }`}
+                    aria-label={id}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {draft.sticker ? (
           <div className="absolute left-1/2 -translate-x-1/2 bottom-28 z-20 pointer-events-none">
             <span className="inline-flex items-center h-9 px-4 rounded-full bg-white text-black text-sm font-semibold">
@@ -1371,38 +1402,6 @@ function StoryComposer({
             <X size={18} />
           </button>
         </div>
-        {tool === 'text' && (
-          <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 space-y-2">
-            <input
-              ref={textRef}
-              value={draft.caption}
-              onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
-              maxLength={80}
-              placeholder="Type here"
-              className="w-full h-11 rounded-full bg-black/45 border border-white/10 px-4 text-sm outline-none placeholder:text-white/35"
-            />
-            <div className="flex justify-center gap-2">
-              {(
-                [
-                  ['classic', 'Classic'],
-                  ['neon', 'Neon'],
-                  ['box', 'Box'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onMeta({ captionStyle: id })}
-                  className={`h-8 px-3 rounded-full text-[11px] ${
-                    draft.captionStyle === id ? 'bg-white text-black' : 'bg-white/10 text-white/70'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         {tool === 'crop' && draft.kind === 'image' && (
           <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
             <button
