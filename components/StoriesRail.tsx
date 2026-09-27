@@ -988,10 +988,10 @@ function StoryCreateDesk({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="h-14 px-5 border-b border-white/10 flex items-center justify-between">
-          <p className="text-[11px] font-semibold tracking-[0.2em] uppercase text-zinc-500">
+          <p className="text-[11px] font-semibold tracking-[0.2em] uppercase text-pink-400">
             World of Dommes
           </p>
-          <p className="text-sm font-medium">New story</p>
+          <p className="text-sm font-medium">Create New Story</p>
           <button
             type="button"
             onClick={onClose}
@@ -1002,7 +1002,7 @@ function StoryCreateDesk({
         </div>
         <div
           className={`m-5 rounded-xl border border-dashed min-h-[320px] flex flex-col items-center justify-center px-8 text-center transition-colors ${
-            over ? 'border-pink-400/70 bg-pink-500/5' : 'border-white/15 bg-zinc-900/40'
+            over ? 'border-pink-400 bg-pink-500/10' : 'border-pink-500/25 bg-zinc-900/40'
           }`}
           onDragOver={(e) => {
             e.preventDefault();
@@ -1015,8 +1015,8 @@ function StoryCreateDesk({
             take(e.dataTransfer.files);
           }}
         >
-          <div className="w-16 h-16 rounded-2xl border border-white/15 flex items-center justify-center mb-5">
-            <ImageIcon size={28} className="text-zinc-300" strokeWidth={1.4} />
+          <div className="w-16 h-16 rounded-2xl border border-pink-500/30 bg-pink-500/10 flex items-center justify-center mb-5">
+            <ImageIcon size={28} className="text-pink-300" strokeWidth={1.4} />
           </div>
           <p className="text-lg font-medium">Drop photos or videos here</p>
           <p className="text-sm text-zinc-500 mt-1.5 mb-6">
@@ -1025,7 +1025,7 @@ function StoryCreateDesk({
           <button
             type="button"
             onClick={onBrowse}
-            className="h-10 px-5 rounded-full bg-white text-black text-sm font-semibold"
+            className="h-10 px-5 rounded-full bg-pink-600 hover:bg-pink-500 text-white text-sm font-semibold"
           >
             Select from computer
           </button>
