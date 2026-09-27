@@ -677,9 +677,9 @@ export default function StoriesRail({
       {cameraOpen && (
         <StoryCamera
           onClose={() => setCameraOpen(false)}
-          onLibrary={() => {
+          onLibrary={(files) => {
             setCameraOpen(false);
-            fileRef.current?.click();
+            void onPickFiles(files);
           }}
           onCapture={(file) => {
             setCameraOpen(false);
@@ -1061,9 +1061,10 @@ function StoryCamera({
   onCapture,
 }: {
   onClose: () => void;
-  onLibrary: () => void;
+  onLibrary: (files: FileList | File[]) => void;
   onCapture: (file: File) => void;
 }) {
+  const libRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -1089,9 +1090,7 @@ function StoryCamera({
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: {
-          facingMode: face,
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
+          facingMode: { ideal: face },
         },
       });
       streamRef.current = stream;
@@ -1211,7 +1210,7 @@ function StoryCamera({
         autoPlay
         muted
         playsInline
-        className={`absolute inset-0 w-full h-full object-cover ${
+        className={`absolute inset-0 w-full h-full object-contain bg-black ${
           facing === 'user' ? 'scale-x-[-1]' : ''
         }`}
       />
@@ -1243,25 +1242,30 @@ function StoryCamera({
       ) : null}
 
       <div className="relative z-10 mt-auto pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <input
+          ref={libRef}
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = e.target.files;
+            if (files && files.length) onLibrary(files);
+            e.target.value = '';
+          }}
+        />
         <div className="px-4 mb-3">
-          <p className="text-[10px] tracking-[0.16em] uppercase text-white/45 mb-2">Recents</p>
-          <div className="flex gap-2 overflow-x-auto scrollbar-none">
-            <button
-              type="button"
-              onClick={onLibrary}
-              className="flex-shrink-0 w-14 h-14 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center"
-            >
+          <p className="text-[10px] tracking-[0.16em] uppercase text-white/45 mb-2">Photo library</p>
+          <button
+            type="button"
+            onClick={() => libRef.current?.click()}
+            className="flex items-center gap-3 w-full h-14 rounded-xl bg-white/10 border border-white/15 px-3"
+          >
+            <span className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
               <ImageIcon size={18} />
-            </button>
-            {[0, 1, 2, 3].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={onLibrary}
-                className="flex-shrink-0 w-14 h-14 rounded-lg border border-dashed border-white/15 bg-black/25"
-              />
-            ))}
-          </div>
+            </span>
+            <span className="text-sm font-medium">Open photo library</span>
+          </button>
         </div>
         <div className="flex items-center justify-center gap-8 mb-4">
           <button
