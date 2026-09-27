@@ -1242,17 +1242,19 @@ function StoryCropDesk({
                 <div className="absolute inset-x-0 top-2/3 h-px bg-white/35" />
               </div>
             )}
-            <div className="absolute bottom-2 right-2 z-10" onPointerDown={(e) => e.stopPropagation()}>
+          </div>
+          <div className="w-full max-w-[420px] mt-4 flex items-center gap-3">
+            <div className="relative">
               <button
                 type="button"
                 title="Select crop"
                 onClick={() => setMenu((m) => !m)}
-                className="w-10 h-10 rounded-full bg-black/55 border border-white/15 flex items-center justify-center"
+                className="w-9 h-9 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center"
               >
-                <Crop size={16} />
+                <Crop size={15} />
               </button>
               {menu && (
-                <div className="absolute bottom-12 right-0 w-44 rounded-2xl bg-zinc-800 border border-white/10 py-1 shadow-xl">
+                <div className="absolute bottom-11 left-0 w-44 rounded-2xl bg-zinc-800 border border-white/10 py-1 shadow-xl z-10">
                   {(
                     [
                       ['original', 'Original'],
@@ -1295,8 +1297,6 @@ function StoryCropDesk({
                 </div>
               )}
             </div>
-          </div>
-          <div className="w-full max-w-[420px] mt-4 flex items-center gap-3">
             <span className="text-[11px] text-zinc-500">Zoom</span>
             <input
               type="range"
