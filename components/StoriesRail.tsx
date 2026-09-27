@@ -1403,15 +1403,7 @@ function StoryComposer({
           </button>
         </div>
         {tool === 'crop' && draft.kind === 'image' && (
-          <>
-            <div className="absolute inset-x-6 top-[max(5.5rem,calc(env(safe-area-inset-top)+4.5rem))] bottom-32 z-[15] pointer-events-none">
-              <div className="absolute inset-0 border border-white/50 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]" />
-              <div className="absolute inset-y-0 left-1/3 w-px bg-white/25" />
-              <div className="absolute inset-y-0 left-2/3 w-px bg-white/25" />
-              <div className="absolute inset-x-0 top-1/3 h-px bg-white/25" />
-              <div className="absolute inset-x-0 top-2/3 h-px bg-white/25" />
-            </div>
-            <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
+          <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() =>
@@ -1431,8 +1423,7 @@ function StoryComposer({
               >
                 +
               </button>
-            </div>
-          </>
+          </div>
         )}
         {tool === 'sticker' && (
           <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex gap-2 justify-center">
