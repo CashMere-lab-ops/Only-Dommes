@@ -1254,19 +1254,6 @@ function StoryCamera({
             e.target.value = '';
           }}
         />
-        <div className="px-4 mb-3">
-          <p className="text-[10px] tracking-[0.16em] uppercase text-white/45 mb-2">Photo library</p>
-          <button
-            type="button"
-            onClick={() => libRef.current?.click()}
-            className="flex items-center gap-3 w-full h-14 rounded-xl bg-white/10 border border-white/15 px-3"
-          >
-            <span className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
-              <ImageIcon size={18} />
-            </span>
-            <span className="text-sm font-medium">Open photo library</span>
-          </button>
-        </div>
         <div className="flex items-center justify-center gap-8 mb-4">
           <button
             type="button"
@@ -1287,7 +1274,15 @@ function StoryCamera({
             VIDEO
           </button>
         </div>
-        <div className="flex items-center justify-center px-5">
+        <div className="px-6 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => libRef.current?.click()}
+            title="Photo library"
+            className="w-11 h-11 rounded-full bg-black/35 border border-white/15 flex items-center justify-center text-white/90"
+          >
+            <ImageIcon size={18} strokeWidth={1.6} />
+          </button>
           <button
             type="button"
             disabled={!ready}
@@ -1310,6 +1305,7 @@ function StoryCamera({
               }`}
             />
           </button>
+          <span className="w-11" />
         </div>
         <p className="text-[11px] text-white/50 text-center mt-3">
           {mode === 'photo' ? 'Tap to capture' : recording ? 'Tap to stop' : `Tap to record · max ${MAX_VIDEO_SECS}s`}
