@@ -34,6 +34,7 @@ export default function MessagesPage() {
   const [subIds, setSubIds] = useState<Set<string>>(new Set());
   const userIdRef = useRef<string | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const INBOX_CACHE = 'wod-inbox-cache';
 
   const loadMeta = async (userId: string, creator: boolean) => {
     if (!creator) {
@@ -85,15 +86,9 @@ export default function MessagesPage() {
             .order('created_at', { ascending: false })
             .limit(1);
           const lastMessage = lastMessages?.[0] || null;
-          const { data: allMsgs } = await supabase
-            .from('messages')
-            .select('content')
-            .eq('conversation_id', convo.id)
-            .not('content', 'is', null);
-          const searchBlob = (allMsgs || [])
-            .map((m: any) => m.content || '')
-            .join(' ')
-            .toLowerCase();
+          const searchBlob = `${profile?.display_name || ''} ${profile?.username || ''} ${
+            lastMessage?.content || ''
+          }`.toLowerCase();
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
@@ -113,9 +108,39 @@ export default function MessagesPage() {
       );
       setConversations(enriched);
       setLoading(false);
+      try {
+        sessionStorage.setItem(
+          INBOX_CACHE,
+          JSON.stringify({
+            conversations: enriched,
+            isCreator,
+            fanIds: [...fanIds],
+            subIds: [...subIds],
+          })
+        );
+      } catch {
+        /* quota */
+      }
     },
-    [supabase]
+    [supabase, isCreator, fanIds, subIds]
   );
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(INBOX_CACHE);
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      if (Array.isArray(cached?.conversations) && cached.conversations.length) {
+        setConversations(cached.conversations);
+        setLoading(false);
+      }
+      if (typeof cached?.isCreator === 'boolean') setIsCreator(cached.isCreator);
+      if (Array.isArray(cached?.fanIds)) setFanIds(new Set(cached.fanIds));
+      if (Array.isArray(cached?.subIds)) setSubIds(new Set(cached.subIds));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -337,7 +362,7 @@ export default function MessagesPage() {
           </div>
         </div>
         <div className="flex-1 max-w-3xl w-full mx-auto">
-          {loading ? (
+          {loading && conversations.length === 0 ? (
             <div className="flex items-center justify-center py-20 text-zinc-500">
               Loading messages...
             </div>
