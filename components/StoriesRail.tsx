@@ -89,11 +89,22 @@ export function queuePostToStory(post: {
   window.location.href = '/?addstory=1';
 }
 
+type CropAspect = '9:16' | 'original' | '1:1' | '4:5' | '16:9';
+
+function aspectValue(mode: CropAspect, imgW: number, imgH: number) {
+  if (mode === '1:1') return 1;
+  if (mode === '4:5') return 4 / 5;
+  if (mode === '16:9') return 16 / 9;
+  if (mode === 'original') return imgW / imgH || 9 / 16;
+  return 9 / 16;
+}
+
 async function cropToStoryFrame(
   url: string,
   panX: number,
   panY: number,
-  zoom: number
+  zoom: number,
+  mode: CropAspect = '9:16'
 ) {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image();
@@ -101,22 +112,37 @@ async function cropToStoryFrame(
     el.onerror = () => reject(new Error('Could not load image'));
     el.src = url;
   });
+  const ratio = aspectValue(mode, img.width, img.height);
   const fw = 1080;
-  const fh = 1920;
+  const fh = Math.max(1, Math.round(fw / ratio));
   const z = Math.max(1, Math.min(3, zoom || 1));
   const cover = Math.max(fw / img.width, fh / img.height) * z;
   const dw = img.width * cover;
   const dh = img.height * cover;
   const dx = (fw - dw) / 2 + panX * fw;
   const dy = (fh - dh) / 2 + panY * fh;
+  const cut = document.createElement('canvas');
+  cut.width = fw;
+  cut.height = fh;
+  const cctx = cut.getContext('2d');
+  if (!cctx) throw new Error('Crop failed');
+  cctx.fillStyle = '#000';
+  cctx.fillRect(0, 0, fw, fh);
+  cctx.drawImage(img, dx, dy, dw, dh);
+
+  const outW = 1080;
+  const outH = 1920;
   const canvas = document.createElement('canvas');
-  canvas.width = fw;
-  canvas.height = fh;
+  canvas.width = outW;
+  canvas.height = outH;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Crop failed');
   ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, fw, fh);
-  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.fillRect(0, 0, outW, outH);
+  const fit = Math.min(outW / fw, outH / fh);
+  const ow = fw * fit;
+  const oh = fh * fit;
+  ctx.drawImage(cut, (outW - ow) / 2, (outH - oh) / 2, ow, oh);
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', 0.92)
   );
@@ -731,9 +757,9 @@ export default function StoriesRail({
             setDeskCrop(null);
             setAddOpen(true);
           }}
-          onNext={async (panX, panY, zoom) => {
+          onNext={async (panX, panY, zoom, aspect) => {
             try {
-              const baked = await cropToStoryFrame(deskCrop.url, panX, panY, zoom);
+              const baked = await cropToStoryFrame(deskCrop.url, panX, panY, zoom, aspect);
               URL.revokeObjectURL(deskCrop.url);
               const next = await prepareFile(baked);
               const rest = deskCrop.rest;
@@ -1112,7 +1138,7 @@ function StoryCropDesk({
 }: {
   url: string;
   onBack: () => void;
-  onNext: (panX: number, panY: number, zoom: number) => void;
+  onNext: (panX: number, panY: number, zoom: number, aspect: CropAspect) => void;
 }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
@@ -1121,6 +1147,9 @@ function StoryCropDesk({
   const [zoom, setZoom] = useState(1);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [aspect, setAspect] = useState<CropAspect>('original');
+  const [menu, setMenu] = useState(false);
+  const [nat, setNat] = useState({ w: 9, h: 16 });
 
   return (
     <div className="fixed inset-0 z-[232] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
@@ -1139,7 +1168,7 @@ function StoryCropDesk({
             disabled={busy}
             onClick={() => {
               setBusy(true);
-              void Promise.resolve(onNext(panX, panY, zoom)).finally(() => setBusy(false));
+              void Promise.resolve(onNext(panX, panY, zoom, aspect)).finally(() => setBusy(false));
             }}
             className="h-8 px-3 rounded-full bg-pink-600 hover:bg-pink-500 text-white text-sm font-semibold disabled:opacity-60"
           >
@@ -1149,7 +1178,20 @@ function StoryCropDesk({
         <div className="p-5 flex flex-col items-center">
           <div
             ref={stageRef}
-            className="relative w-full max-w-[280px] aspect-[9/16] bg-black overflow-hidden rounded-lg select-none"
+            className={`relative bg-black overflow-hidden rounded-lg select-none ${
+              aspect === '1:1'
+                ? 'w-[280px] aspect-square'
+                : aspect === '4:5'
+                  ? 'w-[224px] aspect-[4/5]'
+                  : aspect === '16:9'
+                    ? 'w-full max-w-[420px] aspect-video'
+                    : 'w-full max-w-[280px]'
+            }`}
+            style={
+              aspect === 'original'
+                ? { aspectRatio: `${nat.w} / ${nat.h}`, maxHeight: 420 }
+                : undefined
+            }
             onPointerDown={(e) => {
               drag.current = { x: e.clientX, y: e.clientY, px: panX, py: panY };
               setDragging(true);
@@ -1181,6 +1223,12 @@ function StoryCropDesk({
               src={url}
               alt=""
               draggable={false}
+              onLoad={(e) =>
+                setNat({
+                  w: e.currentTarget.naturalWidth || 9,
+                  h: e.currentTarget.naturalHeight || 16,
+                })
+              }
               className="absolute inset-0 w-full h-full object-cover origin-center pointer-events-none"
               style={{
                 transform: `translate(${panX * 100}%, ${panY * 100}%) scale(${zoom})`,
@@ -1194,8 +1242,61 @@ function StoryCropDesk({
                 <div className="absolute inset-x-0 top-2/3 h-px bg-white/35" />
               </div>
             )}
+            <div className="absolute bottom-2 right-2 z-10" onPointerDown={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                title="Select crop"
+                onClick={() => setMenu((m) => !m)}
+                className="w-10 h-10 rounded-full bg-black/55 border border-white/15 flex items-center justify-center"
+              >
+                <Crop size={16} />
+              </button>
+              {menu && (
+                <div className="absolute bottom-12 right-0 w-44 rounded-2xl bg-zinc-800 border border-white/10 py-1 shadow-xl">
+                  {(
+                    [
+                      ['original', 'Original'],
+                      ['1:1', '1:1'],
+                      ['4:5', '4:5'],
+                      ['16:9', '16:9'],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setAspect(id);
+                        setPanX(0);
+                        setPanY(0);
+                        setMenu(false);
+                      }}
+                      className={`w-full h-10 px-3 flex items-center justify-between text-sm ${
+                        aspect === id ? 'text-white' : 'text-zinc-400'
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <span className="w-5 h-5 flex items-center justify-center">
+                        {id === 'original' ? (
+                          <ImageIcon size={13} />
+                        ) : (
+                          <span
+                            className={`border border-current rounded-[2px] ${
+                              id === '1:1'
+                                ? 'w-3 h-3'
+                                : id === '4:5'
+                                  ? 'w-2.5 h-3.5'
+                                  : 'w-3.5 h-2'
+                            }`}
+                          />
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="w-full max-w-[280px] mt-4 flex items-center gap-3">
+          <div className="w-full max-w-[420px] mt-4 flex items-center gap-3">
             <span className="text-[11px] text-zinc-500">Zoom</span>
             <input
               type="range"
