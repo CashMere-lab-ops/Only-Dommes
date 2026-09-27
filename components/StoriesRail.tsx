@@ -2475,7 +2475,7 @@ function StoryViewer({
     >
       <div className="absolute inset-0 bg-zinc-950" />
       <div
-        className="absolute inset-0 z-[1] will-change-transform"
+        className="absolute inset-0 z-[1] flex items-center justify-center will-change-transform"
         style={{
           transform: `translate3d(${drag.x}px, ${
             drag.y > 0 ? drag.y : drag.y * 0.4
@@ -2490,6 +2490,7 @@ function StoryViewer({
               : 'none',
         }}
       >
+      <div className="relative w-full h-full lg:h-[min(92vh,880px)] lg:w-[min(100%,calc(min(92vh,880px)*9/16))] lg:rounded-2xl overflow-hidden bg-black">
       {story.media_type === 'video' ? (
         <video
           ref={videoRef}
@@ -2497,7 +2498,7 @@ function StoryViewer({
           src={story.media_url}
           autoPlay
           playsInline
-          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
+          className="absolute inset-0 w-full h-full object-contain z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
           controls={false}
           disablePictureInPicture
           onContextMenu={(e) => e.preventDefault()}
@@ -2517,11 +2518,12 @@ function StoryViewer({
           key={story.id}
           src={story.media_url}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
+          className="absolute inset-0 w-full h-full object-contain z-[1] pointer-events-none select-none [-webkit-touch-callout:none]"
           draggable={false}
           onContextMenu={(e) => e.preventDefault()}
         />
       )}
+      </div>
       </div>
 
       <div
