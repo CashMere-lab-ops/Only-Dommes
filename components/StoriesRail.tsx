@@ -192,6 +192,7 @@ export default function StoriesRail({
     cropZoom: number;
     visibility: 'everyone' | 'followers' | 'subscribers';
     mirror?: boolean;
+    fromLibrary?: boolean;
   } | null>(null);
   const [open, setOpen] = useState<{ groupIndex: number; storyIndex: number } | null>(
     null
@@ -416,6 +417,7 @@ export default function StoriesRail({
       cropZoom: 1,
       visibility: 'everyone' as const,
       mirror: false,
+      fromLibrary: false,
     };
   };
 
@@ -438,7 +440,7 @@ export default function StoriesRail({
     const ready = await prepareFile(first);
     if (!ready) return;
     setQueue(list.slice(1));
-    setDraft(ready);
+    setDraft({ ...ready, fromLibrary: true });
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -1639,6 +1641,7 @@ function StoryComposer({
     cropZoom: number;
     visibility: 'everyone' | 'followers' | 'subscribers';
     mirror?: boolean;
+    fromLibrary?: boolean;
   };
   uploading: boolean;
   onCancel: () => void;
@@ -1658,6 +1661,8 @@ function StoryComposer({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const panRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const ptsRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
 
   const onTextDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -1696,60 +1701,91 @@ function StoryComposer({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
-        {draft.kind === 'video' ? (
-          <video
-            src={draft.url}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className={`absolute inset-0 w-full h-full object-contain bg-black pointer-events-none ${
-              draft.mirror ? 'scale-x-[-1]' : ''
-            }`}
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={draft.url}
-            alt=""
-            draggable={false}
-            className="absolute inset-0 w-full h-full object-contain bg-black select-none [-webkit-touch-callout:none] origin-center"
-            style={{
-              transform: `translate(${draft.cropX * 100}%, ${draft.cropY * 100}%) scale(${draft.cropZoom})`,
-            }}
-            onPointerDown={(e) => {
-              if (tool !== 'crop') return;
-              if ((e.target as HTMLElement).closest('[data-story-text]')) return;
-              panRef.current = {
-                x: e.clientX,
-                y: e.clientY,
-                px: draft.cropX,
-                py: draft.cropY,
-              };
-              try {
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-              } catch {
-                /* ignore */
-              }
-            }}
-            onPointerMove={(e) => {
-              if (!panRef.current || !stageRef.current) return;
-              const box = stageRef.current.getBoundingClientRect();
-              const dx = (e.clientX - panRef.current.x) / box.width;
-              const dy = (e.clientY - panRef.current.y) / box.height;
-              onMeta({
-                cropX: Math.max(-0.35, Math.min(0.35, panRef.current.px + dx)),
-                cropY: Math.max(-0.35, Math.min(0.35, panRef.current.py + dy)),
-              });
-            }}
-            onPointerUp={() => {
+        {(() => {
+          const canFrame = !!draft.fromLibrary || tool === 'crop';
+          const fit = draft.fromLibrary ? 'object-cover' : 'object-contain';
+          const onFrameDown = (e: React.PointerEvent) => {
+            if (!canFrame || tool === 'text') return;
+            if ((e.target as HTMLElement).closest('[data-story-text]')) return;
+            ptsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            try {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            } catch {
+              /* ignore */
+            }
+            if (ptsRef.current.size >= 2) {
+              const pts = [...ptsRef.current.values()];
+              const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+              pinchRef.current = { dist: dist || 1, zoom: draft.cropZoom };
               panRef.current = null;
-            }}
-            onPointerCancel={() => {
-              panRef.current = null;
-            }}
-          />
-        )}
+              return;
+            }
+            panRef.current = {
+              x: e.clientX,
+              y: e.clientY,
+              px: draft.cropX,
+              py: draft.cropY,
+            };
+          };
+          const onFrameMove = (e: React.PointerEvent) => {
+            if (!ptsRef.current.has(e.pointerId)) return;
+            ptsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pinchRef.current && ptsRef.current.size >= 2) {
+              const pts = [...ptsRef.current.values()];
+              const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+              const next = pinchRef.current.zoom * (dist / pinchRef.current.dist);
+              onMeta({ cropZoom: Math.max(1, Math.min(3, Number(next.toFixed(3))) ) });
+              return;
+            }
+            if (!panRef.current || !stageRef.current) return;
+            const box = stageRef.current.getBoundingClientRect();
+            const dx = (e.clientX - panRef.current.x) / box.width;
+            const dy = (e.clientY - panRef.current.y) / box.height;
+            onMeta({
+              cropX: Math.max(-0.4, Math.min(0.4, panRef.current.px + dx)),
+              cropY: Math.max(-0.4, Math.min(0.4, panRef.current.py + dy)),
+            });
+          };
+          const onFrameUp = (e: React.PointerEvent) => {
+            ptsRef.current.delete(e.pointerId);
+            if (ptsRef.current.size < 2) pinchRef.current = null;
+            if (ptsRef.current.size === 0) panRef.current = null;
+          };
+          const frameStyle = {
+            transform: `translate(${draft.cropX * 100}%, ${draft.cropY * 100}%) scale(${draft.cropZoom})`,
+            touchAction: 'none' as const,
+          };
+          return draft.kind === 'video' ? (
+            <video
+              src={draft.url}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className={`absolute inset-0 w-full h-full ${fit} bg-black origin-center ${
+                draft.mirror ? 'scale-x-[-1]' : ''
+              } ${canFrame ? '' : 'pointer-events-none'}`}
+              style={frameStyle}
+              onPointerDown={onFrameDown}
+              onPointerMove={onFrameMove}
+              onPointerUp={onFrameUp}
+              onPointerCancel={onFrameUp}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={draft.url}
+              alt=""
+              draggable={false}
+              className={`absolute inset-0 w-full h-full ${fit} bg-black select-none [-webkit-touch-callout:none] origin-center`}
+              style={frameStyle}
+              onPointerDown={onFrameDown}
+              onPointerMove={onFrameMove}
+              onPointerUp={onFrameUp}
+              onPointerCancel={onFrameUp}
+            />
+          );
+        })()}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
         <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
         {(tool === 'text' || draft.caption.trim()) && (
