@@ -172,6 +172,7 @@ export default function StoriesRail({
   const [queue, setQueue] = useState<File[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [fromCamera, setFromCamera] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
@@ -678,10 +679,12 @@ export default function StoriesRail({
         <StoryCamera
           onClose={() => setCameraOpen(false)}
           onLibrary={(files) => {
+            setFromCamera(true);
             setCameraOpen(false);
             void onPickFiles(files);
           }}
           onCapture={(file) => {
+            setFromCamera(true);
             setCameraOpen(false);
             void onPickFiles([file]);
           }}
@@ -695,6 +698,7 @@ export default function StoriesRail({
           onCancel={() => {
             URL.revokeObjectURL(draft.url);
             setDraft(null);
+            if (fromCamera) setCameraOpen(true);
           }}
           onShare={() => void publishDraft()}
           onMeta={(patch) => setDraft((d) => (d ? { ...d, ...patch } : d))}
