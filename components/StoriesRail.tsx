@@ -174,6 +174,10 @@ export default function StoriesRail({
   const [addOpen, setAddOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [fromCamera, setFromCamera] = useState(false);
+  const [deskCrop, setDeskCrop] = useState<{
+    url: string;
+    rest: File[];
+  } | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
@@ -394,10 +398,21 @@ export default function StoriesRail({
     setError('');
     const list = Array.from(files).slice(0, 10);
     if (!list.length) return;
-    const first = await prepareFile(list[0]);
-    if (!first) return;
+    const first = list[0];
+    if (
+      isDesktop &&
+      first.type.startsWith('image/') &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(min-width: 1024px)').matches
+    ) {
+      setDeskCrop({ url: URL.createObjectURL(first), rest: list.slice(1) });
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    const ready = await prepareFile(first);
+    if (!ready) return;
     setQueue(list.slice(1));
-    setDraft(first);
+    setDraft(ready);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -704,6 +719,31 @@ export default function StoriesRail({
               mirror: !!info?.mirror,
             });
             setCameraOpen(false);
+          }}
+        />
+      )}
+
+      {deskCrop && (
+        <StoryCropDesk
+          url={deskCrop.url}
+          onBack={() => {
+            URL.revokeObjectURL(deskCrop.url);
+            setDeskCrop(null);
+            setAddOpen(true);
+          }}
+          onNext={async (panX, panY, zoom) => {
+            try {
+              const baked = await cropToStoryFrame(deskCrop.url, panX, panY, zoom);
+              URL.revokeObjectURL(deskCrop.url);
+              const next = await prepareFile(baked);
+              const rest = deskCrop.rest;
+              setDeskCrop(null);
+              if (!next) return;
+              setQueue(rest);
+              setDraft(next);
+            } catch (e: any) {
+              setError(e?.message || 'Could not crop');
+            }
           }}
         />
       )}
@@ -1059,6 +1099,114 @@ function StoryCreateDesk({
           >
             Select from computer
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StoryCropDesk({
+  url,
+  onBack,
+  onNext,
+}: {
+  url: string;
+  onBack: () => void;
+  onNext: (panX: number, panY: number, zoom: number) => void;
+}) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-[232] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+      <div className="w-full max-w-[560px] bg-zinc-950 border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="h-14 px-4 border-b border-white/10 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onBack}
+            className="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-zinc-400"
+          >
+            <X size={16} />
+          </button>
+          <p className="text-sm font-medium">Create New Story</p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void Promise.resolve(onNext(panX, panY, zoom)).finally(() => setBusy(false));
+            }}
+            className="h-8 px-3 rounded-full bg-pink-600 hover:bg-pink-500 text-white text-sm font-semibold disabled:opacity-60"
+          >
+            {busy ? '…' : 'Next'}
+          </button>
+        </div>
+        <div className="p-5 flex flex-col items-center">
+          <div
+            ref={stageRef}
+            className="relative w-full max-w-[280px] aspect-[9/16] bg-black overflow-hidden rounded-lg select-none"
+            onPointerDown={(e) => {
+              drag.current = { x: e.clientX, y: e.clientY, px: panX, py: panY };
+              setDragging(true);
+              try {
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              } catch {
+                /* ignore */
+              }
+            }}
+            onPointerMove={(e) => {
+              if (!drag.current || !stageRef.current) return;
+              const box = stageRef.current.getBoundingClientRect();
+              const dx = (e.clientX - drag.current.x) / box.width;
+              const dy = (e.clientY - drag.current.y) / box.height;
+              setPanX(Math.max(-0.35, Math.min(0.35, drag.current.px + dx)));
+              setPanY(Math.max(-0.35, Math.min(0.35, drag.current.py + dy)));
+            }}
+            onPointerUp={() => {
+              drag.current = null;
+              setDragging(false);
+            }}
+            onPointerCancel={() => {
+              drag.current = null;
+              setDragging(false);
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={url}
+              alt=""
+              draggable={false}
+              className="absolute inset-0 w-full h-full object-cover origin-center pointer-events-none"
+              style={{
+                transform: `translate(${panX * 100}%, ${panY * 100}%) scale(${zoom})`,
+              }}
+            />
+            {dragging && (
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute inset-y-0 left-1/3 w-px bg-white/35" />
+                <div className="absolute inset-y-0 left-2/3 w-px bg-white/35" />
+                <div className="absolute inset-x-0 top-1/3 h-px bg-white/35" />
+                <div className="absolute inset-x-0 top-2/3 h-px bg-white/35" />
+              </div>
+            )}
+          </div>
+          <div className="w-full max-w-[280px] mt-4 flex items-center gap-3">
+            <span className="text-[11px] text-zinc-500">Zoom</span>
+            <input
+              type="range"
+              min={1}
+              max={3}
+              step={0.01}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="flex-1 accent-pink-500"
+            />
+          </div>
         </div>
       </div>
     </div>
