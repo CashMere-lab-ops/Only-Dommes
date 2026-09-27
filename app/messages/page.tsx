@@ -152,6 +152,7 @@ export default function MessagesPage() {
           if (refreshTimer.current) clearTimeout(refreshTimer.current);
           refreshTimer.current = setTimeout(() => {
             if (userIdRef.current) loadConversations(userIdRef.current);
+            window.dispatchEvent(new Event('wod-badges-updated'));
           }, 400);
         }
       )

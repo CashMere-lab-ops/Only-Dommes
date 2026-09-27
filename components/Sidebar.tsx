@@ -115,37 +115,64 @@ export default function Sidebar() {
       }
       setProfileLoaded(true);
 
-      // Unread messages
-      try {
-        const { data: convos } = await supabase
-          .from('conversations')
-          .select('id')
-          .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`);
-        if (convos && convos.length > 0) {
-          const ids = convos.map((c) => c.id);
-          const { count } = await supabase
-            .from('messages')
-            .select('*', { count: 'exact', head: true })
-            .in('conversation_id', ids)
-            .neq('sender_id', user.id)
-            .eq('is_read', false);
-          setUnreadCount(count || 0);
+      const refreshBadges = async (userId: string) => {
+        try {
+          const { data: convos } = await supabase
+            .from('conversations')
+            .select('id')
+            .or(`participant_1.eq.${userId},participant_2.eq.${userId}`);
+          if (convos && convos.length > 0) {
+            const ids = convos.map((c) => c.id);
+            const { count } = await supabase
+              .from('messages')
+              .select('*', { count: 'exact', head: true })
+              .in('conversation_id', ids)
+              .neq('sender_id', userId)
+              .eq('is_read', false);
+            setUnreadCount(count || 0);
+          } else {
+            setUnreadCount(0);
+          }
+        } catch {
+          /* optional columns may differ */
         }
-      } catch {
-        /* optional columns may differ */
-      }
+        try {
+          const { count } = await supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('is_read', false);
+          setNotifCount(count || 0);
+        } catch {
+          /* optional */
+        }
+      };
 
-      // Unread notifications
-      try {
-        const { count } = await supabase
-          .from('notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('is_read', false);
-        setNotifCount(count || 0);
-      } catch {
-        /* optional */
-      }
+      await refreshBadges(user.id);
+
+      const badgesChannel = supabase
+        .channel(`wod-badges-${user.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'messages' },
+          () => {
+            void refreshBadges(user.id);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            void refreshBadges(user.id);
+          }
+        )
+        .subscribe();
+      (window as any).__wodBadgesChannel = badgesChannel;
     };
 
     load();
@@ -156,11 +183,41 @@ export default function Sidebar() {
     };
     window.addEventListener('wod-balance-updated', onBalance);
 
-    // Soft refresh when tab becomes visible (after top-up in another flow)
+    const onBadges = () => {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (!user) return;
+        supabase
+          .from('conversations')
+          .select('id')
+          .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
+          .then(async ({ data: convos }) => {
+            if (convos && convos.length) {
+              const { count } = await supabase
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .in('conversation_id', convos.map((c) => c.id))
+                .neq('sender_id', user.id)
+                .eq('is_read', false);
+              setUnreadCount(count || 0);
+            }
+          });
+        supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('is_read', false)
+          .then(({ count }) => setNotifCount(count || 0));
+      });
+    };
+    window.addEventListener('wod-badges-updated', onBadges);
+
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         supabase.auth.getUser().then(({ data: { user } }) => {
-          if (user) refreshBalance(user.id);
+          if (user) {
+            refreshBalance(user.id);
+            onBadges();
+          }
         });
       }
     };
@@ -168,7 +225,10 @@ export default function Sidebar() {
 
     return () => {
       window.removeEventListener('wod-balance-updated', onBalance);
+      window.removeEventListener('wod-badges-updated', onBadges);
       document.removeEventListener('visibilitychange', onVis);
+      const ch = (window as any).__wodBadgesChannel;
+      if (ch) supabase.removeChannel(ch);
     };
   }, [supabase, refreshBalance]);
 
@@ -526,4 +586,3 @@ export default function Sidebar() {
     </>
   );
 }
-
