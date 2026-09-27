@@ -683,13 +683,24 @@ export default function StoriesRail({
             setCameraOpen(false);
             void onPickFiles(files);
           }}
-          onCapture={(file) => {
+          onCapture={(file, info) => {
             setFromCamera(true);
-            void (async () => {
-              const next = await prepareFile(file);
-              if (next) setDraft(next);
-              setCameraOpen(false);
-            })();
+            setDraft({
+              file,
+              url: URL.createObjectURL(file),
+              kind: info?.kind || (file.type.startsWith('video') ? 'video' : 'image'),
+              duration: info?.duration || PHOTO_SECS,
+              caption: '',
+              captionX: 50,
+              captionY: 70,
+              captionStyle: 'classic',
+              sticker: null,
+              cropX: 0,
+              cropY: 0,
+              cropZoom: 1,
+              visibility: 'everyone',
+            });
+            setCameraOpen(false);
           }}
         />
       )}
@@ -1069,7 +1080,7 @@ function StoryCamera({
 }: {
   onClose: () => void;
   onLibrary: (files: FileList | File[]) => void;
-  onCapture: (file: File) => void;
+  onCapture: (file: File, info?: { kind: 'image' | 'video'; duration: number }) => void;
 }) {
   const libRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -1084,6 +1095,7 @@ function StoryCamera({
   const [recording, setRecording] = useState(false);
   const [secs, setSecs] = useState(0);
   const [handingOff, setHandingOff] = useState(false);
+  const secsLive = useRef(0);
 
   const stopStream = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -1158,7 +1170,10 @@ function StoryCamera({
     );
     if (!blob) return;
     stopStream();
-    onCapture(new File([blob], `story-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+    onCapture(new File([blob], `story-${Date.now()}.jpg`, { type: 'image/jpeg' }), {
+      kind: 'image',
+      duration: PHOTO_SECS,
+    });
   };
 
   const stopRec = () => {
@@ -1193,21 +1208,26 @@ function StoryCamera({
       const type = rec.mimeType || mime || 'video/webm';
       const blob = new Blob(chunksRef.current, { type });
       const ext = type.includes('mp4') ? 'mp4' : 'webm';
-      setHandingOff(true);
       stopStream();
-      onCapture(new File([blob], `story-${Date.now()}.${ext}`, { type }));
+      onCapture(new File([blob], `story-${Date.now()}.${ext}`, { type }), {
+        kind: 'video',
+        duration: Math.max(1, Math.min(MAX_VIDEO_SECS, secsLive.current || 1)),
+      });
     };
     recRef.current = rec;
     rec.start(200);
     setSecs(0);
+    secsLive.current = 0;
     setRecording(true);
     tickRef.current = window.setInterval(() => {
       setSecs((n) => {
-        if (n + 1 >= MAX_VIDEO_SECS) {
+        const next = n + 1;
+        secsLive.current = Math.min(MAX_VIDEO_SECS, next);
+        if (next >= MAX_VIDEO_SECS) {
           stopRec();
           return MAX_VIDEO_SECS;
         }
-        return n + 1;
+        return next;
       });
     }, 1000);
   };
