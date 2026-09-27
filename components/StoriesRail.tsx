@@ -1160,10 +1160,6 @@ function StoryCamera({
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    if (facing === 'user') {
-      ctx.translate(w, 0);
-      ctx.scale(-1, 1);
-    }
     ctx.drawImage(v, 0, 0, w, h);
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/jpeg', 0.92)
@@ -1239,9 +1235,7 @@ function StoryCamera({
         autoPlay
         muted
         playsInline
-        className={`absolute inset-0 w-full h-full object-contain bg-black ${
-          facing === 'user' ? 'scale-x-[-1]' : ''
-        }`}
+        className="absolute inset-0 w-full h-full object-contain bg-black"
       />
       <div className="relative z-10 flex items-center justify-between px-4 pt-[max(0.8rem,env(safe-area-inset-top))]">
         <button
