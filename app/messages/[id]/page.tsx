@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, memo } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, memo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -295,8 +295,11 @@ export default function ChatPage() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const stickBottom = useRef(true);
+
   const loadOlder = async () => {
     if (loadingMore || !hasMore || !messages.length) return;
+    stickBottom.current = false;
     setLoadingMore(true);
     const first = messages[0];
     const { data } = await supabase
@@ -363,6 +366,10 @@ export default function ChatPage() {
       const raw = sessionStorage.getItem(chatCacheKey);
       if (raw) {
         const cached = JSON.parse(raw);
+        if (cached?.userId) {
+          setUserId(cached.userId);
+          userIdRef.current = cached.userId;
+        }
         if (cached?.otherUser) setOtherUser(cached.otherUser);
         if (cached?.otherUserId) setOtherUserId(cached.otherUserId);
         if (Array.isArray(cached?.messages) && cached.messages.length) {
@@ -384,6 +391,7 @@ export default function ChatPage() {
       sessionStorage.setItem(
         chatCacheKey,
         JSON.stringify({
+          userId,
           otherUser,
           otherUserId,
           messages: messages.slice(-40),
@@ -395,7 +403,16 @@ export default function ChatPage() {
     } catch {
       /* quota */
     }
-  }, [chatCacheKey, otherUser, otherUserId, messages, myUnlocks, messagePrice, needsUnlock]);
+  }, [chatCacheKey, userId, otherUser, otherUserId, messages, myUnlocks, messagePrice, needsUnlock]);
+
+  useEffect(() => {
+    stickBottom.current = true;
+  }, [conversationId]);
+
+  useLayoutEffect(() => {
+    if (messagesLoading || loadingMore) return;
+    if (stickBottom.current) scrollBottom();
+  }, [conversationId, messagesLoading, messages.length, loadingMore]);
 
   useEffect(() => {
     let alive = true;
@@ -520,7 +537,7 @@ export default function ChatPage() {
         if (asSub) setMyOutgoingCall(asSub);
       }
 
-      setTimeout(scrollBottom, 200);
+      requestAnimationFrame(() => scrollBottom());
     };
 
     load();
@@ -1684,7 +1701,7 @@ export default function ChatPage() {
 
   /* ---- render one message (inline, not a nested component) ---- */
   const renderMessage = (msg: any) => {
-    const mine = msg.sender_id === userId;
+    const mine = !!userId && msg.sender_id === userId;
     const isTip = msg.media_type === 'tip' || (msg.content || '').includes('💸 tipped');
     const isAudio = msg.media_type === 'audio';
     const callEvent = parseCallEvent(msg.content) || (msg.media_type === 'call_event' ? parseCallEvent(msg.content) : null);
