@@ -195,6 +195,7 @@ export default function ChatPage() {
   const router = useRouter();
   const supabase = createClient();
   const conversationId = params.id as string;
+  const chatCacheKey = `wod-chat-${conversationId}`;
 
   const [messages, setMessages] = useState<any[]>([]);
   const [reactions, setReactions] = useState<Record<string, any[]>>({});
@@ -356,6 +357,45 @@ export default function ChatPage() {
     });
     setReactions(map);
   };
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(chatCacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached?.otherUser) setOtherUser(cached.otherUser);
+        if (cached?.otherUserId) setOtherUserId(cached.otherUserId);
+        if (Array.isArray(cached?.messages) && cached.messages.length) {
+          setMessages(cached.messages);
+          setMessagesLoading(false);
+        }
+        if (Array.isArray(cached?.unlocks)) setMyUnlocks(new Set(cached.unlocks));
+        if (typeof cached?.messagePrice === 'number') setMessagePrice(cached.messagePrice);
+        if (typeof cached?.needsUnlock === 'boolean') setNeedsUnlock(cached.needsUnlock);
+      }
+    } catch {
+      /* ignore bad cache */
+    }
+  }, [chatCacheKey]);
+
+  useEffect(() => {
+    if (!otherUser || !messages.length) return;
+    try {
+      sessionStorage.setItem(
+        chatCacheKey,
+        JSON.stringify({
+          otherUser,
+          otherUserId,
+          messages: messages.slice(-40),
+          unlocks: [...myUnlocks],
+          messagePrice,
+          needsUnlock,
+        })
+      );
+    } catch {
+      /* quota */
+    }
+  }, [chatCacheKey, otherUser, otherUserId, messages, myUnlocks, messagePrice, needsUnlock]);
 
   useEffect(() => {
     let alive = true;
