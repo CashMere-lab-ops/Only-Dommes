@@ -2367,6 +2367,11 @@ function StoryViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const typing =
+        replyOpen ||
+        replyFocus ||
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement;
       if (e.key === 'Escape') {
         if (replyOpen) {
           setReplyOpen(false);
@@ -2375,6 +2380,7 @@ function StoryViewer({
         }
         onClose();
       }
+      if (typing) return;
       if (e.key === 'ArrowRight') goNext();
       if (e.key === 'ArrowLeft') goPrev();
       if (e.key === ' ') {
@@ -2384,7 +2390,7 @@ function StoryViewer({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, goNext, goPrev, replyOpen]);
+  }, [onClose, goNext, goPrev, replyOpen, replyFocus]);
 
   if (!group || !story) return null;
   const label = nameOf(group.creator);
