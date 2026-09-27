@@ -1403,27 +1403,36 @@ function StoryComposer({
           </button>
         </div>
         {tool === 'crop' && draft.kind === 'image' && (
-          <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() =>
-                onMeta({ cropZoom: Math.max(1, Number((draft.cropZoom - 0.15).toFixed(2))) })
-              }
-              className="w-9 h-9 rounded-full bg-black/45 text-lg"
-            >
-              −
-            </button>
-            <p className="text-[11px] text-white/60">Drag to frame</p>
-            <button
-              type="button"
-              onClick={() =>
-                onMeta({ cropZoom: Math.min(3, Number((draft.cropZoom + 0.15).toFixed(2))) })
-              }
-              className="w-9 h-9 rounded-full bg-black/45 text-lg"
-            >
-              +
-            </button>
-          </div>
+          <>
+            <div className="absolute inset-x-6 top-[max(5.5rem,calc(env(safe-area-inset-top)+4.5rem))] bottom-32 z-[15] pointer-events-none">
+              <div className="absolute inset-0 border border-white/50 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]" />
+              <div className="absolute inset-y-0 left-1/3 w-px bg-white/25" />
+              <div className="absolute inset-y-0 left-2/3 w-px bg-white/25" />
+              <div className="absolute inset-x-0 top-1/3 h-px bg-white/25" />
+              <div className="absolute inset-x-0 top-2/3 h-px bg-white/25" />
+            </div>
+            <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  onMeta({ cropZoom: Math.max(1, Number((draft.cropZoom - 0.15).toFixed(2))) })
+                }
+                className="w-9 h-9 rounded-full bg-black/45 text-lg"
+              >
+                −
+              </button>
+              <p className="text-[11px] text-white/70">Drag to frame</p>
+              <button
+                type="button"
+                onClick={() =>
+                  onMeta({ cropZoom: Math.min(3, Number((draft.cropZoom + 0.15).toFixed(2))) })
+                }
+                className="w-9 h-9 rounded-full bg-black/45 text-lg"
+              >
+                +
+              </button>
+            </div>
+          </>
         )}
         {tool === 'sticker' && (
           <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex gap-2 justify-center">
@@ -1491,8 +1500,12 @@ function StoryComposer({
                 type="button"
                 onClick={() => setTool((t) => (t === id ? 'none' : id))}
                 disabled={id === 'crop' && draft.kind !== 'image'}
-                className={`w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-30 ${
-                  tool === id ? 'text-white bg-white/15' : 'text-white/55'
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-opacity duration-200 disabled:opacity-30 ${
+                  tool === id
+                    ? 'text-white bg-white/15'
+                    : tool === 'none'
+                      ? 'text-white/55'
+                      : 'text-white/25'
                 }`}
                 title={label}
               >
@@ -1504,7 +1517,7 @@ function StoryComposer({
             type="button"
             onClick={onShare}
             disabled={uploading}
-            className="h-12 px-5 rounded-full bg-white text-black text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 shrink-0"
+            className="h-12 px-5 rounded-full bg-white text-black text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 shrink-0 active:scale-[0.97] transition-transform"
           >
             {uploading ? <Loader2 size={16} className="animate-spin" /> : null}
             {uploading ? 'Posting' : 'Share'}
