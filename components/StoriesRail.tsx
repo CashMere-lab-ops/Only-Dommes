@@ -182,7 +182,13 @@ export default function StoriesRail({
     return () => mq.removeEventListener('change', apply);
   }, []);
 
-  const openAdd = () => setAddOpen(true);
+  const openAdd = () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+      setAddOpen(true);
+      return;
+    }
+    setCameraOpen(true);
+  };
 
   const load = useCallback(async () => {
     if (!userId) {
@@ -273,7 +279,10 @@ export default function StoriesRail({
     if (!shareRaw && !wantAdd) return;
     window.history.replaceState({}, '', window.location.pathname);
     if (!shareRaw) {
-      const t = window.setTimeout(() => setAddOpen(true), 250);
+      const t = window.setTimeout(() => {
+        if (window.matchMedia('(min-width: 1024px)').matches) setAddOpen(true);
+        else setCameraOpen(true);
+      }, 250);
       return () => window.clearTimeout(t);
     }
     sessionStorage.removeItem('wod-story-share');
@@ -1233,8 +1242,28 @@ function StoryCamera({
         <p className="relative z-10 text-center text-sm text-red-300 mt-4">{error}</p>
       ) : null}
 
-      <div className="relative z-10 mt-auto px-5 pb-[max(1.2rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-center justify-center gap-8 mb-5">
+      <div className="relative z-10 mt-auto pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="px-4 mb-3">
+          <p className="text-[10px] tracking-[0.16em] uppercase text-white/45 mb-2">Recents</p>
+          <div className="flex gap-2 overflow-x-auto scrollbar-none">
+            <button
+              type="button"
+              onClick={onLibrary}
+              className="flex-shrink-0 w-14 h-14 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center"
+            >
+              <ImageIcon size={18} />
+            </button>
+            {[0, 1, 2, 3].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={onLibrary}
+                className="flex-shrink-0 w-14 h-14 rounded-lg border border-dashed border-white/15 bg-black/25"
+              />
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-8 mb-4">
           <button
             type="button"
             onClick={() => !recording && setMode('photo')}
@@ -1254,14 +1283,7 @@ function StoryCamera({
             VIDEO
           </button>
         </div>
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onLibrary}
-            className="w-11 h-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center"
-          >
-            <ImageIcon size={18} />
-          </button>
+        <div className="flex items-center justify-center px-5">
           <button
             type="button"
             disabled={!ready}
@@ -1284,7 +1306,6 @@ function StoryCamera({
               }`}
             />
           </button>
-          <span className="w-11" />
         </div>
         <p className="text-[11px] text-white/50 text-center mt-3">
           {mode === 'photo' ? 'Tap to capture' : recording ? 'Tap to stop' : `Tap to record · max ${MAX_VIDEO_SECS}s`}
