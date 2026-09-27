@@ -199,7 +199,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const [reactions, setReactions] = useState<Record<string, any[]>>({});
   const [text, setText] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [sending, setSending] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [myProfile, setMyProfile] = useState<any>(null);
@@ -292,6 +294,38 @@ export default function ChatPage() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const loadOlder = async () => {
+    if (loadingMore || !hasMore || !messages.length) return;
+    setLoadingMore(true);
+    const first = messages[0];
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .lt('created_at', first.created_at)
+      .order('created_at', { ascending: false })
+      .limit(40);
+    const older = (data || []).slice().reverse();
+    setHasMore((data || []).length === 40);
+    if (older.length) {
+      const mob = mobileRef.current;
+      const desk = desktopRef.current;
+      const mobH = mob?.scrollHeight || 0;
+      const deskH = desk?.scrollHeight || 0;
+      setMessages((prev) => [...older, ...prev]);
+      requestAnimationFrame(() => {
+        if (mob) mob.scrollTop = mob.scrollHeight - mobH;
+        if (desk) desk.scrollTop = desk.scrollHeight - deskH;
+      });
+      void loadReactions(older.map((m) => m.id));
+    }
+    setLoadingMore(false);
+  };
+
+  const onThreadScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop < 80) void loadOlder();
+  };
+
   const markAsRead = async (uid: string) => {
     const now = new Date().toISOString();
     await supabase
@@ -338,20 +372,17 @@ export default function ChatPage() {
 
       setUserId(user.id);
       userIdRef.current = user.id;
-      await bumpLastSeen(user.id);
+      void bumpLastSeen(user.id);
 
-      const { data: me } = await supabase
-        .from('profiles')
-        .select('username, display_name, avatar_url, account_type')
-        .eq('id', user.id)
-        .single();
+      const [{ data: me }, { data: convo }] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('username, display_name, avatar_url, account_type')
+          .eq('id', user.id)
+          .single(),
+        supabase.from('conversations').select('*').eq('id', conversationId).single(),
+      ]);
       setMyProfile(me);
-
-      const { data: convo } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('id', conversationId)
-        .single();
 
       if (!convo) {
         router.push('/messages');
@@ -367,27 +398,51 @@ export default function ChatPage() {
       const otherId =
         convo.participant_1 === user.id ? convo.participant_2 : convo.participant_1;
       setOtherUserId(otherId);
-      setBlockedPair(await pairBlocked(supabase, user.id, otherId));
-      const { data: mine } = await supabase
-        .from('blocks')
-        .select('blocker_id')
-        .eq('blocker_id', user.id)
-        .eq('blocked_id', otherId)
-        .maybeSingle();
+
+      const [
+        blocked,
+        { data: mine },
+        { data: profile },
+        { data: msgsDesc },
+        { data: unlocks },
+      ] = await Promise.all([
+        pairBlocked(supabase, user.id, otherId),
+        supabase
+          .from('blocks')
+          .select('blocker_id')
+          .eq('blocker_id', user.id)
+          .eq('blocked_id', otherId)
+          .maybeSingle(),
+        supabase
+          .from('profiles')
+          .select(
+            'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away, video_calls_enabled, video_rate_per_minute, video_min_minutes'
+          )
+          .eq('id', otherId)
+          .single(),
+        supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: false })
+          .limit(40),
+        supabase.from('message_unlocks').select('message_id').eq('user_id', user.id),
+      ]);
+
+      if (!alive) return;
+
+      setBlockedPair(blocked);
       setIBlockedThem(!!mine);
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select(
-          'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away, video_calls_enabled, video_rate_per_minute, video_min_minutes'
-        )
-        .eq('id', otherId)
-        .single();
-
+      setOtherUser(profile);
       const price = Number(profile?.message_price || 0);
       setMessagePrice(price);
 
-      let locked = false;
+      const page = (msgsDesc || []).slice().reverse();
+      setMessages(page);
+      setHasMore((msgsDesc || []).length === 40);
+      setMyUnlocks(new Set((unlocks || []).map((u) => u.message_id)));
+      setMessagesLoading(false);
+
       if (
         me?.account_type !== 'creator' &&
         profile?.account_type === 'creator' &&
@@ -399,33 +454,11 @@ export default function ChatPage() {
           .eq('creator_id', otherId)
           .eq('fan_id', user.id)
           .maybeSingle();
-        locked = !access;
-      }
-      setNeedsUnlock(locked);
-
-      const { data: msgs } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
-
-      const { data: unlocks } = await supabase
-        .from('message_unlocks')
-        .select('message_id')
-        .eq('user_id', user.id);
-
-      if (!alive) return;
-
-      setOtherUser(profile);
-      setMessages(msgs || []);
-      setMyUnlocks(new Set((unlocks || []).map((u) => u.message_id)));
-      setLoading(false);
-
-      if (msgs && msgs.length > 0) {
-        await loadReactions(msgs.map((m) => m.id));
+        if (alive) setNeedsUnlock(!access);
       }
 
-      await markAsRead(user.id);
+      if (page.length > 0) void loadReactions(page.map((m) => m.id));
+      void markAsRead(user.id);
 
       // Pending voice call for this conversation
       const { data: pendingCalls } = await supabase
@@ -1515,14 +1548,6 @@ export default function ChatPage() {
       canSeeMedia(m)
   );
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-        <p className="text-zinc-400">Loading chat...</p>
-      </div>
-    );
-  }
-
   const displayName = otherUser?.display_name || otherUser?.username || 'User';
   const initial = displayName.charAt(0).toUpperCase();
 
@@ -2480,9 +2505,16 @@ export default function ChatPage() {
           className="flex-1 overflow-y-auto px-3"
           style={{ WebkitOverflowScrolling: 'touch' }}
           onClick={() => setReactFor(null)}
+          onScroll={onThreadScroll}
         >
           <div className="min-h-full flex flex-col justify-end py-3 space-y-3">
-            {messages.length === 0 && !needsUnlock && (
+            {loadingMore && (
+              <p className="text-center text-xs text-zinc-500 py-2">Loading earlier…</p>
+            )}
+            {messagesLoading && (
+              <p className="text-center text-zinc-500 py-16">Loading messages…</p>
+            )}
+            {messages.length === 0 && !needsUnlock && !messagesLoading && (
               <div className="text-center text-zinc-500 py-16">
                 <p>No messages yet</p>
                 <p className="text-sm mt-1">Say hello 👋</p>
@@ -2596,9 +2628,16 @@ export default function ChatPage() {
           ref={desktopRef}
           className="flex-1 overflow-y-auto px-6 max-w-3xl w-full mx-auto"
           onClick={() => setReactFor(null)}
+          onScroll={onThreadScroll}
         >
           <div className="min-h-full flex flex-col justify-end py-3 space-y-3">
-            {messages.length === 0 && !needsUnlock && (
+            {loadingMore && (
+              <p className="text-center text-xs text-zinc-500 py-2">Loading earlier…</p>
+            )}
+            {messagesLoading && (
+              <p className="text-center text-zinc-500 py-16">Loading messages…</p>
+            )}
+            {messages.length === 0 && !needsUnlock && !messagesLoading && (
               <div className="text-center text-zinc-500 py-16">
                 <p>No messages yet</p>
                 <p className="text-sm mt-1">Say hello 👋</p>
