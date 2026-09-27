@@ -165,6 +165,7 @@ export default function StoriesRail({
     cropY: number;
     cropZoom: number;
     visibility: 'everyone' | 'followers' | 'subscribers';
+    mirror?: boolean;
   } | null>(null);
   const [open, setOpen] = useState<{ groupIndex: number; storyIndex: number } | null>(
     null
@@ -384,6 +385,7 @@ export default function StoriesRail({
       cropY: 0,
       cropZoom: 1,
       visibility: 'everyone' as const,
+      mirror: false,
     };
   };
 
@@ -699,6 +701,7 @@ export default function StoriesRail({
               cropY: 0,
               cropZoom: 1,
               visibility: 'everyone',
+              mirror: !!info?.mirror,
             });
             setCameraOpen(false);
           }}
@@ -1080,7 +1083,10 @@ function StoryCamera({
 }: {
   onClose: () => void;
   onLibrary: (files: FileList | File[]) => void;
-  onCapture: (file: File, info?: { kind: 'image' | 'video'; duration: number }) => void;
+  onCapture: (
+    file: File,
+    info?: { kind: 'image' | 'video'; duration: number; mirror?: boolean }
+  ) => void;
 }) {
   const libRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -1212,6 +1218,7 @@ function StoryCamera({
       onCapture(new File([blob], `story-${Date.now()}.${ext}`, { type }), {
         kind: 'video',
         duration: Math.max(1, Math.min(MAX_VIDEO_SECS, secsLive.current || 1)),
+        mirror: facing === 'user',
       });
     };
     recRef.current = rec;
@@ -1370,6 +1377,7 @@ function StoryComposer({
     cropY: number;
     cropZoom: number;
     visibility: 'everyone' | 'followers' | 'subscribers';
+    mirror?: boolean;
   };
   uploading: boolean;
   onCancel: () => void;
@@ -1434,7 +1442,9 @@ function StoryComposer({
             loop
             muted
             playsInline
-            className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none"
+            className={`absolute inset-0 w-full h-full object-contain bg-black pointer-events-none ${
+              draft.mirror ? 'scale-x-[-1]' : ''
+            }`}
           />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
