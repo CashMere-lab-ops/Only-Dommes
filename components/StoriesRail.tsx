@@ -2016,6 +2016,7 @@ function StoryViewer({
     syncBars(progressValue.current);
   };
   const [muted, setMuted] = useState(false);
+  const wantSound = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const holdRef = useRef(false);
   const holdTimer = useRef<number | null>(null);
@@ -2162,9 +2163,20 @@ function StoryViewer({
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (paused) v.pause();
-    else void v.play().catch(() => {});
-  }, [paused, story?.id]);
+    if (paused) {
+      v.pause();
+      return;
+    }
+    v.muted = muted;
+    const play = v.play();
+    if (play && typeof play.catch === 'function') {
+      play.catch(() => {
+        v.muted = true;
+        setMuted(true);
+        void v.play().catch(() => {});
+      });
+    }
+  }, [paused, muted, story?.id]);
 
   useEffect(() => {
     if (!story || paused) return;
@@ -2385,6 +2397,14 @@ function StoryViewer({
   const onGestureDown = (e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
+    if (wantSound.current && muted && story.media_type === 'video') {
+      setMuted(false);
+      const v = videoRef.current;
+      if (v) {
+        v.muted = false;
+        void v.play().catch(() => {});
+      }
+    }
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
@@ -2611,7 +2631,12 @@ function StoryViewer({
             {story.media_type === 'video' && (
               <button
                 type="button"
-                onClick={() => setMuted((m) => !m)}
+                onClick={() =>
+                  setMuted((m) => {
+                    wantSound.current = m;
+                    return !m;
+                  })
+                }
                 className="w-9 h-9 flex items-center justify-center text-white/80"
               >
                 {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
