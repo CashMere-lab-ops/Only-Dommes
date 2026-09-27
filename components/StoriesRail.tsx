@@ -1108,6 +1108,14 @@ function StoryCamera({
     streamRef.current = null;
   };
 
+  const applyOneX = async (stream: MediaStream) => {
+    const track = stream.getVideoTracks()[0];
+    const caps = track?.getCapabilities?.() as { zoom?: { min: number; max: number } };
+    if (!track || !caps?.zoom) return;
+    const z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 1));
+    await track.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
+  };
+
   const startCam = useCallback(async (face: 'user' | 'environment') => {
     setError('');
     setReady(false);
@@ -1117,8 +1125,11 @@ function StoryCamera({
         audio: true,
         video: {
           facingMode: { ideal: face },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
         },
       });
+      await applyOneX(stream);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -1131,6 +1142,7 @@ function StoryCamera({
           audio: false,
           video: { facingMode: face },
         });
+        await applyOneX(stream);
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
