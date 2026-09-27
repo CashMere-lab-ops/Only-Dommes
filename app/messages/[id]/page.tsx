@@ -190,6 +190,16 @@ const MediaBlock = memo(function MediaBlock({
 
 /* ---------- Main page ---------- */
 
+function readSession(key: string) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
@@ -197,17 +207,28 @@ export default function ChatPage() {
   const conversationId = params.id as string;
   const chatCacheKey = `wod-chat-${conversationId}`;
 
-  const [messages, setMessages] = useState<any[]>([]);
+  const cachedChat = readSession(chatCacheKey);
+  const [messages, setMessages] = useState<any[]>(
+    Array.isArray(cachedChat?.messages) ? cachedChat.messages : []
+  );
   const [reactions, setReactions] = useState<Record<string, any[]>>({});
   const [text, setText] = useState('');
-  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(
+    !(Array.isArray(cachedChat?.messages) && cachedChat.messages.length)
+  );
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [sending, setSending] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(() => {
+    if (cachedChat?.userId) return cachedChat.userId;
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem('wod-my-id');
+  });
   const [myProfile, setMyProfile] = useState<any>(null);
-  const [otherUser, setOtherUser] = useState<any>(null);
-  const [otherUserId, setOtherUserId] = useState<string | null>(null);
+  const [otherUser, setOtherUser] = useState<any>(cachedChat?.otherUser || null);
+  const [otherUserId, setOtherUserId] = useState<string | null>(
+    cachedChat?.otherUserId || null
+  );
   const [blockedPair, setBlockedPair] = useState(false);
   const [iBlockedThem, setIBlockedThem] = useState(false);
   const [showMore, setShowMore] = useState(false);
@@ -265,7 +286,7 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<any>(null);
-  const userIdRef = useRef<string | null>(null);
+  const userIdRef = useRef<string | null>(userId);
 
   const actorName = () =>
     myProfile?.display_name || myProfile?.username || 'Someone';
@@ -429,6 +450,11 @@ export default function ChatPage() {
 
       setUserId(user.id);
       userIdRef.current = user.id;
+      try {
+        sessionStorage.setItem('wod-my-id', user.id);
+      } catch {
+        /* ignore */
+      }
       void bumpLastSeen(user.id);
 
       const [{ data: me }, { data: convo }] = await Promise.all([
@@ -924,6 +950,16 @@ export default function ChatPage() {
   const sheetHold = callSheetKind === 'video' ? videoHold : voiceHold;
 
   const CALL_PREFIX = '__CALL_EVENT__:';
+
+function readSession(key: string) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
   const parseCallEvent = (content?: string | null) => {
     if (!content || !content.startsWith(CALL_PREFIX)) return null;
