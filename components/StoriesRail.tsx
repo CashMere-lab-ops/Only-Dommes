@@ -19,6 +19,8 @@ import {
   Type,
   Crop,
   Lock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import { createImageThumbnail } from '../lib/createThumbnail';
@@ -2570,6 +2572,27 @@ function StoryViewer({
           {story.caption}
         </p>
       ) : null}
+
+      <button
+        type="button"
+        onClick={goPrev}
+        className="hidden lg:flex absolute left-0 top-16 bottom-24 w-[22%] z-[28] items-center justify-start pl-4"
+        aria-label="Previous story"
+      >
+        <span className="w-11 h-11 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-white/90">
+          <ChevronLeft size={22} />
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={goNext}
+        className="hidden lg:flex absolute right-0 top-16 bottom-24 w-[22%] z-[28] items-center justify-end pr-4"
+        aria-label="Next story"
+      >
+        <span className="w-11 h-11 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-white/90">
+          <ChevronRight size={22} />
+        </span>
+      </button>
 
       <div
         className={`relative z-30 px-3 pt-[max(0.7rem,env(safe-area-inset-top))] transition-opacity duration-200 ${
