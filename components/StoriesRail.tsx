@@ -685,8 +685,11 @@ export default function StoriesRail({
           }}
           onCapture={(file) => {
             setFromCamera(true);
-            setCameraOpen(false);
-            void onPickFiles([file]);
+            void (async () => {
+              const next = await prepareFile(file);
+              if (next) setDraft(next);
+              setCameraOpen(false);
+            })();
           }}
         />
       )}
@@ -1080,6 +1083,7 @@ function StoryCamera({
   const [error, setError] = useState('');
   const [recording, setRecording] = useState(false);
   const [secs, setSecs] = useState(0);
+  const [handingOff, setHandingOff] = useState(false);
 
   const stopStream = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -1189,6 +1193,7 @@ function StoryCamera({
       const type = rec.mimeType || mime || 'video/webm';
       const blob = new Blob(chunksRef.current, { type });
       const ext = type.includes('mp4') ? 'mp4' : 'webm';
+      setHandingOff(true);
       stopStream();
       onCapture(new File([blob], `story-${Date.now()}.${ext}`, { type }));
     };
@@ -1241,6 +1246,11 @@ function StoryCamera({
         </button>
       </div>
 
+      {handingOff && (
+        <div className="absolute inset-0 z-20 bg-black flex items-center justify-center">
+          <Loader2 size={22} className="animate-spin text-white/70" />
+        </div>
+      )}
       {error ? (
         <p className="relative z-10 text-center text-sm text-red-300 mt-4">{error}</p>
       ) : null}
