@@ -1113,7 +1113,7 @@ function StoryCamera({
     const caps = track?.getCapabilities?.() as { zoom?: { min: number; max: number } };
     if (!track || !caps?.zoom) return;
     const z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 1));
-    await track.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
+    await track.applyConstraints({ advanced: [{ zoom: z }] } as any).catch(() => {});
   };
 
   const startCam = useCallback(async (face: 'user' | 'environment') => {
