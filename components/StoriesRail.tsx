@@ -172,6 +172,15 @@ export default function StoriesRail({
   const [queue, setQueue] = useState<File[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const apply = () => setIsDesktop(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   const openAdd = () => setAddOpen(true);
 
@@ -593,10 +602,24 @@ export default function StoriesRail({
         accept="image/*,video/*"
         multiple
         className="hidden"
-        onChange={(e) => void onPickFiles(e.target.files)}
+        onChange={(e) => {
+          setAddOpen(false);
+          void onPickFiles(e.target.files);
+        }}
       />
 
-      {addOpen && (
+      {addOpen && isDesktop && (
+        <StoryCreateDesk
+          onClose={() => setAddOpen(false)}
+          onBrowse={() => fileRef.current?.click()}
+          onFiles={(files) => {
+            setAddOpen(false);
+            void onPickFiles(files);
+          }}
+        />
+      )}
+
+      {addOpen && !isDesktop && (
         <div
           className="fixed inset-0 z-[230] bg-black/60 flex items-end sm:items-center justify-center"
           onClick={() => setAddOpen(false)}
@@ -935,6 +958,79 @@ export function HighlightRail({
           }}
         />
       )}
+    </div>
+  );
+}
+
+function StoryCreateDesk({
+  onClose,
+  onBrowse,
+  onFiles,
+}: {
+  onClose: () => void;
+  onBrowse: () => void;
+  onFiles: (files: FileList | File[]) => void;
+}) {
+  const [over, setOver] = useState(false);
+
+  const take = (list: FileList | File[] | null) => {
+    if (!list || !list.length) return;
+    onFiles(list);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[230] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[560px] bg-zinc-950 border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="h-14 px-5 border-b border-white/10 flex items-center justify-between">
+          <p className="text-[11px] font-semibold tracking-[0.2em] uppercase text-zinc-500">
+            World of Dommes
+          </p>
+          <p className="text-sm font-medium">New story</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-zinc-400"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div
+          className={`m-5 rounded-xl border border-dashed min-h-[320px] flex flex-col items-center justify-center px-8 text-center transition-colors ${
+            over ? 'border-pink-400/70 bg-pink-500/5' : 'border-white/15 bg-zinc-900/40'
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setOver(true);
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setOver(false);
+            take(e.dataTransfer.files);
+          }}
+        >
+          <div className="w-16 h-16 rounded-2xl border border-white/15 flex items-center justify-center mb-5">
+            <ImageIcon size={28} className="text-zinc-300" strokeWidth={1.4} />
+          </div>
+          <p className="text-lg font-medium">Drop photos or videos here</p>
+          <p className="text-sm text-zinc-500 mt-1.5 mb-6">
+            Stories last 24 hours · video up to 60 seconds
+          </p>
+          <button
+            type="button"
+            onClick={onBrowse}
+            className="h-10 px-5 rounded-full bg-white text-black text-sm font-semibold"
+          >
+            Select from computer
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
