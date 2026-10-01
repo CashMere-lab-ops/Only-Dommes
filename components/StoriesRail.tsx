@@ -1742,7 +1742,8 @@ function StoryComposer({
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {(() => {
           const canFrame = !!draft.fromLibrary || tool === 'crop';
-          const fit = draft.fromLibrary ? 'object-cover' : 'object-contain';
+          const canMove = tool === 'crop' && draft.kind === 'image';
+          const fit = draft.fromLibrary || canMove ? 'object-cover' : 'object-contain';
           const onFrameDown = (e: React.PointerEvent) => {
             if (!canFrame || tool === 'text') return;
             if ((e.target as HTMLElement).closest('[data-story-text]')) return;
@@ -1756,19 +1757,38 @@ function StoryComposer({
               const pts = [...ptsRef.current.values()];
               const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
               pinchRef.current = { dist: dist || 1, zoom: draft.cropZoom };
+              panRef.current = null;
+              return;
+            }
+            if (canMove) {
+              panRef.current = {
+                x: e.clientX,
+                y: e.clientY,
+                px: draft.cropX,
+                py: draft.cropY,
+              };
             }
           };
           const onFrameMove = (e: React.PointerEvent) => {
             if (!ptsRef.current.has(e.pointerId)) return;
             ptsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            if (!pinchRef.current || ptsRef.current.size < 2) return;
-            const pts = [...ptsRef.current.values()];
-            const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-            const next = pinchRef.current.zoom * (dist / pinchRef.current.dist);
+            if (pinchRef.current && ptsRef.current.size >= 2) {
+              const pts = [...ptsRef.current.values()];
+              const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+              const next = pinchRef.current.zoom * (dist / pinchRef.current.dist);
+              onMeta({
+                cropZoom: Math.max(1, Math.min(3, Number(next.toFixed(3)))),
+                ...(draft.kind === 'video' ? { cropX: 0, cropY: 0 } : {}),
+              });
+              return;
+            }
+            if (!canMove || !panRef.current || !stageRef.current) return;
+            const box = stageRef.current.getBoundingClientRect();
+            const dx = (e.clientX - panRef.current.x) / box.width;
+            const dy = (e.clientY - panRef.current.y) / box.height;
             onMeta({
-              cropX: 0,
-              cropY: 0,
-              cropZoom: Math.max(1, Math.min(3, Number(next.toFixed(3)))),
+              cropX: Math.max(-0.45, Math.min(0.45, panRef.current.px + dx)),
+              cropY: Math.max(-0.45, Math.min(0.45, panRef.current.py + dy)),
             });
           };
           const onFrameUp = (e: React.PointerEvent) => {
@@ -1781,13 +1801,15 @@ function StoryComposer({
             e.preventDefault();
             const next = draft.cropZoom + (e.deltaY < 0 ? 0.08 : -0.08);
             onMeta({
-              cropX: 0,
-              cropY: 0,
               cropZoom: Math.max(1, Math.min(3, Number(next.toFixed(3)))),
+              ...(draft.kind === 'video' ? { cropX: 0, cropY: 0 } : {}),
             });
           };
           const frameStyle = {
-            transform: `scale(${draft.cropZoom})`,
+            transform:
+              draft.kind === 'image'
+                ? `translate(${draft.cropX * 100}%, ${draft.cropY * 100}%) scale(${draft.cropZoom})`
+                : `scale(${draft.cropZoom})`,
             touchAction: 'none' as const,
           };
           return draft.kind === 'video' ? (
@@ -1908,7 +1930,7 @@ function StoryComposer({
               >
                 −
               </button>
-              <p className="text-[11px] text-white/70">Drag to frame</p>
+              <p className="text-[11px] text-white/70">Drag to move · pinch to zoom</p>
               <button
                 type="button"
                 onClick={() =>
