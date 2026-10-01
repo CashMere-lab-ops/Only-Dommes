@@ -208,18 +208,35 @@ export default function StoriesRail({
     rest: File[];
   } | null>(null);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [phoneOnlyOpen, setPhoneOnlyOpen] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
+
+  const canCreateOnDevice = () => {
+    if (typeof window === 'undefined') return false;
+    const mouseLaptop =
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches &&
+      window.matchMedia('(min-width: 1024px)').matches;
+    return !mouseLaptop;
+  };
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
-    const apply = () => setIsDesktop(mq.matches);
+    const apply = () => {
+      setIsDesktop(mq.matches);
+      setCanCreate(canCreateOnDevice());
+    };
     apply();
     mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
+    window.addEventListener('resize', apply);
+    return () => {
+      mq.removeEventListener('change', apply);
+      window.removeEventListener('resize', apply);
+    };
   }, []);
 
   const openAdd = () => {
-    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
-      setAddOpen(true);
+    if (!canCreateOnDevice()) {
+      setPhoneOnlyOpen(true);
       return;
     }
     setCameraOpen(true);
@@ -315,7 +332,7 @@ export default function StoriesRail({
     window.history.replaceState({}, '', window.location.pathname);
     if (!shareRaw) {
       const t = window.setTimeout(() => {
-        if (window.matchMedia('(min-width: 1024px)').matches) setAddOpen(true);
+        if (!canCreateOnDevice()) setPhoneOnlyOpen(true);
         else setCameraOpen(true);
       }, 250);
       return () => window.clearTimeout(t);
@@ -524,10 +541,11 @@ export default function StoriesRail({
 
   const myGroup = groups.find((g) => g.creator.id === userId);
   const others = groups.filter((g) => g.creator.id !== userId);
-  const showAdd = !!isCreator && !!userId;
+  const showAdd = !!isCreator && !!userId && canCreate;
+  const showMine = !!isCreator && !!userId && (!!myGroup || canCreate);
 
   if (!userId) return null;
-  if (!loading && !showAdd && groups.length === 0) return null;
+  if (!loading && !showMine && groups.length === 0) return null;
 
   return (
     <div className="mb-8">
@@ -546,7 +564,7 @@ export default function StoriesRail({
         )}
       </div>
       <div className="flex items-start gap-4 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1">
-        {showAdd && (
+        {showMine && (
           <div className="flex-shrink-0 w-[74px] text-center">
             <div className="relative mx-auto w-[68px] h-[68px]">
             <button
@@ -586,6 +604,7 @@ export default function StoriesRail({
                 </div>
               </div>
             </button>
+              {showAdd && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -601,6 +620,7 @@ export default function StoriesRail({
                   <Plus size={13} strokeWidth={2.5} />
                 )}
               </button>
+              )}
             </div>
             <p className="mt-1.5 text-[10px] text-zinc-400 truncate tracking-wide">Your story</p>
           </div>
@@ -665,15 +685,32 @@ export default function StoriesRail({
         }}
       />
 
-      {addOpen && isDesktop && (
-        <StoryCreateDesk
-          onClose={() => setAddOpen(false)}
-          onBrowse={() => fileRef.current?.click()}
-          onFiles={(files) => {
-            setAddOpen(false);
-            void onPickFiles(files);
-          }}
-        />
+      {phoneOnlyOpen && (
+        <div
+          className="fixed inset-0 z-[230] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6"
+          onClick={() => setPhoneOnlyOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-zinc-950 border border-white/10 rounded-2xl p-6 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-[11px] font-semibold tracking-[0.2em] uppercase text-pink-400">
+              World of Dommes
+            </p>
+            <p className="text-lg font-medium mt-3">Create stories on your phone</p>
+            <p className="text-sm text-zinc-400 mt-2">
+              Stories can be posted from a phone or tablet so they look right. You can still watch
+              them here.
+            </p>
+            <button
+              type="button"
+              onClick={() => setPhoneOnlyOpen(false)}
+              className="mt-6 h-10 px-5 rounded-full bg-pink-600 hover:bg-pink-500 text-white text-sm font-semibold"
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
 
       {addOpen && !isDesktop && (
@@ -802,7 +839,7 @@ export default function StoriesRail({
             setOpen(null);
             void load();
           }}
-          onAdd={openAdd}
+          onAdd={canCreate ? openAdd : undefined}
         />
       )}
     </div>
