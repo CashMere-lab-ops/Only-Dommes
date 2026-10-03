@@ -1803,8 +1803,9 @@ function StoryComposer({
           const frameStyle = {
             transform:
               draft.kind === 'image'
-                ? `translate(${draft.cropX * 100}%, ${draft.cropY * 100}%) scale(${draft.cropZoom})`
+                ? `translate(-50%, -50%) translate(${draft.cropX * 70}%, ${draft.cropY * 70}%) scale(${draft.cropZoom})`
                 : `scale(${draft.cropZoom})`,
+            transformOrigin: 'center',
             touchAction: 'none' as const,
           };
           return draft.kind === 'video' ? (
@@ -1839,7 +1840,7 @@ function StoryComposer({
                 src={draft.url}
                 alt=""
                 draggable={false}
-                className="absolute inset-0 w-full h-full object-contain select-none [-webkit-touch-callout:none] origin-center"
+                className="absolute left-1/2 top-1/2 max-w-full max-h-full w-auto h-auto select-none [-webkit-touch-callout:none]"
                 style={frameStyle}
                 onPointerDown={onFrameDown}
                 onPointerMove={onFrameMove}
