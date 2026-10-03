@@ -1735,10 +1735,20 @@ function StoryComposer({
 
   const textPts = useRef(new Map<number, { x: number; y: number }>());
   const textPinch = useRef<{ dist: number; angle: number; scale: number; rot: number } | null>(null);
+  const textLive = useRef({ x: 50, y: 70 });
+
+  const paintText = (x: number, y: number) => {
+    textLive.current = { x, y };
+    const el = document.querySelector('[data-story-text="1"]') as HTMLElement | null;
+    if (!el) return;
+    el.style.left = `${x}%`;
+    el.style.top = `${y}%`;
+  };
 
   const onTextDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('[data-text-ui]')) return;
     e.stopPropagation();
+    textLive.current = { x: draft.captionX, y: draft.captionY };
     textPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -1756,11 +1766,10 @@ function StoryComposer({
       dragRef.current = null;
       return;
     }
-    if ((e.target as HTMLElement).tagName === 'INPUT') return;
     dragRef.current = { x: e.clientX, y: e.clientY };
   };
   const onTextMove = (e: React.PointerEvent) => {
-    if (!textPts.current.has(e.pointerId)) return;
+    if (!textPts.current.has(e.pointerId) || !stageRef.current) return;
     textPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (textPinch.current && textPts.current.size >= 2) {
       const pts = [...textPts.current.values()];
@@ -1773,17 +1782,23 @@ function StoryComposer({
       });
       return;
     }
-    if (!dragRef.current || !stageRef.current) return;
+    if (!dragRef.current) return;
+    const moved = Math.hypot(e.clientX - dragRef.current.x, e.clientY - dragRef.current.y);
+    if ((e.target as HTMLElement).tagName === 'INPUT' && moved < 8) return;
+    if (moved >= 8) (e.target as HTMLElement).blur?.();
     const box = stageRef.current.getBoundingClientRect();
-    onMeta({
-      captionX: Math.max(8, Math.min(92, ((e.clientX - box.left) / box.width) * 100)),
-      captionY: Math.max(10, Math.min(88, ((e.clientY - box.top) / box.height) * 100)),
-    });
+    const x = Math.max(0, Math.min(100, textLive.current.x + ((e.clientX - dragRef.current.x) / box.width) * 100));
+    const y = Math.max(0, Math.min(100, textLive.current.y + ((e.clientY - dragRef.current.y) / box.height) * 100));
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    paintText(x, y);
   };
   const onTextUp = (e: React.PointerEvent) => {
     textPts.current.delete(e.pointerId);
     if (textPts.current.size < 2) textPinch.current = null;
-    if (textPts.current.size === 0) dragRef.current = null;
+    if (textPts.current.size === 0) {
+      dragRef.current = null;
+      onMeta({ captionX: textLive.current.x, captionY: textLive.current.y });
+    }
   };
 
   const [tool, setTool] = useState<'none' | 'text' | 'crop' | 'sticker' | 'audience'>('none');
