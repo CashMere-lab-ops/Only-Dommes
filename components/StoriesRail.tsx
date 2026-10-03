@@ -114,24 +114,7 @@ async function cropToStoryFrame(
     el.onerror = () => reject(new Error('Could not load image'));
     el.src = url;
   });
-  const ratio = aspectValue(mode, img.width, img.height);
-  const fw = 1080;
-  const fh = Math.max(1, Math.round(fw / ratio));
-  const z = Math.max(1, Math.min(3, zoom || 1));
-  const cover = Math.max(fw / img.width, fh / img.height) * z;
-  const dw = img.width * cover;
-  const dh = img.height * cover;
-  const dx = (fw - dw) / 2 + panX * fw;
-  const dy = (fh - dh) / 2 + panY * fh;
-  const cut = document.createElement('canvas');
-  cut.width = fw;
-  cut.height = fh;
-  const cctx = cut.getContext('2d');
-  if (!cctx) throw new Error('Crop failed');
-  cctx.fillStyle = '#000';
-  cctx.fillRect(0, 0, fw, fh);
-  cctx.drawImage(img, dx, dy, dw, dh);
-
+  const z = Math.max(0.35, Math.min(3, zoom || 1));
   const outW = 1080;
   const outH = 1920;
   const canvas = document.createElement('canvas');
@@ -139,12 +122,24 @@ async function cropToStoryFrame(
   canvas.height = outH;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Crop failed');
-  ctx.fillStyle = '#000';
+  ctx.fillStyle = '#111';
   ctx.fillRect(0, 0, outW, outH);
-  const fit = Math.min(outW / fw, outH / fh);
-  const ow = fw * fit;
-  const oh = fh * fit;
-  ctx.drawImage(cut, (outW - ow) / 2, (outH - oh) / 2, ow, oh);
+  const cover = Math.max(outW / img.width, outH / img.height) * 1.15;
+  ctx.filter = 'blur(48px)';
+  ctx.drawImage(
+    img,
+    (outW - img.width * cover) / 2,
+    (outH - img.height * cover) / 2,
+    img.width * cover,
+    img.height * cover
+  );
+  ctx.filter = 'none';
+  const contain = Math.min(outW / img.width, outH / img.height) * z;
+  const dw = img.width * contain;
+  const dh = img.height * contain;
+  const dx = (outW - dw) / 2 + panX * outW;
+  const dy = (outH - dh) / 2 + panY * outH;
+  ctx.drawImage(img, dx, dy, dw, dh);
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', 0.92)
   );
@@ -1777,7 +1772,7 @@ function StoryComposer({
               const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
               const next = pinchRef.current.zoom * (dist / pinchRef.current.dist);
               onMeta({
-                cropZoom: Math.max(1, Math.min(3, Number(next.toFixed(3)))),
+                cropZoom: Math.max(0.35, Math.min(3, Number(next.toFixed(3)))),
                 ...(draft.kind === 'video' ? { cropX: 0, cropY: 0 } : {}),
               });
               return;
@@ -1801,7 +1796,7 @@ function StoryComposer({
             e.preventDefault();
             const next = draft.cropZoom + (e.deltaY < 0 ? 0.08 : -0.08);
             onMeta({
-              cropZoom: Math.max(1, Math.min(3, Number(next.toFixed(3)))),
+              cropZoom: Math.max(draft.kind === 'image' ? 0.35 : 1, Math.min(3, Number(next.toFixed(3)))),
               ...(draft.kind === 'video' ? { cropX: 0, cropY: 0 } : {}),
             });
           };
@@ -1830,19 +1825,29 @@ function StoryComposer({
               onWheel={onFrameWheel}
             />
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={draft.url}
-              alt=""
-              draggable={false}
-              className={`absolute inset-0 w-full h-full ${fit} bg-black select-none [-webkit-touch-callout:none] origin-center`}
-              style={frameStyle}
-              onPointerDown={onFrameDown}
-              onPointerMove={onFrameMove}
-              onPointerUp={onFrameUp}
-              onPointerCancel={onFrameUp}
-              onWheel={onFrameWheel}
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={draft.url}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl pointer-events-none"
+              />
+              <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={draft.url}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 w-full h-full object-contain select-none [-webkit-touch-callout:none] origin-center"
+                style={frameStyle}
+                onPointerDown={onFrameDown}
+                onPointerMove={onFrameMove}
+                onPointerUp={onFrameUp}
+                onPointerCancel={onFrameUp}
+                onWheel={onFrameWheel}
+              />
+            </>
           );
         })()}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
@@ -1924,13 +1929,13 @@ function StoryComposer({
               <button
                 type="button"
                 onClick={() =>
-                  onMeta({ cropZoom: Math.max(1, Number((draft.cropZoom - 0.15).toFixed(2))) })
+                  onMeta({ cropZoom: Math.max(0.35, Number((draft.cropZoom - 0.12).toFixed(2))) })
                 }
                 className="w-9 h-9 rounded-full bg-black/45 text-lg"
               >
                 −
               </button>
-              <p className="text-[11px] text-white/70">Drag to move · pinch to zoom</p>
+              <p className="text-[11px] text-white/70">Pinch out to show the background</p>
               <button
                 type="button"
                 onClick={() =>
