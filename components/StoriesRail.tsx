@@ -1697,6 +1697,8 @@ function StoryComposer({
   const panRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const ptsRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
+  const frameRef = useRef<HTMLImageElement | null>(null);
+  const liveRef = useRef({ x: 0, y: 0, z: 1 });
 
   const onTextDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -1739,9 +1741,16 @@ function StoryComposer({
           const canFrame = !!draft.fromLibrary || tool === 'crop';
           const canMove = tool === 'crop' && draft.kind === 'image';
           const fit = draft.fromLibrary || canMove ? 'object-cover' : 'object-contain';
+          const paint = (x: number, y: number, z: number) => {
+            liveRef.current = { x, y, z };
+            if (frameRef.current) {
+              frameRef.current.style.transform = `translate(-50%, -50%) translate(${x * 70}%, ${y * 70}%) scale(${z})`;
+            }
+          };
           const onFrameDown = (e: React.PointerEvent) => {
             if (!canFrame || tool === 'text') return;
             if ((e.target as HTMLElement).closest('[data-story-text]')) return;
+            liveRef.current = { x: draft.cropX, y: draft.cropY, z: draft.cropZoom };
             ptsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
             try {
               (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -1751,7 +1760,7 @@ function StoryComposer({
             if (ptsRef.current.size >= 2) {
               const pts = [...ptsRef.current.values()];
               const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-              pinchRef.current = { dist: dist || 1, zoom: draft.cropZoom };
+              pinchRef.current = { dist: dist || 1, zoom: liveRef.current.z };
               panRef.current = null;
               return;
             }
@@ -1759,8 +1768,8 @@ function StoryComposer({
               panRef.current = {
                 x: e.clientX,
                 y: e.clientY,
-                px: draft.cropX,
-                py: draft.cropY,
+                px: liveRef.current.x,
+                py: liveRef.current.y,
               };
             }
           };
@@ -1770,26 +1779,35 @@ function StoryComposer({
             if (pinchRef.current && ptsRef.current.size >= 2) {
               const pts = [...ptsRef.current.values()];
               const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-              const next = pinchRef.current.zoom * (dist / pinchRef.current.dist);
-              onMeta({
-                cropZoom: Math.max(0.35, Math.min(3, Number(next.toFixed(3)))),
-                ...(draft.kind === 'video' ? { cropX: 0, cropY: 0 } : {}),
-              });
+              const next = Math.max(
+                draft.kind === 'image' ? 0.35 : 1,
+                Math.min(3, pinchRef.current.zoom * (dist / pinchRef.current.dist))
+              );
+              if (draft.kind === 'image') paint(liveRef.current.x, liveRef.current.y, next);
+              else onMeta({ cropZoom: next, cropX: 0, cropY: 0 });
               return;
             }
             if (!canMove || !panRef.current || !stageRef.current) return;
             const box = stageRef.current.getBoundingClientRect();
             const dx = (e.clientX - panRef.current.x) / box.width;
             const dy = (e.clientY - panRef.current.y) / box.height;
-            onMeta({
-              cropX: Math.max(-0.45, Math.min(0.45, panRef.current.px + dx)),
-              cropY: Math.max(-0.45, Math.min(0.45, panRef.current.py + dy)),
-            });
+            paint(
+              Math.max(-0.45, Math.min(0.45, panRef.current.px + dx)),
+              Math.max(-0.45, Math.min(0.45, panRef.current.py + dy)),
+              liveRef.current.z
+            );
           };
           const onFrameUp = (e: React.PointerEvent) => {
             ptsRef.current.delete(e.pointerId);
             if (ptsRef.current.size < 2) pinchRef.current = null;
-            if (ptsRef.current.size === 0) panRef.current = null;
+            if (ptsRef.current.size === 0) {
+              panRef.current = null;
+              onMeta({
+                cropX: liveRef.current.x,
+                cropY: liveRef.current.y,
+                cropZoom: liveRef.current.z,
+              });
+            }
           };
           const onFrameWheel = (e: React.WheelEvent) => {
             if (!canFrame || tool === 'text') return;
@@ -1840,8 +1858,9 @@ function StoryComposer({
                 src={draft.url}
                 alt=""
                 draggable={false}
-                className="absolute left-1/2 top-1/2 max-w-full max-h-full w-auto h-auto select-none [-webkit-touch-callout:none]"
+                className="absolute left-1/2 top-1/2 max-w-full max-h-full w-auto h-auto select-none [-webkit-touch-callout:none] will-change-transform"
                 style={frameStyle}
+                ref={frameRef}
                 onPointerDown={onFrameDown}
                 onPointerMove={onFrameMove}
                 onPointerUp={onFrameUp}
