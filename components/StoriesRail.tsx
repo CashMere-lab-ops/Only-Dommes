@@ -147,14 +147,27 @@ async function cropToStoryFrame(
   return new File([blob], `story-${Date.now()}.jpg`, { type: 'image/jpeg' });
 }
 
-function captionClass(style?: string | null) {
-  if (style === 'neon') {
-    return 'text-pink-300 text-2xl font-black tracking-wide drop-shadow-[0_0_12px_rgba(244,114,182,0.85)]';
-  }
-  if (style === 'box') {
-    return 'text-white text-lg font-semibold bg-black/70 px-3 py-1.5 rounded-xl';
-  }
-  return 'text-white text-xl font-bold drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]';
+function captionLook(style?: string | null) {
+  const parts = (style || 'classic').split('|');
+  const font = parts[0] || 'classic';
+  const color = parts[1] && parts[1].startsWith('#') ? parts[1] : '#ffffff';
+  const scale = Math.max(0.6, Math.min(2.8, Number(parts[2]) || 1));
+  const rotate = Number(parts[3]) || 0;
+  const family =
+    font === 'modern'
+      ? 'font-light tracking-wide'
+      : font === 'serif'
+        ? 'font-serif'
+        : font === 'type'
+          ? 'font-mono'
+          : font === 'strong'
+            ? 'font-black uppercase tracking-wide'
+            : 'font-bold';
+  return { font, color, scale, rotate, family };
+}
+
+function packCaption(font: string, color: string, scale: number, rotate: number) {
+  return `${font}|${color}|${Number(scale.toFixed(2))}|${Math.round(rotate)}`;
 }
 
 export default function StoriesRail({
@@ -182,7 +195,10 @@ export default function StoriesRail({
     caption: string;
     captionX: number;
     captionY: number;
-    captionStyle: 'classic' | 'neon' | 'box';
+    captionStyle: string;
+    captionColor: string;
+    captionScale: number;
+    captionRotate: number;
     sticker: 'subscribe' | 'live' | 'shop' | null;
     cropX: number;
     cropY: number;
@@ -425,6 +441,9 @@ export default function StoriesRail({
       captionX: 50,
       captionY: 70,
       captionStyle: 'classic' as const,
+    captionColor: '#ffffff',
+    captionScale: 1,
+    captionRotate: 0,
       sticker: null,
       cropX: 0,
       cropY: 0,
@@ -510,7 +529,12 @@ export default function StoriesRail({
         caption: draft.caption || null,
         caption_x: draft.captionX,
         caption_y: draft.captionY,
-        caption_style: draft.captionStyle,
+        caption_style: packCaption(
+          draft.captionStyle,
+          draft.captionColor,
+          draft.captionScale,
+          draft.captionRotate
+        ),
         sticker: draft.sticker,
         visibility: draft.visibility || 'everyone',
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -773,6 +797,9 @@ export default function StoriesRail({
               captionX: 50,
               captionY: 70,
               captionStyle: 'classic',
+              captionColor: '#ffffff',
+              captionScale: 1,
+              captionRotate: 0,
               sticker: null,
               cropX: 0,
               cropY: 0,
@@ -1668,7 +1695,10 @@ function StoryComposer({
     caption: string;
     captionX: number;
     captionY: number;
-    captionStyle: 'classic' | 'neon' | 'box';
+    captionStyle: string;
+    captionColor: string;
+    captionScale: number;
+    captionRotate: number;
     sticker: 'subscribe' | 'live' | 'shop' | null;
     cropX: number;
     cropY: number;
@@ -1684,7 +1714,10 @@ function StoryComposer({
     caption?: string;
     captionX?: number;
     captionY?: number;
-    captionStyle?: 'classic' | 'neon' | 'box';
+    captionStyle?: string;
+    captionColor?: string;
+    captionScale?: number;
+    captionRotate?: number;
     sticker?: 'subscribe' | 'live' | 'shop' | null;
     cropX?: number;
     cropY?: number;
@@ -1700,28 +1733,57 @@ function StoryComposer({
   const frameRef = useRef<HTMLImageElement | null>(null);
   const liveRef = useRef({ x: 0, y: 0, z: 1 });
 
+  const textPts = useRef(new Map<number, { x: number; y: number }>());
+  const textPinch = useRef<{ dist: number; angle: number; scale: number; rot: number } | null>(null);
+
   const onTextDown = (e: React.PointerEvent) => {
-    e.preventDefault();
+    if ((e.target as HTMLElement).closest('[data-text-ui]')) return;
     e.stopPropagation();
-    dragRef.current = { x: e.clientX, y: e.clientY };
+    textPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
       /* ignore */
     }
+    if (textPts.current.size >= 2) {
+      const pts = [...textPts.current.values()];
+      textPinch.current = {
+        dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1,
+        angle: Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x),
+        scale: draft.captionScale || 1,
+        rot: draft.captionRotate || 0,
+      };
+      dragRef.current = null;
+      return;
+    }
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    dragRef.current = { x: e.clientX, y: e.clientY };
   };
   const onTextMove = (e: React.PointerEvent) => {
+    if (!textPts.current.has(e.pointerId)) return;
+    textPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (textPinch.current && textPts.current.size >= 2) {
+      const pts = [...textPts.current.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const angle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+      const deg = textPinch.current.rot + ((angle - textPinch.current.angle) * 180) / Math.PI;
+      onMeta({
+        captionScale: Math.max(0.6, Math.min(2.8, textPinch.current.scale * (dist / textPinch.current.dist))),
+        captionRotate: deg,
+      });
+      return;
+    }
     if (!dragRef.current || !stageRef.current) return;
     const box = stageRef.current.getBoundingClientRect();
-    const x = ((e.clientX - box.left) / box.width) * 100;
-    const y = ((e.clientY - box.top) / box.height) * 100;
     onMeta({
-      captionX: Math.max(8, Math.min(92, x)),
-      captionY: Math.max(10, Math.min(88, y)),
+      captionX: Math.max(8, Math.min(92, ((e.clientX - box.left) / box.width) * 100)),
+      captionY: Math.max(10, Math.min(88, ((e.clientY - box.top) / box.height) * 100)),
     });
   };
-  const onTextUp = () => {
-    dragRef.current = null;
+  const onTextUp = (e: React.PointerEvent) => {
+    textPts.current.delete(e.pointerId);
+    if (textPts.current.size < 2) textPinch.current = null;
+    if (textPts.current.size === 0) dragRef.current = null;
   };
 
   const [tool, setTool] = useState<'none' | 'text' | 'crop' | 'sticker' | 'audience'>('none');
@@ -1875,17 +1937,18 @@ function StoryComposer({
         {(tool === 'text' || draft.caption.trim()) && (
           <div
             data-story-text="1"
-            className="absolute z-20 max-w-[80%] text-center"
+            className="absolute z-20 max-w-[86%] text-center"
             style={{
               left: `${draft.captionX}%`,
               top: `${draft.captionY}%`,
-              transform: 'translate(-50%, -50%)',
-              touchAction: tool === 'text' ? 'auto' : 'none',
+              transform: `translate(-50%, -50%) rotate(${draft.captionRotate || 0}deg) scale(${draft.captionScale || 1})`,
+              color: draft.captionColor || '#ffffff',
+              touchAction: 'none',
             }}
-            onPointerDown={tool === 'text' ? undefined : onTextDown}
-            onPointerMove={tool === 'text' ? undefined : onTextMove}
-            onPointerUp={tool === 'text' ? undefined : onTextUp}
-            onPointerCancel={tool === 'text' ? undefined : onTextUp}
+            onPointerDown={onTextDown}
+            onPointerMove={onTextMove}
+            onPointerUp={onTextUp}
+            onPointerCancel={onTextUp}
           >
             {tool === 'text' ? (
               <input
@@ -1894,33 +1957,13 @@ function StoryComposer({
                 onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
                 maxLength={80}
                 placeholder="Text"
-                className={`w-[70vw] max-w-sm bg-transparent outline-none text-center caret-white placeholder:text-white/35 ${captionClass(
-                  draft.captionStyle
-                )}`}
+                className={`w-[70vw] max-w-sm bg-transparent outline-none text-center text-2xl caret-white placeholder:text-white/35 drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] ${captionLook(draft.captionStyle).family}`}
+                style={{ color: draft.captionColor || '#ffffff' }}
               />
             ) : (
-              <p className={captionClass(draft.captionStyle)}>{draft.caption}</p>
-            )}
-            {tool === 'text' && (
-              <div className="flex justify-center gap-2.5 mt-3">
-                {(
-                  [
-                    ['classic', 'bg-white'],
-                    ['neon', 'bg-pink-400'],
-                    ['box', 'bg-zinc-500'],
-                  ] as const
-                ).map(([id, dot]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => onMeta({ captionStyle: id })}
-                    className={`w-3.5 h-3.5 rounded-full ${dot} ${
-                      draft.captionStyle === id ? 'ring-2 ring-white ring-offset-2 ring-offset-black' : 'opacity-60'
-                    }`}
-                    aria-label={id}
-                  />
-                ))}
-              </div>
+              <p className={`text-2xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] ${captionLook(draft.captionStyle).family}`}>
+                {draft.caption}
+              </p>
             )}
           </div>
         )}
@@ -1944,6 +1987,52 @@ function StoryComposer({
             <X size={18} />
           </button>
         </div>
+        {tool === 'text' && (
+          <div
+            data-text-ui="1"
+            className="absolute left-3 right-3 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-30"
+          >
+            <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
+              {(
+                [
+                  ['classic', 'Classic'],
+                  ['modern', 'Modern'],
+                  ['serif', 'Serif'],
+                  ['type', 'Type'],
+                  ['strong', 'Strong'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onMeta({ captionStyle: id })}
+                  className={`h-8 px-3 rounded-full text-xs shrink-0 ${
+                    draft.captionStyle === id ? 'bg-white text-black' : 'bg-black/50 text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 justify-center">
+              {['#ffffff', '#000000', '#ff2d87', '#ff3b30', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2'].map(
+                (c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => onMeta({ captionColor: c })}
+                    className={`w-6 h-6 rounded-full border ${
+                      draft.captionColor === c ? 'border-white scale-110' : 'border-white/30'
+                    }`}
+                    style={{ background: c }}
+                    aria-label={c}
+                  />
+                )
+              )}
+            </div>
+            <p className="text-center text-[11px] text-white/70 mt-2">Pinch to size · twist to rotate</p>
+          </div>
+        )}
         {tool === 'crop' && draft.kind === 'image' && (
           <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
               <button
@@ -2650,13 +2739,15 @@ function StoryViewer({
       />
       {story.caption ? (
         <p
-          className={`absolute z-[16] max-w-[80%] text-center leading-tight pointer-events-none transition-opacity duration-200 ${
+          className={`absolute z-[16] max-w-[80%] text-center text-2xl leading-tight pointer-events-none transition-opacity duration-200 ${
             holdUi ? 'opacity-0' : 'opacity-100'
-          } ${captionClass(story.caption_style)}`}
+          } ${captionLook(story.caption_style).family}`}
           style={{
             left: `${Number(story.caption_x ?? 50)}%`,
             top: `${Number(story.caption_y ?? 72)}%`,
-            transform: 'translate(-50%, -50%)',
+            color: captionLook(story.caption_style).color,
+            transform: `translate(-50%, -50%) rotate(${captionLook(story.caption_style).rotate}deg) scale(${captionLook(story.caption_style).scale})`,
+            textShadow: '0 2px 8px rgba(0,0,0,0.85)',
           }}
         >
           {story.caption}
