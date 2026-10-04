@@ -16,9 +16,9 @@ import {
   SwitchCamera,
   Bookmark,
   MoreHorizontal,
-  Type,
   Crop,
   Lock,
+  Palette,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -2020,57 +2020,86 @@ function StoryComposer({
             </span>
           </div>
         ) : null}
-        <div className="absolute top-0 left-0 right-0 px-4 pt-[max(0.9rem,env(safe-area-inset-top))] flex items-center z-10">
+        <div className="absolute top-0 left-0 right-0 z-30 px-3 pt-[max(0.7rem,env(safe-area-inset-top))] flex items-start justify-between pointer-events-none">
           <button
             type="button"
             onClick={onCancel}
-            className="w-10 h-10 rounded-full bg-black/35 flex items-center justify-center"
+            aria-label="Close"
+            className="pointer-events-auto w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
           >
-            <X size={18} />
+            <X size={20} strokeWidth={2.2} />
           </button>
+          <div className="pointer-events-auto flex flex-col items-center gap-3.5 pt-1">
+            <button
+              type="button"
+              aria-label="Fonts"
+              onClick={() => {
+                setTool('text');
+                setTextPanel((p) => (p === 'fonts' ? 'none' : 'fonts'));
+              }}
+              className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
+                textPanel === 'fonts' ? 'text-white' : 'text-white/90'
+              }`}
+            >
+              <span className="font-serif text-[20px] leading-none tracking-tight">Aa</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Colours"
+              onClick={() => {
+                setTool('text');
+                setTextPanel((p) => (p === 'colours' ? 'none' : 'colours'));
+              }}
+              className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
+                textPanel === 'colours' ? 'text-white' : 'text-white/90'
+              }`}
+            >
+              <Palette size={22} strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              aria-label="Sticker"
+              onClick={() => {
+                setTextPanel('none');
+                setTool((t) => (t === 'sticker' ? 'none' : 'sticker'));
+              }}
+              className="w-10 h-10 flex items-center justify-center text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+            >
+              <Bookmark size={22} strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              aria-label="Crop"
+              disabled={draft.kind !== 'image'}
+              onClick={() => {
+                setTextPanel('none');
+                setTool((t) => (t === 'crop' ? 'none' : 'crop'));
+              }}
+              className="w-10 h-10 flex items-center justify-center text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] disabled:opacity-30"
+            >
+              <Crop size={22} strokeWidth={1.8} />
+            </button>
+            <button
+              type="button"
+              aria-label="Audience"
+              onClick={() => {
+                setTextPanel('none');
+                setTool((t) => (t === 'audience' ? 'none' : 'audience'));
+              }}
+              className="w-10 h-10 flex items-center justify-center text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+            >
+              <Lock size={20} strokeWidth={1.8} />
+            </button>
+          </div>
         </div>
-        {tool === 'text' && (
+        {tool === 'text' && (textPanel === 'fonts' || textPanel === 'colours') && (
           <div
             data-text-ui="1"
-            className="absolute left-3 right-3 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-30"
+            className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-30"
           >
-            <div className="flex justify-center">
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/45 p-1 backdrop-blur-md shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-                <button
-                  type="button"
-                  aria-label="Fonts"
-                  onClick={() => setTextPanel((p) => (p === 'fonts' ? 'none' : 'fonts'))}
-                  className={`w-11 h-11 rounded-full border flex items-center justify-center transition-colors ${
-                    textPanel === 'fonts'
-                      ? 'bg-[#f4efe6] text-[#1a140c] border-[#d4b483]'
-                      : 'bg-white/5 text-white border-white/10'
-                  }`}
-                >
-                  <span className="font-serif text-[15px] leading-none tracking-tight">Aa</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label="Colours"
-                  onClick={() => setTextPanel((p) => (p === 'colours' ? 'none' : 'colours'))}
-                  className={`w-11 h-11 rounded-full border flex items-center justify-center transition-colors ${
-                    textPanel === 'colours'
-                      ? 'bg-[#f4efe6] border-[#d4b483]'
-                      : 'bg-white/5 border-white/10'
-                  }`}
-                >
-                  <span
-                    className="w-[18px] h-[18px] rounded-full border border-black/20 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
-                    style={{
-                      background:
-                        'conic-gradient(from 20deg, #f7f3ea, #c6a15b, #ff2d87, #7a2430, #111111, #f7f3ea)',
-                    }}
-                  />
-                </button>
-              </div>
-            </div>
             {textPanel === 'fonts' && (
               <div
-                className="mt-3 flex gap-2 overflow-x-auto snap-x snap-mandatory px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="flex gap-2 overflow-x-auto snap-x snap-mandatory px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}
               >
                 {(
@@ -2091,10 +2120,10 @@ function StoryComposer({
                     key={id}
                     type="button"
                     onClick={() => onMeta({ captionStyle: id })}
-                    className={`snap-center h-11 min-w-[5.4rem] px-4 rounded-full border text-[13px] tracking-wide shrink-0 backdrop-blur-md ${
+                    className={`snap-center h-10 min-w-[5.2rem] px-4 rounded-full border text-[13px] tracking-wide shrink-0 backdrop-blur-md ${
                       draft.captionStyle === id
                         ? 'bg-[#f4efe6] text-[#1a140c] border-[#d4b483]'
-                        : 'bg-black/45 text-white border-white/15'
+                        : 'bg-black/50 text-white border-white/15'
                     }`}
                     style={{ fontFamily: captionLook(id).family, fontWeight: captionLook(id).weight }}
                   >
@@ -2105,7 +2134,7 @@ function StoryComposer({
             )}
             {textPanel === 'colours' && (
               <div
-                className="mt-3 flex gap-3 overflow-x-auto snap-x snap-mandatory px-2 pb-1 justify-start [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="flex gap-3 overflow-x-auto snap-x snap-mandatory px-2 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}
               >
                 {['#ffffff', '#111111', '#f4efe6', '#c6a15b', '#ff2d87', '#7a2430', '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2'].map(
@@ -2115,7 +2144,7 @@ function StoryComposer({
                       type="button"
                       onClick={() => onMeta({ captionColor: c })}
                       className={`snap-center w-9 h-9 rounded-full shrink-0 border-2 ${
-                        draft.captionColor === c ? 'border-[#d4b483] scale-110' : 'border-white/40'
+                        draft.captionColor === c ? 'border-white scale-110' : 'border-white/35'
                       }`}
                       style={{ background: c }}
                       aria-label={c}
@@ -2128,7 +2157,7 @@ function StoryComposer({
           </div>
         )}
         {tool === 'crop' && draft.kind === 'image' && (
-          <div className="absolute left-0 right-0 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex items-center justify-center gap-3">
+          <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20 flex items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() =>
@@ -2151,7 +2180,7 @@ function StoryComposer({
           </div>
         )}
         {tool === 'sticker' && (
-          <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex gap-2 justify-center">
+          <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20 flex gap-2 justify-center">
             {(
               [
                 [null, 'None'],
@@ -2177,7 +2206,7 @@ function StoryComposer({
           </div>
         )}
         {tool === 'audience' && (
-          <div className="absolute left-4 right-4 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-20 flex gap-2 justify-center">
+          <div className="absolute left-3 right-20 bottom-[max(4.6rem,calc(env(safe-area-inset-bottom)+3.6rem))] z-30 flex gap-2">
             {(
               [
                 ['everyone', 'Everyone'],
@@ -2193,7 +2222,7 @@ function StoryComposer({
                   setTool('none');
                 }}
                 className={`h-8 px-3 rounded-full text-[11px] ${
-                  draft.visibility === id ? 'bg-white text-black' : 'bg-black/45 text-white/80'
+                  draft.visibility === id ? 'bg-white text-black' : 'bg-black/55 text-white/85'
                 }`}
               >
                 {label}
@@ -2201,42 +2230,34 @@ function StoryComposer({
             ))}
           </div>
         )}
-        <div className="absolute left-3 right-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 flex items-center gap-2">
-          <div className="flex-1 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-around px-2">
-            {(
-              [
-                ['text', Type, 'Text'],
-                ['crop', Crop, 'Crop'],
-                ['sticker', Bookmark, 'Sticker'],
-                ['audience', Lock, 'Who'],
-              ] as const
-            ).map(([id, Icon, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTool((t) => (t === id ? 'none' : id))}
-                disabled={id === 'crop' && draft.kind !== 'image'}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-opacity duration-200 disabled:opacity-30 ${
-                  tool === id
-                    ? 'text-white bg-white/15'
-                    : tool === 'none'
-                      ? 'text-white/55'
-                      : 'text-white/25'
-                }`}
-                title={label}
-              >
-                <Icon size={18} strokeWidth={1.7} />
-              </button>
-            ))}
-          </div>
+        <div className="absolute left-3 right-3 bottom-[max(0.85rem,env(safe-area-inset-bottom))] z-30 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => {
+              setTextPanel('none');
+              setTool((t) => (t === 'audience' ? 'none' : 'audience'));
+            }}
+            className="h-11 pl-1.5 pr-4 rounded-full bg-[#2a2a2e]/90 border border-white/10 flex items-center gap-2 text-white"
+          >
+            <span className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
+              <Lock size={14} />
+            </span>
+            <span className="text-[13px] font-medium">
+              {draft.visibility === 'followers'
+                ? 'Followers'
+                : draft.visibility === 'subscribers'
+                  ? 'Subscribers'
+                  : 'Your story'}
+            </span>
+          </button>
           <button
             type="button"
             onClick={onShare}
             disabled={uploading}
-            className="h-12 px-5 rounded-full bg-white text-black text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2 shrink-0 active:scale-[0.97] transition-transform"
+            aria-label="Share story"
+            className="w-12 h-12 rounded-full bg-[#ff2d87] text-white flex items-center justify-center shadow-[0_6px_18px_rgba(255,45,135,0.45)] disabled:opacity-60 active:scale-95 transition-transform"
           >
-            {uploading ? <Loader2 size={16} className="animate-spin" /> : null}
-            {uploading ? 'Posting' : 'Share'}
+            {uploading ? <Loader2 size={18} className="animate-spin" /> : <ChevronRight size={24} strokeWidth={2.4} />}
           </button>
         </div>
       </div>
