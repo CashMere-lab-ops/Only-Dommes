@@ -1848,6 +1848,12 @@ function StoryComposer({
   const textRef = useRef<HTMLTextAreaElement | null>(null);
   const [textPanel, setTextPanel] = useState<'none' | 'fonts' | 'colours'>('none');
 
+  const finishText = () => {
+    setTextPanel('none');
+    setTool('none');
+    if (!draft.caption.trim()) onMeta({ caption: '' });
+  };
+
   useEffect(() => {
     if (tool === 'text') textRef.current?.focus();
   }, [tool]);
@@ -1858,7 +1864,16 @@ function StoryComposer({
       onContextMenu={(e) => e.preventDefault()}
     >
       <style>{`.wod-noscroll::-webkit-scrollbar{display:none;width:0;height:0}`}</style>
-      <div ref={stageRef} className="absolute inset-0 overflow-hidden">
+      <div
+        ref={stageRef}
+        className="absolute inset-0 overflow-hidden"
+        onPointerDown={(e) => {
+          if (tool !== 'text') return;
+          const t = e.target as HTMLElement;
+          if (t.closest('[data-story-text]') || t.closest('[data-text-ui]') || t.closest('button')) return;
+          finishText();
+        }}
+      >
         {(() => {
           const canFrame = !!draft.fromLibrary || tool === 'crop';
           const canMove = tool === 'crop' && draft.kind === 'image';
@@ -2065,8 +2080,12 @@ function StoryComposer({
               type="button"
               aria-label="Fonts"
               onClick={() => {
+                if (tool === 'text' && textPanel === 'fonts') {
+                  finishText();
+                  return;
+                }
                 setTool('text');
-                setTextPanel((p) => (p === 'fonts' ? 'none' : 'fonts'));
+                setTextPanel('fonts');
               }}
               className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
                 textPanel === 'fonts' ? 'text-[#ff2d87]' : 'text-white'
