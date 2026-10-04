@@ -155,15 +155,26 @@ function captionLook(style?: string | null) {
   const rotate = Number(parts[3]) || 0;
   const family =
     font === 'modern'
-      ? 'font-light tracking-wide'
+      ? 'Avenir Next, Helvetica Neue, sans-serif'
       : font === 'serif'
-        ? 'font-serif'
+        ? 'Georgia, Times New Roman, serif'
         : font === 'type'
-          ? 'font-mono'
+          ? 'ui-monospace, SFMono-Regular, Menlo, monospace'
           : font === 'strong'
-            ? 'font-black uppercase tracking-wide'
-            : 'font-bold';
-  return { font, color, scale, rotate, family };
+            ? 'Arial Black, Impact, sans-serif'
+            : font === 'script'
+              ? 'Segoe Script, Brush Script MT, cursive'
+              : font === 'condensed'
+                ? 'Arial Narrow, Helvetica Neue, sans-serif'
+                : font === 'poster'
+                  ? 'Impact, Arial Black, sans-serif'
+                  : font === 'hand'
+                    ? 'Segoe Print, Bradley Hand, cursive'
+                    : font === 'soft'
+                      ? 'Trebuchet MS, Gill Sans, sans-serif'
+                      : 'system-ui, sans-serif';
+  const weight = font === 'modern' ? 300 : font === 'strong' || font === 'poster' ? 800 : 700;
+  return { font, color, scale, rotate, family, weight };
 }
 
 function packCaption(font: string, color: string, scale: number, rotate: number) {
@@ -1802,7 +1813,8 @@ function StoryComposer({
   };
 
   const [tool, setTool] = useState<'none' | 'text' | 'crop' | 'sticker' | 'audience'>('none');
-  const textRef = useRef<HTMLInputElement | null>(null);
+  const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const [textPanel, setTextPanel] = useState<'none' | 'fonts' | 'colours'>('none');
 
   useEffect(() => {
     if (tool === 'text') textRef.current?.focus();
@@ -1966,17 +1978,32 @@ function StoryComposer({
             onPointerCancel={onTextUp}
           >
             {tool === 'text' ? (
-              <input
+              <textarea
                 ref={textRef}
                 value={draft.caption}
-                onChange={(e) => onMeta({ caption: e.target.value.slice(0, 80) })}
-                maxLength={80}
+                onChange={(e) => {
+                  onMeta({ caption: e.target.value.slice(0, 180) });
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${e.target.scrollHeight}px`;
+                }}
+                maxLength={180}
+                rows={1}
                 placeholder="Text"
-                className={`w-[70vw] max-w-sm bg-transparent outline-none text-center text-2xl caret-white placeholder:text-white/35 drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] ${captionLook(draft.captionStyle).family}`}
-                style={{ color: draft.captionColor || '#ffffff' }}
+                className="w-[72vw] max-w-[280px] bg-transparent outline-none text-center text-2xl caret-white placeholder:text-white/35 resize-none overflow-hidden whitespace-pre-wrap break-words leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
+                style={{
+                  color: draft.captionColor || '#ffffff',
+                  fontFamily: captionLook(draft.captionStyle).family,
+                  fontWeight: captionLook(draft.captionStyle).weight,
+                }}
               />
             ) : (
-              <p className={`text-2xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)] ${captionLook(draft.captionStyle).family}`}>
+              <p
+                className="text-2xl leading-tight whitespace-pre-wrap break-words drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
+                style={{
+                  fontFamily: captionLook(draft.captionStyle).family,
+                  fontWeight: captionLook(draft.captionStyle).weight,
+                }}
+              >
                 {draft.caption}
               </p>
             )}
@@ -2007,44 +2034,70 @@ function StoryComposer({
             data-text-ui="1"
             className="absolute left-3 right-3 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-30"
           >
-            <div className="flex gap-2 overflow-x-auto scrollbar-none pb-2">
-              {(
-                [
-                  ['classic', 'Classic'],
-                  ['modern', 'Modern'],
-                  ['serif', 'Serif'],
-                  ['type', 'Type'],
-                  ['strong', 'Strong'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onMeta({ captionStyle: id })}
-                  className={`h-8 px-3 rounded-full text-xs shrink-0 ${
-                    draft.captionStyle === id ? 'bg-white text-black' : 'bg-black/50 text-white'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTextPanel((p) => (p === 'fonts' ? 'none' : 'fonts'))}
+                className={`h-8 px-4 rounded-full text-xs ${textPanel === 'fonts' ? 'bg-white text-black' : 'bg-black/50 text-white'}`}
+              >
+                Fonts
+              </button>
+              <button
+                type="button"
+                onClick={() => setTextPanel((p) => (p === 'colours' ? 'none' : 'colours'))}
+                className={`h-8 px-4 rounded-full text-xs ${textPanel === 'colours' ? 'bg-white text-black' : 'bg-black/50 text-white'}`}
+              >
+                Colours
+              </button>
             </div>
-            <div className="flex gap-2 justify-center">
-              {['#ffffff', '#000000', '#ff2d87', '#ff3b30', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2'].map(
-                (c) => (
+            {textPanel === 'fonts' && (
+              <div className="mt-2 flex gap-2 overflow-x-auto scrollbar-none pb-1">
+                {(
+                  [
+                    ['classic', 'Classic'],
+                    ['modern', 'Modern'],
+                    ['serif', 'Serif'],
+                    ['type', 'Type'],
+                    ['strong', 'Strong'],
+                    ['script', 'Script'],
+                    ['condensed', 'Narrow'],
+                    ['poster', 'Poster'],
+                    ['hand', 'Hand'],
+                    ['soft', 'Soft'],
+                  ] as const
+                ).map(([id, label]) => (
                   <button
-                    key={c}
+                    key={id}
                     type="button"
-                    onClick={() => onMeta({ captionColor: c })}
-                    className={`w-6 h-6 rounded-full border ${
-                      draft.captionColor === c ? 'border-white scale-110' : 'border-white/30'
+                    onClick={() => onMeta({ captionStyle: id })}
+                    className={`h-8 px-3 rounded-full text-xs shrink-0 ${
+                      draft.captionStyle === id ? 'bg-white text-black' : 'bg-black/50 text-white'
                     }`}
-                    style={{ background: c }}
-                    aria-label={c}
-                  />
-                )
-              )}
-            </div>
+                    style={{ fontFamily: captionLook(id).family }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {textPanel === 'colours' && (
+              <div className="mt-2 flex gap-2 justify-center flex-wrap">
+                {['#ffffff', '#000000', '#ff2d87', '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2', '#8e8e93'].map(
+                  (c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => onMeta({ captionColor: c })}
+                      className={`w-7 h-7 rounded-full border ${
+                        draft.captionColor === c ? 'border-white scale-110' : 'border-white/30'
+                      }`}
+                      style={{ background: c }}
+                      aria-label={c}
+                    />
+                  )
+                )}
+              </div>
+            )}
             <p className="text-center text-[11px] text-white/70 mt-2">Pinch to size · twist to rotate</p>
           </div>
         )}
@@ -2754,13 +2807,15 @@ function StoryViewer({
       />
       {story.caption ? (
         <p
-          className={`absolute z-[16] max-w-[80%] text-center text-2xl leading-tight pointer-events-none transition-opacity duration-200 ${
+          className={`absolute z-[16] max-w-[80%] text-center text-2xl leading-tight whitespace-pre-wrap break-words pointer-events-none transition-opacity duration-200 ${
             holdUi ? 'opacity-0' : 'opacity-100'
-          } ${captionLook(story.caption_style).family}`}
+          }`}
           style={{
             left: `${Number(story.caption_x ?? 50)}%`,
             top: `${Number(story.caption_y ?? 72)}%`,
             color: captionLook(story.caption_style).color,
+            fontFamily: captionLook(story.caption_style).family,
+            fontWeight: captionLook(story.caption_style).weight,
             transform: `translate(-50%, -50%) rotate(${captionLook(story.caption_style).rotate}deg) scale(${captionLook(story.caption_style).scale})`,
             textShadow: '0 2px 8px rgba(0,0,0,0.85)',
           }}
