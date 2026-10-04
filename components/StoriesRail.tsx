@@ -2206,28 +2206,8 @@ function StoryComposer({
         )}
         {tool === 'crop' && draft.kind === 'image' && (
           <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20">
-            <div className="flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() =>
-                  onMeta({ cropZoom: Math.max(0.35, Number((draft.cropZoom - 0.12).toFixed(2))) })
-                }
-                className="w-9 h-9 rounded-full bg-black/45 text-lg text-white"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  onMeta({ cropZoom: Math.min(3, Number((draft.cropZoom + 0.15).toFixed(2))) })
-                }
-                className="w-9 h-9 rounded-full bg-black/45 text-lg text-white"
-              >
-                +
-              </button>
-            </div>
             <div
-              className="wod-noscroll mt-3 flex gap-3 overflow-x-auto px-1"
+              className="wod-noscroll flex gap-3 overflow-x-auto px-1"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' }}
             >
               {['#000000', '#ffffff', '#ff2d87', '#f4efe6', '#c6a15b', '#7a2430', '#1a1030', '#0a84ff'].map((c) => {
