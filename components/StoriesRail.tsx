@@ -466,7 +466,7 @@ export default function StoriesRail({
       cropX: 0,
       cropY: 0,
       cropZoom: 1,
-      bgColor: null,
+      bgColor: '#000000',
       visibility: 'everyone' as const,
       mirror: false,
       fromLibrary: false,
@@ -825,7 +825,7 @@ export default function StoriesRail({
               cropX: 0,
               cropY: 0,
               cropZoom: 1,
-              bgColor: null,
+              bgColor: '#000000',
               visibility: 'everyone',
               mirror: !!info?.mirror,
             });
@@ -1972,20 +1972,7 @@ function StoryComposer({
             />
           ) : (
             <>
-              {draft.bgColor ? (
-                <div className="absolute inset-0 pointer-events-none" style={{ background: draft.bgColor }} />
-              ) : (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={draft.url}
-                    alt=""
-                    draggable={false}
-                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl pointer-events-none"
-                  />
-                  <div className="absolute inset-0 bg-black/25 pointer-events-none" />
-                </>
-              )}
+              <div className="absolute inset-0 pointer-events-none" style={{ background: draft.bgColor || '#000000' }} />
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={draft.url}
@@ -2190,26 +2177,26 @@ function StoryComposer({
             )}
             {textPanel === 'colours' && (
               <div
-                className="flex gap-3 overflow-x-auto snap-x snap-mandatory px-2 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}
+                className="wod-noscroll flex gap-3 overflow-x-auto px-2"
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain', scrollbarWidth: 'none' }}
               >
-                {['#ffffff', '#111111', '#f4efe6', '#c6a15b', '#ff2d87', '#7a2430', '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2'].map(
+                {['#ffffff', '#000000', '#f4efe6', '#c6a15b', '#ff2d87', '#7a2430', '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2'].map(
                   (c) => (
                     <button
                       key={c}
                       type="button"
                       onClick={() => onMeta({ captionColor: c })}
-                      className={`snap-center w-9 h-9 rounded-full shrink-0 border-2 ${
-                        draft.captionColor === c ? 'border-white scale-110' : 'border-white/35'
-                      }`}
-                      style={{ background: c }}
                       aria-label={c}
+                      className="w-9 h-9 shrink-0 rounded-full p-0 border-0 appearance-none"
+                      style={{
+                        backgroundColor: c,
+                        boxShadow: draft.captionColor === c ? '0 0 0 2px #ffffff' : 'none',
+                      }}
                     />
                   )
                 )}
               </div>
             )}
-            <p className="text-center text-[11px] tracking-wide text-white/60 mt-2">Pinch to size · twist to rotate</p>
           </div>
         )}
         {tool === 'crop' && draft.kind === 'image' && (
@@ -2224,7 +2211,6 @@ function StoryComposer({
               >
                 −
               </button>
-              <p className="text-[11px] text-white/70">Pinch out, then pick a background</p>
               <button
                 type="button"
                 onClick={() =>
@@ -2236,28 +2222,20 @@ function StoryComposer({
               </button>
             </div>
             <div
-              className="wod-noscroll mt-3 flex gap-2.5 overflow-x-auto px-1"
+              className="wod-noscroll mt-3 flex gap-3 overflow-x-auto px-1"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' }}
             >
-              <button
-                type="button"
-                onClick={() => onMeta({ bgColor: null })}
-                className={`h-8 px-3 rounded-full text-[11px] shrink-0 border ${
-                  !draft.bgColor ? 'bg-[#ff2d87] border-[#ff2d87] text-white' : 'bg-black/50 border-white/20 text-white'
-                }`}
-              >
-                Photo
-              </button>
-              {['#ff2d87', '#111111', '#ffffff', '#f4efe6', '#c6a15b', '#7a2430', '#1a1030', '#0a84ff'].map((c) => (
+              {['#000000', '#ffffff', '#ff2d87', '#f4efe6', '#c6a15b', '#7a2430', '#1a1030', '#0a84ff'].map((c) => (
                 <button
                   key={c}
                   type="button"
                   aria-label={c}
                   onClick={() => onMeta({ bgColor: c })}
-                  className={`w-8 h-8 rounded-full shrink-0 border-2 ${
-                    draft.bgColor === c ? 'border-[#ff2d87] scale-110' : 'border-white/40'
-                  }`}
-                  style={{ background: c }}
+                  className="w-9 h-9 shrink-0 rounded-full p-0 border-0 appearance-none"
+                  style={{
+                    backgroundColor: c,
+                    boxShadow: (draft.bgColor || '#000000') === c ? '0 0 0 2px #ffffff' : 'none',
+                  }}
                 />
               ))}
             </div>
