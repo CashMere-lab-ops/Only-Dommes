@@ -2034,24 +2034,45 @@ function StoryComposer({
             data-text-ui="1"
             className="absolute left-3 right-3 top-[max(4.2rem,calc(env(safe-area-inset-top)+3.2rem))] z-30"
           >
-            <div className="flex justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTextPanel((p) => (p === 'fonts' ? 'none' : 'fonts'))}
-                className={`h-8 px-4 rounded-full text-xs ${textPanel === 'fonts' ? 'bg-white text-black' : 'bg-black/50 text-white'}`}
-              >
-                Fonts
-              </button>
-              <button
-                type="button"
-                onClick={() => setTextPanel((p) => (p === 'colours' ? 'none' : 'colours'))}
-                className={`h-8 px-4 rounded-full text-xs ${textPanel === 'colours' ? 'bg-white text-black' : 'bg-black/50 text-white'}`}
-              >
-                Colours
-              </button>
+            <div className="flex justify-center">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/45 p-1 backdrop-blur-md shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+                <button
+                  type="button"
+                  aria-label="Fonts"
+                  onClick={() => setTextPanel((p) => (p === 'fonts' ? 'none' : 'fonts'))}
+                  className={`w-11 h-11 rounded-full border flex items-center justify-center transition-colors ${
+                    textPanel === 'fonts'
+                      ? 'bg-[#f4efe6] text-[#1a140c] border-[#d4b483]'
+                      : 'bg-white/5 text-white border-white/10'
+                  }`}
+                >
+                  <span className="font-serif text-[15px] leading-none tracking-tight">Aa</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Colours"
+                  onClick={() => setTextPanel((p) => (p === 'colours' ? 'none' : 'colours'))}
+                  className={`w-11 h-11 rounded-full border flex items-center justify-center transition-colors ${
+                    textPanel === 'colours'
+                      ? 'bg-[#f4efe6] border-[#d4b483]'
+                      : 'bg-white/5 border-white/10'
+                  }`}
+                >
+                  <span
+                    className="w-[18px] h-[18px] rounded-full border border-black/20 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+                    style={{
+                      background:
+                        'conic-gradient(from 20deg, #f7f3ea, #c6a15b, #ff2d87, #7a2430, #111111, #f7f3ea)',
+                    }}
+                  />
+                </button>
+              </div>
             </div>
             {textPanel === 'fonts' && (
-              <div className="mt-2 flex gap-2 overflow-x-auto scrollbar-none pb-1">
+              <div
+                className="mt-3 flex gap-2 overflow-x-auto snap-x snap-mandatory px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}
+              >
                 {(
                   [
                     ['classic', 'Classic'],
@@ -2070,10 +2091,12 @@ function StoryComposer({
                     key={id}
                     type="button"
                     onClick={() => onMeta({ captionStyle: id })}
-                    className={`h-8 px-3 rounded-full text-xs shrink-0 ${
-                      draft.captionStyle === id ? 'bg-white text-black' : 'bg-black/50 text-white'
+                    className={`snap-center h-11 min-w-[5.4rem] px-4 rounded-full border text-[13px] tracking-wide shrink-0 backdrop-blur-md ${
+                      draft.captionStyle === id
+                        ? 'bg-[#f4efe6] text-[#1a140c] border-[#d4b483]'
+                        : 'bg-black/45 text-white border-white/15'
                     }`}
-                    style={{ fontFamily: captionLook(id).family }}
+                    style={{ fontFamily: captionLook(id).family, fontWeight: captionLook(id).weight }}
                   >
                     {label}
                   </button>
@@ -2081,15 +2104,18 @@ function StoryComposer({
               </div>
             )}
             {textPanel === 'colours' && (
-              <div className="mt-2 flex gap-2 justify-center flex-wrap">
-                {['#ffffff', '#000000', '#ff2d87', '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2', '#8e8e93'].map(
+              <div
+                className="mt-3 flex gap-3 overflow-x-auto snap-x snap-mandatory px-2 pb-1 justify-start [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}
+              >
+                {['#ffffff', '#111111', '#f4efe6', '#c6a15b', '#ff2d87', '#7a2430', '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2'].map(
                   (c) => (
                     <button
                       key={c}
                       type="button"
                       onClick={() => onMeta({ captionColor: c })}
-                      className={`w-7 h-7 rounded-full border ${
-                        draft.captionColor === c ? 'border-white scale-110' : 'border-white/30'
+                      className={`snap-center w-9 h-9 rounded-full shrink-0 border-2 ${
+                        draft.captionColor === c ? 'border-[#d4b483] scale-110' : 'border-white/40'
                       }`}
                       style={{ background: c }}
                       aria-label={c}
@@ -2098,7 +2124,7 @@ function StoryComposer({
                 )}
               </div>
             )}
-            <p className="text-center text-[11px] text-white/70 mt-2">Pinch to size · twist to rotate</p>
+            <p className="text-center text-[11px] tracking-wide text-white/60 mt-2">Pinch to size · twist to rotate</p>
           </div>
         )}
         {tool === 'crop' && draft.kind === 'image' && (
