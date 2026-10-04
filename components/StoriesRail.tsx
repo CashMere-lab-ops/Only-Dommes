@@ -106,7 +106,8 @@ async function cropToStoryFrame(
   panX: number,
   panY: number,
   zoom: number,
-  mode: CropAspect = '9:16'
+  mode: CropAspect = '9:16',
+  bg?: string | null
 ) {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image();
@@ -122,23 +123,28 @@ async function cropToStoryFrame(
   canvas.height = outH;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Crop failed');
-  ctx.fillStyle = '#111';
+  const solid = bg && bg.startsWith('#') ? bg : '';
+  ctx.fillStyle = solid || '#111';
   ctx.fillRect(0, 0, outW, outH);
-  const cover = Math.max(outW / img.width, outH / img.height) * 1.15;
-  ctx.filter = 'blur(48px)';
-  ctx.drawImage(
-    img,
-    (outW - img.width * cover) / 2,
-    (outH - img.height * cover) / 2,
-    img.width * cover,
-    img.height * cover
-  );
-  ctx.filter = 'none';
+  if (!solid) {
+    const cover = Math.max(outW / img.width, outH / img.height) * 1.15;
+    ctx.filter = 'blur(48px)';
+    ctx.drawImage(
+      img,
+      (outW - img.width * cover) / 2,
+      (outH - img.height * cover) / 2,
+      img.width * cover,
+      img.height * cover
+    );
+    ctx.filter = 'none';
+  }
   const contain = Math.min(outW / img.width, outH / img.height) * z;
   const dw = img.width * contain;
   const dh = img.height * contain;
   const dx = (outW - dw) / 2 + panX * outW;
   const dy = (outH - dh) / 2 + panY * outH;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, dx, dy, dw, dh);
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', 0.92)
@@ -214,6 +220,7 @@ export default function StoriesRail({
     cropX: number;
     cropY: number;
     cropZoom: number;
+    bgColor: string | null;
     visibility: 'everyone' | 'followers' | 'subscribers';
     mirror?: boolean;
     fromLibrary?: boolean;
@@ -459,6 +466,7 @@ export default function StoriesRail({
       cropX: 0,
       cropY: 0,
       cropZoom: 1,
+      bgColor: null,
       visibility: 'everyone' as const,
       mirror: false,
       fromLibrary: false,
@@ -500,7 +508,9 @@ export default function StoriesRail({
           draft.url,
           draft.cropX,
           draft.cropY,
-          draft.cropZoom
+          draft.cropZoom,
+          '9:16',
+          draft.bgColor
         );
       }
       const ext = (
@@ -815,6 +825,7 @@ export default function StoriesRail({
               cropX: 0,
               cropY: 0,
               cropZoom: 1,
+              bgColor: null,
               visibility: 'everyone',
               mirror: !!info?.mirror,
             });
@@ -1714,6 +1725,7 @@ function StoryComposer({
     cropX: number;
     cropY: number;
     cropZoom: number;
+    bgColor: string | null;
     visibility: 'everyone' | 'followers' | 'subscribers';
     mirror?: boolean;
     fromLibrary?: boolean;
@@ -1733,6 +1745,7 @@ function StoryComposer({
     cropX?: number;
     cropY?: number;
     cropZoom?: number;
+    bgColor?: string | null;
     visibility?: 'everyone' | 'followers' | 'subscribers';
   }) => void;
 }) {
@@ -1746,20 +1759,26 @@ function StoryComposer({
 
   const textPts = useRef(new Map<number, { x: number; y: number }>());
   const textPinch = useRef<{ dist: number; angle: number; scale: number; rot: number } | null>(null);
-  const textLive = useRef({ x: 50, y: 70 });
+  const textLive = useRef({ x: 50, y: 70, scale: 1, rot: 0 });
 
-  const paintText = (x: number, y: number) => {
-    textLive.current = { x, y };
+  const paintText = () => {
     const el = document.querySelector('[data-story-text="1"]') as HTMLElement | null;
     if (!el) return;
+    const { x, y, scale, rot } = textLive.current;
     el.style.left = `${x}%`;
     el.style.top = `${y}%`;
+    el.style.transform = `translate3d(-50%, -50%, 0) rotate(${rot}deg) scale(${scale})`;
   };
 
   const onTextDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('[data-text-ui]')) return;
     e.stopPropagation();
-    textLive.current = { x: draft.captionX, y: draft.captionY };
+    textLive.current = {
+      x: draft.captionX,
+      y: draft.captionY,
+      scale: draft.captionScale || 1,
+      rot: draft.captionRotate || 0,
+    };
     textPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -1771,8 +1790,8 @@ function StoryComposer({
       textPinch.current = {
         dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1,
         angle: Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x),
-        scale: draft.captionScale || 1,
-        rot: draft.captionRotate || 0,
+        scale: textLive.current.scale,
+        rot: textLive.current.rot,
       };
       dragRef.current = null;
       return;
@@ -1781,34 +1800,47 @@ function StoryComposer({
   };
   const onTextMove = (e: React.PointerEvent) => {
     if (!textPts.current.has(e.pointerId) || !stageRef.current) return;
+    e.preventDefault();
     textPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (textPinch.current && textPts.current.size >= 2) {
       const pts = [...textPts.current.values()];
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
       const angle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
-      const deg = textPinch.current.rot + ((angle - textPinch.current.angle) * 180) / Math.PI;
-      onMeta({
-        captionScale: Math.max(0.6, Math.min(2.8, textPinch.current.scale * (dist / textPinch.current.dist))),
-        captionRotate: deg,
-      });
+      textLive.current.scale = Math.max(
+        0.6,
+        Math.min(2.8, textPinch.current.scale * (dist / textPinch.current.dist))
+      );
+      textLive.current.rot = textPinch.current.rot + ((angle - textPinch.current.angle) * 180) / Math.PI;
+      paintText();
       return;
     }
     if (!dragRef.current) return;
     const moved = Math.hypot(e.clientX - dragRef.current.x, e.clientY - dragRef.current.y);
-    if ((e.target as HTMLElement).tagName === 'INPUT' && moved < 8) return;
+    if ((e.target as HTMLElement).tagName === 'TEXTAREA' && moved < 8) return;
     if (moved >= 8) (e.target as HTMLElement).blur?.();
     const box = stageRef.current.getBoundingClientRect();
-    const x = Math.max(0, Math.min(100, textLive.current.x + ((e.clientX - dragRef.current.x) / box.width) * 100));
-    const y = Math.max(0, Math.min(100, textLive.current.y + ((e.clientY - dragRef.current.y) / box.height) * 100));
+    textLive.current.x = Math.max(
+      8,
+      Math.min(92, textLive.current.x + ((e.clientX - dragRef.current.x) / box.width) * 100)
+    );
+    textLive.current.y = Math.max(
+      10,
+      Math.min(88, textLive.current.y + ((e.clientY - dragRef.current.y) / box.height) * 100)
+    );
     dragRef.current = { x: e.clientX, y: e.clientY };
-    paintText(x, y);
+    paintText();
   };
   const onTextUp = (e: React.PointerEvent) => {
     textPts.current.delete(e.pointerId);
     if (textPts.current.size < 2) textPinch.current = null;
     if (textPts.current.size === 0) {
       dragRef.current = null;
-      onMeta({ captionX: textLive.current.x, captionY: textLive.current.y });
+      onMeta({
+        captionX: textLive.current.x,
+        captionY: textLive.current.y,
+        captionScale: textLive.current.scale,
+        captionRotate: textLive.current.rot,
+      });
     }
   };
 
@@ -1825,6 +1857,7 @@ function StoryComposer({
       className="fixed inset-0 z-[240] bg-black select-none [-webkit-user-select:none] [-webkit-touch-callout:none]"
       onContextMenu={(e) => e.preventDefault()}
     >
+      <style>{`.wod-noscroll::-webkit-scrollbar{display:none;width:0;height:0}`}</style>
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {(() => {
           const canFrame = !!draft.fromLibrary || tool === 'crop';
@@ -1833,7 +1866,7 @@ function StoryComposer({
           const paint = (x: number, y: number, z: number) => {
             liveRef.current = { x, y, z };
             if (frameRef.current) {
-              frameRef.current.style.transform = `translate(-50%, -50%) translate(${x * 70}%, ${y * 70}%) scale(${z})`;
+              frameRef.current.style.transform = `translate3d(-50%, -50%, 0) translate(${x * 70}%, ${y * 70}%) scale(${z})`;
             }
           };
           const onFrameDown = (e: React.PointerEvent) => {
@@ -1873,7 +1906,10 @@ function StoryComposer({
                 Math.min(3, pinchRef.current.zoom * (dist / pinchRef.current.dist))
               );
               if (draft.kind === 'image') paint(liveRef.current.x, liveRef.current.y, next);
-              else onMeta({ cropZoom: next, cropX: 0, cropY: 0 });
+              else {
+                liveRef.current = { x: 0, y: 0, z: next };
+                onMeta({ cropZoom: next, cropX: 0, cropY: 0 });
+              }
               return;
             }
             if (!canMove || !panRef.current || !stageRef.current) return;
@@ -1910,10 +1946,12 @@ function StoryComposer({
           const frameStyle = {
             transform:
               draft.kind === 'image'
-                ? `translate(-50%, -50%) translate(${draft.cropX * 70}%, ${draft.cropY * 70}%) scale(${draft.cropZoom})`
-                : `scale(${draft.cropZoom})`,
+                ? `translate3d(-50%, -50%, 0) translate(${draft.cropX * 70}%, ${draft.cropY * 70}%) scale(${draft.cropZoom})`
+                : `translate3d(0, 0, 0) scale(${draft.cropZoom})`,
             transformOrigin: 'center',
             touchAction: 'none' as const,
+            backfaceVisibility: 'hidden' as const,
+            WebkitBackfaceVisibility: 'hidden' as const,
           };
           return draft.kind === 'video' ? (
             <video
@@ -1934,14 +1972,20 @@ function StoryComposer({
             />
           ) : (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={draft.url}
-                alt=""
-                draggable={false}
-                className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl pointer-events-none"
-              />
-              <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+              {draft.bgColor ? (
+                <div className="absolute inset-0 pointer-events-none" style={{ background: draft.bgColor }} />
+              ) : (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={draft.url}
+                    alt=""
+                    draggable={false}
+                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl pointer-events-none"
+                  />
+                  <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+                </>
+              )}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={draft.url}
@@ -1968,7 +2012,7 @@ function StoryComposer({
             style={{
               left: `${draft.captionX}%`,
               top: `${draft.captionY}%`,
-              transform: `translate(-50%, -50%) rotate(${draft.captionRotate || 0}deg) scale(${draft.captionScale || 1})`,
+              transform: `translate3d(-50%, -50%, 0) rotate(${draft.captionRotate || 0}deg) scale(${draft.captionScale || 1})`,
               color: draft.captionColor || '#ffffff',
               touchAction: 'none',
             }}
@@ -2029,7 +2073,7 @@ function StoryComposer({
           >
             <X size={20} strokeWidth={2.2} />
           </button>
-          <div className="pointer-events-auto flex flex-col items-center gap-3.5 pt-1">
+          <div className="pointer-events-auto flex flex-col items-center gap-3.5 mt-8">
             <button
               type="button"
               aria-label="Fonts"
@@ -2038,7 +2082,7 @@ function StoryComposer({
                 setTextPanel((p) => (p === 'fonts' ? 'none' : 'fonts'));
               }}
               className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
-                textPanel === 'fonts' ? 'text-white' : 'text-white/90'
+                textPanel === 'fonts' ? 'text-[#ff2d87]' : 'text-white'
               }`}
             >
               <span className="font-serif text-[20px] leading-none tracking-tight">Aa</span>
@@ -2051,7 +2095,7 @@ function StoryComposer({
                 setTextPanel((p) => (p === 'colours' ? 'none' : 'colours'));
               }}
               className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
-                textPanel === 'colours' ? 'text-white' : 'text-white/90'
+                textPanel === 'colours' ? 'text-[#ff2d87]' : 'text-white'
               }`}
             >
               <Palette size={22} strokeWidth={1.8} />
@@ -2063,7 +2107,9 @@ function StoryComposer({
                 setTextPanel('none');
                 setTool((t) => (t === 'sticker' ? 'none' : 'sticker'));
               }}
-              className="w-10 h-10 flex items-center justify-center text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+              className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
+                tool === 'sticker' ? 'text-[#ff2d87]' : 'text-white'
+              }`}
             >
               <Bookmark size={22} strokeWidth={1.8} />
             </button>
@@ -2075,7 +2121,9 @@ function StoryComposer({
                 setTextPanel('none');
                 setTool((t) => (t === 'crop' ? 'none' : 'crop'));
               }}
-              className="w-10 h-10 flex items-center justify-center text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] disabled:opacity-30"
+              className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] disabled:opacity-30 ${
+                tool === 'crop' ? 'text-[#ff2d87]' : 'text-white'
+              }`}
             >
               <Crop size={22} strokeWidth={1.8} />
             </button>
@@ -2086,7 +2134,9 @@ function StoryComposer({
                 setTextPanel('none');
                 setTool((t) => (t === 'audience' ? 'none' : 'audience'));
               }}
-              className="w-10 h-10 flex items-center justify-center text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+              className={`w-10 h-10 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
+                tool === 'audience' ? 'text-[#ff2d87]' : 'text-white'
+              }`}
             >
               <Lock size={20} strokeWidth={1.8} />
             </button>
@@ -2099,8 +2149,14 @@ function StoryComposer({
           >
             {textPanel === 'fonts' && (
               <div
-                className="flex gap-2 overflow-x-auto snap-x snap-mandatory px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}
+                className="wod-noscroll flex gap-2 overflow-x-auto px-1"
+                style={{
+                  WebkitOverflowScrolling: 'touch',
+                  touchAction: 'pan-x',
+                  overscrollBehaviorX: 'contain',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none',
+                }}
               >
                 {(
                   [
@@ -2120,9 +2176,9 @@ function StoryComposer({
                     key={id}
                     type="button"
                     onClick={() => onMeta({ captionStyle: id })}
-                    className={`snap-center h-10 min-w-[5.2rem] px-4 rounded-full border text-[13px] tracking-wide shrink-0 backdrop-blur-md ${
+                    className={`h-10 min-w-[5.2rem] px-4 rounded-full border text-[13px] tracking-wide shrink-0 backdrop-blur-md ${
                       draft.captionStyle === id
-                        ? 'bg-[#f4efe6] text-[#1a140c] border-[#d4b483]'
+                        ? 'bg-[#ff2d87] text-white border-[#ff2d87]'
                         : 'bg-black/50 text-white border-white/15'
                     }`}
                     style={{ fontFamily: captionLook(id).family, fontWeight: captionLook(id).weight }}
@@ -2157,26 +2213,54 @@ function StoryComposer({
           </div>
         )}
         {tool === 'crop' && draft.kind === 'image' && (
-          <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20 flex items-center justify-center gap-3">
+          <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20">
+            <div className="flex items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() =>
                   onMeta({ cropZoom: Math.max(0.35, Number((draft.cropZoom - 0.12).toFixed(2))) })
                 }
-                className="w-9 h-9 rounded-full bg-black/45 text-lg"
+                className="w-9 h-9 rounded-full bg-black/45 text-lg text-white"
               >
                 −
               </button>
-              <p className="text-[11px] text-white/70">Pinch out to show the background</p>
+              <p className="text-[11px] text-white/70">Pinch out, then pick a background</p>
               <button
                 type="button"
                 onClick={() =>
                   onMeta({ cropZoom: Math.min(3, Number((draft.cropZoom + 0.15).toFixed(2))) })
                 }
-                className="w-9 h-9 rounded-full bg-black/45 text-lg"
+                className="w-9 h-9 rounded-full bg-black/45 text-lg text-white"
               >
                 +
               </button>
+            </div>
+            <div
+              className="wod-noscroll mt-3 flex gap-2.5 overflow-x-auto px-1"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' }}
+            >
+              <button
+                type="button"
+                onClick={() => onMeta({ bgColor: null })}
+                className={`h-8 px-3 rounded-full text-[11px] shrink-0 border ${
+                  !draft.bgColor ? 'bg-[#ff2d87] border-[#ff2d87] text-white' : 'bg-black/50 border-white/20 text-white'
+                }`}
+              >
+                Photo
+              </button>
+              {['#ff2d87', '#111111', '#ffffff', '#f4efe6', '#c6a15b', '#7a2430', '#1a1030', '#0a84ff'].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={c}
+                  onClick={() => onMeta({ bgColor: c })}
+                  className={`w-8 h-8 rounded-full shrink-0 border-2 ${
+                    draft.bgColor === c ? 'border-[#ff2d87] scale-110' : 'border-white/40'
+                  }`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
           </div>
         )}
         {tool === 'sticker' && (
@@ -2237,7 +2321,7 @@ function StoryComposer({
               setTextPanel('none');
               setTool((t) => (t === 'audience' ? 'none' : 'audience'));
             }}
-            className="h-11 pl-1.5 pr-4 rounded-full bg-[#2a2a2e]/90 border border-white/10 flex items-center gap-2 text-white"
+            className="h-11 pl-1.5 pr-4 rounded-full bg-black/55 border border-[#ff2d87]/50 flex items-center gap-2 text-white"
           >
             <span className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center">
               <Lock size={14} />
@@ -2255,9 +2339,9 @@ function StoryComposer({
             onClick={onShare}
             disabled={uploading}
             aria-label="Share story"
-            className="w-12 h-12 rounded-full bg-[#ff2d87] text-white flex items-center justify-center shadow-[0_6px_18px_rgba(255,45,135,0.45)] disabled:opacity-60 active:scale-95 transition-transform"
+            className="h-11 px-5 rounded-full bg-[#ff2d87] text-white text-sm font-semibold tracking-wide shadow-[0_6px_18px_rgba(255,45,135,0.45)] disabled:opacity-60 active:scale-95 transition-transform"
           >
-            {uploading ? <Loader2 size={18} className="animate-spin" /> : <ChevronRight size={24} strokeWidth={2.4} />}
+            {uploading ? <Loader2 size={16} className="animate-spin" /> : 'Share Now'}
           </button>
         </div>
       </div>
