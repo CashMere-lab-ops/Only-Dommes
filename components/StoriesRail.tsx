@@ -2181,19 +2181,24 @@ function StoryComposer({
                 style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain', scrollbarWidth: 'none' }}
               >
                 {['#ffffff', '#000000', '#f4efe6', '#c6a15b', '#ff2d87', '#7a2430', '#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2'].map(
-                  (c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => onMeta({ captionColor: c })}
-                      aria-label={c}
-                      className="w-9 h-9 shrink-0 rounded-full p-0 border-0 appearance-none"
-                      style={{
-                        backgroundColor: c,
-                        boxShadow: draft.captionColor === c ? '0 0 0 2px #ffffff' : 'none',
-                      }}
-                    />
-                  )
+                  (c) => {
+                    const on = draft.captionColor === c;
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => onMeta({ captionColor: c })}
+                        aria-label={c}
+                        className="relative w-9 h-9 shrink-0 rounded-full overflow-hidden border-0 p-0 appearance-none"
+                        style={{ backgroundColor: '#ffffff', WebkitAppearance: 'none' }}
+                      >
+                        <span
+                          className="absolute rounded-full"
+                          style={{ inset: on ? 3 : 0, backgroundColor: c }}
+                        />
+                      </button>
+                    );
+                  }
                 )}
               </div>
             )}
@@ -2225,19 +2230,24 @@ function StoryComposer({
               className="wod-noscroll mt-3 flex gap-3 overflow-x-auto px-1"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' }}
             >
-              {['#000000', '#ffffff', '#ff2d87', '#f4efe6', '#c6a15b', '#7a2430', '#1a1030', '#0a84ff'].map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={c}
-                  onClick={() => onMeta({ bgColor: c })}
-                  className="w-9 h-9 shrink-0 rounded-full p-0 border-0 appearance-none"
-                  style={{
-                    backgroundColor: c,
-                    boxShadow: (draft.bgColor || '#000000') === c ? '0 0 0 2px #ffffff' : 'none',
-                  }}
-                />
-              ))}
+              {['#000000', '#ffffff', '#ff2d87', '#f4efe6', '#c6a15b', '#7a2430', '#1a1030', '#0a84ff'].map((c) => {
+                const on = (draft.bgColor || '#000000') === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-label={c}
+                    onClick={() => onMeta({ bgColor: c })}
+                    className="relative w-9 h-9 shrink-0 rounded-full overflow-hidden border-0 p-0 appearance-none"
+                    style={{ backgroundColor: '#ffffff', WebkitAppearance: 'none' }}
+                  >
+                    <span
+                      className="absolute rounded-full"
+                      style={{ inset: on ? 3 : 0, backgroundColor: c }}
+                    />
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
