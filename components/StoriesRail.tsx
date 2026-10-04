@@ -2007,10 +2007,10 @@ function StoryComposer({
         })()}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
         <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
-        {(tool === 'text' || draft.caption.trim()) && (
+        {((tool === 'text' && draft.caption.trim()) || draft.caption.trim()) && (
           <div
             data-story-text="1"
-            className="absolute z-20 max-w-[86%] text-center"
+            className="absolute z-20 max-w-[86%] text-center pointer-events-none"
             style={{
               left: `${draft.captionX}%`,
               top: `${draft.captionY}%`,
@@ -2032,19 +2032,23 @@ function StoryComposer({
                   e.target.style.height = 'auto';
                   e.target.style.height = `${e.target.scrollHeight}px`;
                 }}
+                onBlur={() => {
+                  if (!draft.caption.trim()) finishText();
+                }}
                 maxLength={180}
                 rows={1}
-                placeholder="Text"
-                className="w-[72vw] max-w-[280px] bg-transparent outline-none text-center text-2xl caret-white placeholder:text-white/35 resize-none overflow-hidden whitespace-pre-wrap break-words leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
+                placeholder=""
+                className="pointer-events-auto min-w-[2ch] max-w-[280px] bg-transparent outline-none text-center text-2xl caret-white resize-none overflow-hidden whitespace-pre-wrap break-words leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
                 style={{
                   color: draft.captionColor || '#ffffff',
                   fontFamily: captionLook(draft.captionStyle).family,
                   fontWeight: captionLook(draft.captionStyle).weight,
+                  width: draft.caption.trim() ? '72vw' : '2ch',
                 }}
               />
             ) : (
               <p
-                className="text-2xl leading-tight whitespace-pre-wrap break-words drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
+                className="pointer-events-auto text-2xl leading-tight whitespace-pre-wrap break-words drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
                 style={{
                   fontFamily: captionLook(draft.captionStyle).family,
                   fontWeight: captionLook(draft.captionStyle).weight,
@@ -2054,6 +2058,18 @@ function StoryComposer({
               </p>
             )}
           </div>
+        )}
+        {tool === 'text' && !draft.caption.trim() && (
+          <textarea
+            ref={textRef}
+            value=""
+            onChange={(e) => onMeta({ caption: e.target.value.slice(0, 180) })}
+            maxLength={180}
+            rows={1}
+            aria-label="Story text"
+            className="absolute z-20 left-1/2 top-[70%] -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-transparent text-transparent caret-white outline-none"
+            style={{ left: `${draft.captionX}%`, top: `${draft.captionY}%` }}
+          />
         )}
         {draft.sticker ? (
           <div className="absolute left-1/2 -translate-x-1/2 bottom-28 z-20 pointer-events-none">
