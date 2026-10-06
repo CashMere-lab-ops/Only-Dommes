@@ -2247,29 +2247,39 @@ function StoryComposer({
           </div>
         )}
         {tool === 'sticker' && (
-          <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20 flex gap-2 justify-center">
-            {(
-              [
-                [null, 'None'],
-                ['subscribe', 'Subscribe'],
-                ['live', 'Live'],
-                ['shop', 'Shop'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => {
-                  onMeta({ sticker: id });
-                  setTool('none');
-                }}
-                className={`h-8 px-3 rounded-full text-[11px] ${
-                  draft.sticker === id ? 'bg-white text-black' : 'bg-black/45 text-white/80'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20">
+            <div
+              className="wod-noscroll flex gap-2 overflow-x-auto px-1"
+              style={{
+                WebkitOverflowScrolling: 'touch',
+                touchAction: 'pan-x',
+                overscrollBehaviorX: 'contain',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+              }}
+            >
+              {(
+                [
+                  [null, 'None'],
+                  ['subscribe', 'Subscribe'],
+                  ['live', 'Live'],
+                  ['shop', 'Shop'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => onMeta({ sticker: id })}
+                  className={`h-10 min-w-[5.4rem] px-4 rounded-full border text-[13px] tracking-wide shrink-0 ${
+                    draft.sticker === id
+                      ? 'bg-[#ff2d87] text-white border-[#ff2d87]'
+                      : 'bg-black/50 text-white border-white/15'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {tool === 'audience' && (
