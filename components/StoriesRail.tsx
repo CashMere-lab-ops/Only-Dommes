@@ -2057,11 +2057,12 @@ function StoryComposer({
         )}
         {draft.sticker ? (
           <div className="absolute left-1/2 -translate-x-1/2 bottom-28 z-20 pointer-events-none">
-            <span className="inline-flex items-center h-9 px-4 rounded-full bg-white text-black text-sm font-semibold">
+            <span className="inline-flex items-center gap-2 h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
               {draft.sticker === 'subscribe'
                 ? 'Subscribe'
                 : draft.sticker === 'live'
-                  ? 'Join live'
+                  ? 'Live'
                   : 'Shop'}
             </span>
           </div>
@@ -2249,7 +2250,7 @@ function StoryComposer({
         {tool === 'sticker' && (
           <div className="absolute left-3 right-16 top-[max(4.4rem,calc(env(safe-area-inset-top)+3.4rem))] z-20">
             <div
-              className="wod-noscroll flex gap-2 overflow-x-auto px-1"
+              className="wod-noscroll flex gap-2.5 overflow-x-auto px-1"
               style={{
                 WebkitOverflowScrolling: 'touch',
                 touchAction: 'pan-x',
@@ -2270,10 +2271,10 @@ function StoryComposer({
                   key={label}
                   type="button"
                   onClick={() => onMeta({ sticker: id })}
-                  className={`h-10 min-w-[5.4rem] px-4 rounded-full border text-[13px] tracking-wide shrink-0 ${
+                  className={`h-11 min-w-[6.2rem] px-4 rounded-full border text-[11px] uppercase tracking-[0.18em] shrink-0 backdrop-blur-md ${
                     draft.sticker === id
-                      ? 'bg-[#ff2d87] text-white border-[#ff2d87]'
-                      : 'bg-black/50 text-white border-white/15'
+                      ? 'bg-[#f4efe6] text-[#1a140c] border-[#d4b483]'
+                      : 'bg-black/45 text-[#f4efe6] border-white/15'
                   }`}
                 >
                   {label}
@@ -3098,12 +3099,13 @@ function StoryViewer({
                   : `/${group.creator.username || ''}`
             }
             onClick={onClose}
-            className="h-9 px-4 rounded-full bg-white text-black text-[13px] font-semibold flex items-center"
+            className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2"
           >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
             {story.sticker === 'subscribe'
               ? 'Subscribe'
               : story.sticker === 'live'
-                ? 'Join live'
+                ? 'Live'
                 : 'Shop'}
           </Link>
         </div>
