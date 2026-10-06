@@ -3270,7 +3270,7 @@ function StoryViewer({
         />
       )}
 
-      {stickerKind(story.sticker) && !isOwn && (
+      {stickerKind(story.sticker) && (
         <div
           className={`absolute z-[25] transition-opacity duration-200 ${
             holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
@@ -3281,24 +3281,35 @@ function StoryViewer({
             transform: `translate3d(-50%, -50%, 0) rotate(${stickerPlace(story.sticker).rotate}deg) scale(${stickerPlace(story.sticker).scale})`,
           }}
         >
-          <Link
-            href={
-              stickerKind(story.sticker) === 'live'
-                ? liveHref || '/live'
-                : stickerKind(story.sticker) === 'shop'
-                  ? '/shop'
-                  : `/${group.creator.username || ''}`
-            }
-            onClick={onClose}
-            className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
-            {stickerKind(story.sticker) === 'subscribe'
-              ? 'Subscribe'
-              : stickerKind(story.sticker) === 'live'
-                ? 'Live'
-                : 'Shop'}
-          </Link>
+          {isOwn ? (
+            <span className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
+              {stickerKind(story.sticker) === 'subscribe'
+                ? 'Subscribe'
+                : stickerKind(story.sticker) === 'live'
+                  ? 'Live'
+                  : 'Shop'}
+            </span>
+          ) : (
+            <Link
+              href={
+                stickerKind(story.sticker) === 'live'
+                  ? liveHref || '/live'
+                  : stickerKind(story.sticker) === 'shop'
+                    ? '/shop'
+                    : `/${group.creator.username || ''}`
+              }
+              onClick={onClose}
+              className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
+              {stickerKind(story.sticker) === 'subscribe'
+                ? 'Subscribe'
+                : stickerKind(story.sticker) === 'live'
+                  ? 'Live'
+                  : 'Shop'}
+            </Link>
+          )}
         </div>
       )}
 
