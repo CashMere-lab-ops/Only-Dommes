@@ -187,6 +187,33 @@ function packCaption(font: string, color: string, scale: number, rotate: number)
   return `${font}|${color}|${Number(scale.toFixed(2))}|${Math.round(rotate)}`;
 }
 
+function stickerKind(raw?: string | null) {
+  const kind = (raw || '').split('|')[0];
+  return kind === 'subscribe' || kind === 'live' || kind === 'shop' ? kind : null;
+}
+
+function stickerPlace(raw?: string | null) {
+  const parts = (raw || '').split('|');
+  return {
+    kind: stickerKind(raw),
+    x: Number(parts[1]) || 50,
+    y: Number(parts[2]) || 78,
+    scale: Math.max(0.6, Math.min(2.8, Number(parts[3]) || 1)),
+    rotate: Number(parts[4]) || 0,
+  };
+}
+
+function packSticker(
+  kind: 'subscribe' | 'live' | 'shop' | null,
+  x: number,
+  y: number,
+  scale: number,
+  rotate: number
+) {
+  if (!kind) return null;
+  return `${kind}|${x.toFixed(1)}|${y.toFixed(1)}|${scale.toFixed(2)}|${Math.round(rotate)}`;
+}
+
 export default function StoriesRail({
   userId,
   isCreator,
@@ -217,6 +244,10 @@ export default function StoriesRail({
     captionScale: number;
     captionRotate: number;
     sticker: 'subscribe' | 'live' | 'shop' | null;
+    stickerX: number;
+    stickerY: number;
+    stickerScale: number;
+    stickerRotate: number;
     cropX: number;
     cropY: number;
     cropZoom: number;
@@ -463,6 +494,10 @@ export default function StoriesRail({
     captionScale: 1,
     captionRotate: 0,
       sticker: null,
+      stickerX: 50,
+      stickerY: 78,
+      stickerScale: 1,
+      stickerRotate: 0,
       cropX: 0,
       cropY: 0,
       cropZoom: 1,
@@ -556,7 +591,13 @@ export default function StoriesRail({
           draft.captionScale,
           draft.captionRotate
         ),
-        sticker: draft.sticker,
+        sticker: packSticker(
+          draft.sticker,
+          draft.stickerX,
+          draft.stickerY,
+          draft.stickerScale,
+          draft.stickerRotate
+        ),
         visibility: draft.visibility || 'everyone',
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
@@ -822,6 +863,10 @@ export default function StoriesRail({
               captionScale: 1,
               captionRotate: 0,
               sticker: null,
+              stickerX: 50,
+              stickerY: 78,
+              stickerScale: 1,
+              stickerRotate: 0,
               cropX: 0,
               cropY: 0,
               cropZoom: 1,
@@ -1722,6 +1767,10 @@ function StoryComposer({
     captionScale: number;
     captionRotate: number;
     sticker: 'subscribe' | 'live' | 'shop' | null;
+    stickerX: number;
+    stickerY: number;
+    stickerScale: number;
+    stickerRotate: number;
     cropX: number;
     cropY: number;
     cropZoom: number;
@@ -1742,6 +1791,10 @@ function StoryComposer({
     captionScale?: number;
     captionRotate?: number;
     sticker?: 'subscribe' | 'live' | 'shop' | null;
+    stickerX?: number;
+    stickerY?: number;
+    stickerScale?: number;
+    stickerRotate?: number;
     cropX?: number;
     cropY?: number;
     cropZoom?: number;
@@ -1840,6 +1893,90 @@ function StoryComposer({
         captionY: textLive.current.y,
         captionScale: textLive.current.scale,
         captionRotate: textLive.current.rot,
+      });
+    }
+  };
+
+  const stickerPts = useRef(new Map<number, { x: number; y: number }>());
+  const stickerPinch = useRef<{ dist: number; angle: number; scale: number; rot: number } | null>(null);
+  const stickerDrag = useRef<{ x: number; y: number } | null>(null);
+  const stickerLive = useRef({ x: 50, y: 78, scale: 1, rot: 0 });
+
+  const paintSticker = () => {
+    const el = document.querySelector('[data-story-sticker="1"]') as HTMLElement | null;
+    if (!el) return;
+    const { x, y, scale, rot } = stickerLive.current;
+    el.style.left = `${x}%`;
+    el.style.top = `${y}%`;
+    el.style.transform = `translate3d(-50%, -50%, 0) rotate(${rot}deg) scale(${scale})`;
+  };
+  const onStickerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    stickerLive.current = {
+      x: draft.stickerX,
+      y: draft.stickerY,
+      scale: draft.stickerScale || 1,
+      rot: draft.stickerRotate || 0,
+    };
+    stickerPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (stickerPts.current.size >= 2) {
+      const pts = [...stickerPts.current.values()];
+      stickerPinch.current = {
+        dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1,
+        angle: Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x),
+        scale: stickerLive.current.scale,
+        rot: stickerLive.current.rot,
+      };
+      stickerDrag.current = null;
+      return;
+    }
+    stickerDrag.current = { x: e.clientX, y: e.clientY };
+  };
+  const onStickerMove = (e: React.PointerEvent) => {
+    if (!stickerPts.current.has(e.pointerId) || !stageRef.current) return;
+    e.preventDefault();
+    stickerPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (stickerPinch.current && stickerPts.current.size >= 2) {
+      const pts = [...stickerPts.current.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const angle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+      stickerLive.current.scale = Math.max(
+        0.6,
+        Math.min(2.8, stickerPinch.current.scale * (dist / stickerPinch.current.dist))
+      );
+      stickerLive.current.rot =
+        stickerPinch.current.rot + ((angle - stickerPinch.current.angle) * 180) / Math.PI;
+      paintSticker();
+      return;
+    }
+    if (!stickerDrag.current) return;
+    const box = stageRef.current.getBoundingClientRect();
+    stickerLive.current.x = Math.max(
+      12,
+      Math.min(88, stickerLive.current.x + ((e.clientX - stickerDrag.current.x) / box.width) * 100)
+    );
+    stickerLive.current.y = Math.max(
+      14,
+      Math.min(86, stickerLive.current.y + ((e.clientY - stickerDrag.current.y) / box.height) * 100)
+    );
+    stickerDrag.current = { x: e.clientX, y: e.clientY };
+    paintSticker();
+  };
+  const onStickerUp = (e: React.PointerEvent) => {
+    stickerPts.current.delete(e.pointerId);
+    if (stickerPts.current.size < 2) stickerPinch.current = null;
+    if (stickerPts.current.size === 0) {
+      stickerDrag.current = null;
+      onMeta({
+        stickerX: stickerLive.current.x,
+        stickerY: stickerLive.current.y,
+        stickerScale: stickerLive.current.scale,
+        stickerRotate: stickerLive.current.rot,
       });
     }
   };
@@ -2056,7 +2193,19 @@ function StoryComposer({
           </div>
         )}
         {draft.sticker ? (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-28 z-20 pointer-events-none">
+          <div
+            data-story-sticker="1"
+            className="absolute z-20 touch-none"
+            style={{
+              left: `${draft.stickerX}%`,
+              top: `${draft.stickerY}%`,
+              transform: `translate3d(-50%, -50%, 0) rotate(${draft.stickerRotate || 0}deg) scale(${draft.stickerScale || 1})`,
+            }}
+            onPointerDown={onStickerDown}
+            onPointerMove={onStickerMove}
+            onPointerUp={onStickerUp}
+            onPointerCancel={onStickerUp}
+          >
             <span className="inline-flex items-center gap-2 h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
               {draft.sticker === 'subscribe'
@@ -2447,7 +2596,7 @@ function StoryViewer({
 
   useEffect(() => {
     setLiveHref(null);
-    if (!story || story.sticker !== 'live') return;
+    if (!story || stickerKind(story.sticker) !== 'live') return;
     let alive = true;
     (async () => {
       const { data } = await supabase
@@ -3084,17 +3233,22 @@ function StoryViewer({
         />
       )}
 
-      {story.sticker && !isOwn && (
+      {stickerKind(story.sticker) && !isOwn && (
         <div
-          className={`absolute left-0 right-0 bottom-24 z-[25] flex justify-center transition-opacity duration-200 ${
+          className={`absolute z-[25] transition-opacity duration-200 ${
             holdUi ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
+          style={{
+            left: `${stickerPlace(story.sticker).x}%`,
+            top: `${stickerPlace(story.sticker).y}%`,
+            transform: `translate3d(-50%, -50%, 0) rotate(${stickerPlace(story.sticker).rotate}deg) scale(${stickerPlace(story.sticker).scale})`,
+          }}
         >
           <Link
             href={
-              story.sticker === 'live'
+              stickerKind(story.sticker) === 'live'
                 ? liveHref || '/live'
-                : story.sticker === 'shop'
+                : stickerKind(story.sticker) === 'shop'
                   ? '/shop'
                   : `/${group.creator.username || ''}`
             }
@@ -3102,9 +3256,9 @@ function StoryViewer({
             className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
-            {story.sticker === 'subscribe'
+            {stickerKind(story.sticker) === 'subscribe'
               ? 'Subscribe'
-              : story.sticker === 'live'
+              : stickerKind(story.sticker) === 'live'
                 ? 'Live'
                 : 'Shop'}
           </Link>
