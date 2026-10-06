@@ -1898,26 +1898,39 @@ function StoryComposer({
   };
 
   const stickerPts = useRef(new Map<number, { x: number; y: number }>());
-  const stickerPinch = useRef<{ dist: number; angle: number; scale: number; rot: number } | null>(null);
+  const stickerPinch = useRef<{
+    dist: number;
+    angle: number;
+    scale: number;
+    rot: number;
+    cx: number;
+    cy: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const stickerDrag = useRef<{ x: number; y: number } | null>(null);
   const stickerLive = useRef({ x: 50, y: 78, scale: 1, rot: 0 });
+  const stickerIgnoreDrag = useRef(false);
 
   const paintSticker = () => {
     const el = document.querySelector('[data-story-sticker="1"]') as HTMLElement | null;
+    const inner = document.querySelector('[data-story-sticker-inner="1"]') as HTMLElement | null;
     if (!el) return;
     const { x, y, scale, rot } = stickerLive.current;
     el.style.left = `${x}%`;
     el.style.top = `${y}%`;
-    el.style.transform = `translate3d(-50%, -50%, 0) rotate(${rot}deg) scale(${scale})`;
+    if (inner) inner.style.transform = `rotate(${rot}deg) scale(${scale})`;
   };
   const onStickerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
-    stickerLive.current = {
-      x: draft.stickerX,
-      y: draft.stickerY,
-      scale: draft.stickerScale || 1,
-      rot: draft.stickerRotate || 0,
-    };
+    if (stickerPts.current.size === 0) {
+      stickerLive.current = {
+        x: draft.stickerX ?? 50,
+        y: draft.stickerY ?? 78,
+        scale: draft.stickerScale || 1,
+        rot: draft.stickerRotate || 0,
+      };
+    }
     stickerPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -1931,31 +1944,47 @@ function StoryComposer({
         angle: Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x),
         scale: stickerLive.current.scale,
         rot: stickerLive.current.rot,
+        cx: (pts[0].x + pts[1].x) / 2,
+        cy: (pts[0].y + pts[1].y) / 2,
+        x: stickerLive.current.x,
+        y: stickerLive.current.y,
       };
       stickerDrag.current = null;
+      stickerIgnoreDrag.current = true;
       return;
     }
-    stickerDrag.current = { x: e.clientX, y: e.clientY };
+    if (!stickerIgnoreDrag.current) stickerDrag.current = { x: e.clientX, y: e.clientY };
   };
   const onStickerMove = (e: React.PointerEvent) => {
     if (!stickerPts.current.has(e.pointerId) || !stageRef.current) return;
     e.preventDefault();
     stickerPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const box = stageRef.current.getBoundingClientRect();
     if (stickerPinch.current && stickerPts.current.size >= 2) {
       const pts = [...stickerPts.current.values()];
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
       const angle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
-      stickerLive.current.scale = Math.max(
-        0.6,
-        Math.min(2.8, stickerPinch.current.scale * (dist / stickerPinch.current.dist))
+      const cx = (pts[0].x + pts[1].x) / 2;
+      const cy = (pts[0].y + pts[1].y) / 2;
+      const ratio = dist / stickerPinch.current.dist;
+      const eased = 1 + (ratio - 1) * 0.9;
+      stickerLive.current.scale = Math.max(0.55, Math.min(2.6, stickerPinch.current.scale * eased));
+      let deg = ((angle - stickerPinch.current.angle) * 180) / Math.PI;
+      if (deg > 180) deg -= 360;
+      if (deg < -180) deg += 360;
+      stickerLive.current.rot = stickerPinch.current.rot + deg;
+      stickerLive.current.x = Math.max(
+        12,
+        Math.min(88, stickerPinch.current.x + ((cx - stickerPinch.current.cx) / box.width) * 100)
       );
-      stickerLive.current.rot =
-        stickerPinch.current.rot + ((angle - stickerPinch.current.angle) * 180) / Math.PI;
+      stickerLive.current.y = Math.max(
+        14,
+        Math.min(86, stickerPinch.current.y + ((cy - stickerPinch.current.cy) / box.height) * 100)
+      );
       paintSticker();
       return;
     }
-    if (!stickerDrag.current) return;
-    const box = stageRef.current.getBoundingClientRect();
+    if (stickerIgnoreDrag.current || !stickerDrag.current) return;
     stickerLive.current.x = Math.max(
       12,
       Math.min(88, stickerLive.current.x + ((e.clientX - stickerDrag.current.x) / box.width) * 100)
@@ -1972,6 +2001,7 @@ function StoryComposer({
     if (stickerPts.current.size < 2) stickerPinch.current = null;
     if (stickerPts.current.size === 0) {
       stickerDrag.current = null;
+      stickerIgnoreDrag.current = false;
       onMeta({
         stickerX: stickerLive.current.x,
         stickerY: stickerLive.current.y,
@@ -2197,16 +2227,23 @@ function StoryComposer({
             data-story-sticker="1"
             className="absolute z-20 touch-none"
             style={{
-              left: `${draft.stickerX}%`,
-              top: `${draft.stickerY}%`,
-              transform: `translate3d(-50%, -50%, 0) rotate(${draft.stickerRotate || 0}deg) scale(${draft.stickerScale || 1})`,
+              left: `${draft.stickerX ?? 50}%`,
+              top: `${draft.stickerY ?? 78}%`,
+              transform: 'translate3d(-50%, -50%, 0)',
             }}
             onPointerDown={onStickerDown}
             onPointerMove={onStickerMove}
             onPointerUp={onStickerUp}
             onPointerCancel={onStickerUp}
           >
-            <span className="inline-flex items-center gap-2 h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+            <span
+              data-story-sticker-inner="1"
+              className="inline-flex items-center gap-2 h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+              style={{
+                transform: `rotate(${draft.stickerRotate || 0}deg) scale(${draft.stickerScale || 1})`,
+                transformOrigin: 'center center',
+              }}
+            >
               <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
               {draft.sticker === 'subscribe'
                 ? 'Subscribe'
