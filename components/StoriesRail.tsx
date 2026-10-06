@@ -2640,7 +2640,7 @@ function StoryViewer({
         .from('live_streams')
         .select('id')
         .eq('creator_id', story.creator_id)
-        .eq('status', 'live')
+        .in('status', ['live', 'active', 'idle_ready'])
         .maybeSingle();
       if (alive) setLiveHref(data?.id ? `/live/${data.id}` : '/live');
     })();
@@ -3281,35 +3281,25 @@ function StoryViewer({
             transform: `translate3d(-50%, -50%, 0) rotate(${stickerPlace(story.sticker).rotate}deg) scale(${stickerPlace(story.sticker).scale})`,
           }}
         >
-          {isOwn ? (
-            <span className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
-              {stickerKind(story.sticker) === 'subscribe'
-                ? 'Subscribe'
-                : stickerKind(story.sticker) === 'live'
-                  ? 'Live'
-                  : 'Shop'}
-            </span>
-          ) : (
-            <Link
-              href={
-                stickerKind(story.sticker) === 'live'
-                  ? liveHref || '/live'
-                  : stickerKind(story.sticker) === 'shop'
-                    ? '/shop'
-                    : `/${group.creator.username || ''}`
-              }
-              onClick={onClose}
-              className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
-              {stickerKind(story.sticker) === 'subscribe'
-                ? 'Subscribe'
-                : stickerKind(story.sticker) === 'live'
-                  ? 'Live'
-                  : 'Shop'}
-            </Link>
-          )}
+          <Link
+            href={
+              stickerKind(story.sticker) === 'live'
+                ? liveHref || `/${group.creator.username || ''}?offline=1`
+                : stickerKind(story.sticker) === 'shop'
+                  ? `/shop?creator=${encodeURIComponent(group.creator.username || '')}`
+                  : `/${group.creator.username || ''}?subscribe=1`
+            }
+            onClick={onClose}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="h-10 pl-3 pr-4 rounded-full bg-black/55 backdrop-blur-md border border-[#d4b483]/80 text-[11px] uppercase tracking-[0.22em] text-[#f4efe6] flex items-center gap-2"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
+            {stickerKind(story.sticker) === 'subscribe'
+              ? 'Subscribe'
+              : stickerKind(story.sticker) === 'live'
+                ? 'Live'
+                : 'Shop'}
+          </Link>
         </div>
       )}
 

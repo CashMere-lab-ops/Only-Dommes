@@ -43,6 +43,8 @@ export default function PublicProfilePage() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reporting, setReporting] = useState(false);
+  const [subSheet, setSubSheet] = useState(false);
+  const [offlineSheet, setOfflineSheet] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -229,6 +231,13 @@ export default function PublicProfilePage() {
       clearInterval(poll);
     };
   }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile || loading || typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('subscribe') === '1') setSubSheet(true);
+    if (q.get('offline') === '1') setOfflineSheet(true);
+  }, [profile, loading]);
 
   const actorName = () =>
     myProfile?.display_name || myProfile?.username || 'Someone';
@@ -586,7 +595,6 @@ export default function PublicProfilePage() {
   }
 
   const displayName = profile.display_name || profile.username;
-  const initial = displayName.charAt(0).toUpperCase();
   const joinedDate = profile.created_at
     ? new Date(profile.created_at).toLocaleDateString('en-GB', {
         month: 'long',
@@ -1090,6 +1098,48 @@ export default function PublicProfilePage() {
               </button>
               <button type="button" onClick={blockFromProfile} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-zinc-800 text-left text-sm text-red-400">
                 <Ban size={18} /> {iBlockedThem ? 'Unblock' : 'Block'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {subSheet && (
+          <div className="fixed inset-0 z-[90] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setSubSheet(false)}>
+            <div className="w-full max-w-sm bg-zinc-950 border border-[#d4b483]/40 rounded-3xl p-6" onClick={(e) => e.stopPropagation()}>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[#d4b483]">Subscribe</p>
+              <h3 className="mt-2 text-xl font-semibold">{displayName}</h3>
+              <p className="mt-2 text-sm text-zinc-400">
+                £{subPrice} a month. Fans pay the listed price. You can cancel any time.
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleSubscribe()}
+                disabled={subLoading || !showSubscribe}
+                className="mt-5 w-full h-11 rounded-full bg-[#ff2d87] text-sm font-semibold disabled:opacity-50"
+              >
+                {subLoading
+                  ? 'Please wait'
+                  : isSubscribed
+                    ? 'Manage subscription'
+                    : `Subscribe · £${subPrice}/mo`}
+              </button>
+              <button type="button" onClick={() => setSubSheet(false)} className="mt-2 w-full h-11 rounded-full text-sm text-zinc-400">
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
+        {offlineSheet && (
+          <div className="fixed inset-0 z-[90] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setOfflineSheet(false)}>
+            <div className="w-full max-w-sm bg-zinc-950 border border-white/10 rounded-3xl p-6 text-center" onClick={(e) => e.stopPropagation()}>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[#d4b483]">Live</p>
+              <h3 className="mt-2 text-xl font-semibold">This creator is not live</h3>
+              <p className="mt-2 text-sm text-zinc-400">
+                {displayName} has ended this stream. Check back when they go live again.
+              </p>
+              <button type="button" onClick={() => setOfflineSheet(false)} className="mt-5 w-full h-11 rounded-full bg-white text-black text-sm font-semibold">
+                Close
               </button>
             </div>
           </div>

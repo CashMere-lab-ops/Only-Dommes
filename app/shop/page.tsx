@@ -114,6 +114,12 @@ export default function ShopPage() {
   const [searchingPoints, setSearchingPoints] = useState(false);
   const [searchHint, setSearchHint] = useState('');
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [creatorFilter, setCreatorFilter] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setCreatorFilter((new URLSearchParams(window.location.search).get('creator') || '').toLowerCase());
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -165,6 +171,7 @@ export default function ShopPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((item) => {
+      if (creatorFilter && (item.creator?.username || '').toLowerCase() !== creatorFilter) return false;
       if (category !== 'All' && item.category !== category) return false;
       if (!q) return true;
       const hay = `${item.title} ${item.description || ''} ${item.category} ${
@@ -172,7 +179,7 @@ export default function ShopPage() {
       } ${item.creator?.display_name || ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [items, category, search]);
+  }, [items, category, search, creatorFilter]);
 
   const canBuyItem = (item: ShopItem) => {
     if (!currentUserId) return false;
@@ -499,6 +506,9 @@ export default function ShopPage() {
                 <ShoppingBag className="text-pink-500" size={28} />
                 Shop
               </h1>
+              {creatorFilter && (
+                <p className="text-sm text-[#d4b483] tracking-wide">@{creatorFilter}</p>
+              )}
               <p className="text-sm text-zinc-500 flex items-center gap-1.5">
                 <Shield size={14} className="text-pink-400" />
                 Lockers & pick-up points only · no home delivery
