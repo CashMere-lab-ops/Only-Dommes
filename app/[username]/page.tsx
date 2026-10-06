@@ -595,6 +595,7 @@ export default function PublicProfilePage() {
   }
 
   const displayName = profile.display_name || profile.username;
+  const initial = displayName.charAt(0).toUpperCase();
   const joinedDate = profile.created_at
     ? new Date(profile.created_at).toLocaleDateString('en-GB', {
         month: 'long',
