@@ -20,7 +20,6 @@ import {
   BookOpen,
   HelpCircle,
   User,
-  Crown,
   Menu,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
@@ -338,9 +337,11 @@ export default function Sidebar() {
       {loggedIn && (
         <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Crown className="w-4 h-4 text-white" />
-            </div>
+            <img
+              src="/logo-icon.png"
+              alt=""
+              className="w-8 h-8 object-contain flex-shrink-0"
+            />
             <span className="font-bold text-sm truncate">
               <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
                 World of Dommes
@@ -375,14 +376,13 @@ export default function Sidebar() {
 
       {/* ── Desktop sidebar ── */}
       <aside className="hidden lg:flex w-72 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0 flex-shrink-0">
-        <div className="p-5 flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
-            <Crown className="w-5 h-5 text-white" />
-          </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-            World of Dommes
-          </span>
-        </div>
+        <Link href="/" className="p-5 flex items-center">
+          <img
+            src="/logo-horizontal.jpg"
+            alt="World of Dommes"
+            className="h-12 w-auto max-w-[210px] object-contain"
+          />
+        </Link>
 
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
