@@ -376,12 +376,15 @@ export default function Sidebar() {
 
       {/* ── Desktop sidebar ── */}
       <aside className="hidden lg:flex w-72 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0 flex-shrink-0">
-        <Link href="/" className="p-5 flex items-center">
+        <Link href="/" className="p-5 flex items-center gap-3">
           <img
-            src="/logo-horizontal.jpg"
-            alt="World of Dommes"
-            className="h-12 w-auto max-w-[210px] object-contain"
+            src="/logo-icon.png"
+            alt=""
+            className="w-10 h-10 object-contain flex-shrink-0"
           />
+          <span className="text-xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
+            World of Dommes
+          </span>
         </Link>
 
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
