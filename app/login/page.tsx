@@ -4,7 +4,6 @@ import { useState, Suspense } from 'react';
 import { createClient } from '../../lib/supabase';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Crown } from 'lucide-react';
 
 function safeNext(raw: string | null): string {
   if (!raw) return '/';
@@ -58,9 +57,11 @@ function LoginForm() {
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-6">
-          <div className="w-14 h-14 bg-pink-500 rounded-2xl flex items-center justify-center">
-            <Crown className="w-7 h-7 text-white" />
-          </div>
+          <img
+            src="/logo-icon.png"
+            alt="World of Dommes"
+            className="w-20 h-20 object-contain"
+          />
         </div>
 
         <h1 className="text-3xl font-bold text-center mb-2">
@@ -147,4 +148,3 @@ export default function LoginPage() {
     </Suspense>
   );
 }
-
