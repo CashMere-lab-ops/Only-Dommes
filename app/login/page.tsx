@@ -60,7 +60,7 @@ function LoginForm() {
           <img
             src="/logo-icon.png"
             alt="World of Dommes"
-            className="w-20 h-20 object-contain"
+            className="w-36 h-36 object-contain"
           />
         </div>
 
