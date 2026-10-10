@@ -336,11 +336,11 @@ export default function Sidebar() {
       {/* ── Mobile top bar: logo + balance + avatar ── */}
       {loggedIn && (
         <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 min-w-0">
+          <Link href="/" className="flex items-center gap-1 min-w-0">
             <img
               src="/logo-icon.png"
               alt=""
-              className="w-8 h-8 object-contain flex-shrink-0"
+              className="w-11 h-11 object-contain flex-shrink-0"
             />
             <span className="font-bold text-sm truncate">
               <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
@@ -376,11 +376,11 @@ export default function Sidebar() {
 
       {/* ── Desktop sidebar ── */}
       <aside className="hidden lg:flex w-72 bg-zinc-900 border-r border-zinc-800 flex-col h-screen sticky top-0 flex-shrink-0">
-        <Link href="/" className="p-5 flex items-center gap-3">
+        <Link href="/" className="px-4 py-4 flex items-center gap-1">
           <img
             src="/logo-icon.png"
             alt=""
-            className="w-10 h-10 object-contain flex-shrink-0"
+            className="w-16 h-16 object-contain flex-shrink-0"
           />
           <span className="text-xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
             World of Dommes
