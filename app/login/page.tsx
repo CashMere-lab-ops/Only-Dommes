@@ -56,11 +56,11 @@ function LoginForm() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center -mb-4">
           <img
             src="/logo-icon.png"
             alt="World of Dommes"
-            className="w-36 h-36 object-contain"
+            className="w-52 h-52 object-contain"
           />
         </div>
 
