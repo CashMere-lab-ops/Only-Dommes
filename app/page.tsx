@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Radio, Users, Loader2, Video, Search, Heart } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
+import Landing from '../components/Landing';
 import FeedPosts from '../components/FeedPosts';
 import StoriesRail from '../components/StoriesRail';
 import { createClient } from '../lib/supabase';
@@ -154,6 +155,10 @@ export default function Home() {
   const featuredName =
     featured?.creator?.display_name ||
     (featured?.creator?.username ? `@${featured.creator.username}` : 'Creator');
+
+  if (!userId && ready) {
+    return <Landing />;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
