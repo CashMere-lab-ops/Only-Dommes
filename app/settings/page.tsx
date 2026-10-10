@@ -70,6 +70,8 @@ export default function SettingsPage() {
   const [cropZoom, setCropZoom] = useState(1);
   const [cropPos, setCropPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -416,22 +418,47 @@ export default function SettingsPage() {
               <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
                 <div className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-5">
                   <p className="text-center font-semibold mb-1">Adjust photo</p>
-                  <p className="text-center text-xs text-zinc-500 mb-4">Drag to move. Use the slider to zoom.</p>
+                  <p className="text-center text-xs text-zinc-500 mb-4">Drag to move. Pinch or use the slider to zoom.</p>
                   <div
                     className="mx-auto w-[280px] h-[280px] rounded-full overflow-hidden relative bg-zinc-900 touch-none"
                     onPointerDown={(e) => {
                       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-                      dragRef.current = { x: e.clientX, y: e.clientY, px: cropPos.x, py: cropPos.y };
+                      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                      if (pointersRef.current.size === 1) {
+                        dragRef.current = { x: e.clientX, y: e.clientY, px: cropPos.x, py: cropPos.y };
+                        pinchRef.current = null;
+                      } else if (pointersRef.current.size === 2) {
+                        const pts = [...pointersRef.current.values()];
+                        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                        pinchRef.current = { dist, zoom: cropZoom };
+                        dragRef.current = null;
+                      }
                     }}
                     onPointerMove={(e) => {
+                      if (!pointersRef.current.has(e.pointerId)) return;
+                      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                      if (pointersRef.current.size >= 2 && pinchRef.current) {
+                        const pts = [...pointersRef.current.values()];
+                        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                        const next = pinchRef.current.zoom * (dist / pinchRef.current.dist);
+                        setCropZoom(Math.min(3, Math.max(1, next)));
+                        return;
+                      }
                       if (!dragRef.current) return;
                       setCropPos({
                         x: dragRef.current.px + (e.clientX - dragRef.current.x),
                         y: dragRef.current.py + (e.clientY - dragRef.current.y),
                       });
                     }}
-                    onPointerUp={() => {
+                    onPointerUp={(e) => {
+                      pointersRef.current.delete(e.pointerId);
                       dragRef.current = null;
+                      pinchRef.current = null;
+                    }}
+                    onPointerCancel={(e) => {
+                      pointersRef.current.delete(e.pointerId);
+                      dragRef.current = null;
+                      pinchRef.current = null;
                     }}
                   >
                     <img
