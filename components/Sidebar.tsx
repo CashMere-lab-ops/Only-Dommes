@@ -286,8 +286,7 @@ export default function Sidebar() {
   const handleLogout = async () => {
     clearCachedProfile();
     await supabase.auth.signOut();
-    router.push('/');
-    router.refresh();
+    window.location.href = '/';
   };
 
   const isActive = (path: string) =>
