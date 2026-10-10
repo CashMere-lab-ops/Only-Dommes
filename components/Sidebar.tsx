@@ -382,7 +382,7 @@ export default function Sidebar() {
       {loggedIn && (
         <>
         <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center min-w-0">
             <Link href="/" className="flex items-center">
               <img
                 src="/logo-icon.png"
@@ -390,6 +390,8 @@ export default function Sidebar() {
                 className="w-12 h-12 object-contain flex-shrink-0"
               />
             </Link>
+          </div>
+          <div className="flex items-center gap-2.5 flex-shrink-0">
             <button
               type="button"
               onClick={async () => {
@@ -417,8 +419,6 @@ export default function Sidebar() {
                 </span>
               )}
             </button>
-          </div>
-          <div className="flex items-center gap-2.5 flex-shrink-0">
             <button
               type="button"
               onClick={() => {
