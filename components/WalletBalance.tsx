@@ -55,7 +55,7 @@ export default function WalletBalance({
     return (
       <Link
         href={href}
-        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+        className={`inline-flex items-center gap-1.5 h-9 rounded-full border px-3 text-sm font-semibold leading-none whitespace-nowrap transition ${
           low
             ? 'border-pink-500/40 bg-pink-500/10 text-pink-300 hover:bg-pink-500/20'
             : 'border-zinc-700 bg-zinc-900 text-pink-400 hover:border-pink-500/50 hover:bg-zinc-800'

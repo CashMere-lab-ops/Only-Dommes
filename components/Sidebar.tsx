@@ -384,18 +384,18 @@ export default function Sidebar() {
               className="w-12 h-12 object-contain flex-shrink-0"
             />
           </Link>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
             <button
               type="button"
               onClick={() => setSearchOpen((v) => !v)}
-              className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-100"
+              className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white"
               aria-label="Search creators"
             >
-              <Search size={20} strokeWidth={2.4} />
+              <Search size={18} strokeWidth={2.25} />
             </button>
             <Link
               href="/account"
-              className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold overflow-hidden"
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-semibold overflow-hidden"
             >
               {profile?.avatar_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -413,6 +413,7 @@ export default function Sidebar() {
               compact
               showTopUpHint={isSub}
               from="account"
+              className="h-9"
             />
           </div>
         </div>
