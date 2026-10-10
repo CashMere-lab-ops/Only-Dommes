@@ -391,7 +391,7 @@ export default function Sidebar() {
               className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-200"
               aria-label="Search creators"
             >
-              <Search size={16} />
+              <Search size={18} />
             </button>
             <WalletBalance
               balance={profileLoaded ? balance : null}
