@@ -69,7 +69,7 @@ export default function SessionTimeout() {
       }
       await supabase.auth.signOut();
       // Full navigation so all client state clears
-      window.location.href = '/login?reason=idle';
+      window.location.href = '/';
     };
 
     // First visit / tab open: record activity if missing, then check
