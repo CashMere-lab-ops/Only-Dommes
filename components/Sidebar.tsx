@@ -340,7 +340,7 @@ export default function Sidebar() {
             <img
               src="/logo-icon.png"
               alt=""
-              className="w-11 h-11 object-contain flex-shrink-0"
+              className="w-14 h-14 object-contain flex-shrink-0"
             />
             <span className="font-bold text-sm truncate">
               <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
