@@ -66,6 +66,10 @@ export default function SettingsPage() {
   const [emailTips, setEmailTips] = useState(true);
   const [emailMessages, setEmailMessages] = useState(true);
   const [emailLives, setEmailLives] = useState(true);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropPos, setCropPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -134,6 +138,7 @@ export default function SettingsPage() {
 
   const handleAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file || !profile) return;
     if (!file.type.startsWith('image/')) {
       setError('Please choose an image');
@@ -143,15 +148,56 @@ export default function SettingsPage() {
       setError('Max 5MB for profile photo');
       return;
     }
-    setUploading(true);
     setError('');
     setMessage('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropZoom(1);
+      setCropPos({ x: 0, y: 0 });
+      setCropSrc(String(reader.result || ''));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const confirmCrop = async () => {
+    if (!cropSrc || !profile) return;
+    setUploading(true);
+    setError('');
     try {
-      const ext = file.name.split('.').pop() || 'jpg';
-      const path = `${profile.id}/avatar.${ext}`;
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('Could not read that photo'));
+        el.src = cropSrc;
+      });
+      const size = 512;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not crop');
+      const frame = 280;
+      const scale = (frame / Math.min(img.width, img.height)) * cropZoom;
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+      const outScale = size / frame;
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(
+        img,
+        size / 2 - drawW / 2 * outScale + cropPos.x * outScale,
+        size / 2 - drawH / 2 * outScale + cropPos.y * outScale,
+        drawW * outScale,
+        drawH * outScale
+      );
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not crop'))), 'image/jpeg', 0.92);
+      });
+      const path = `${profile.id}/avatar.jpg`;
       const { error: upError } = await supabase.storage
         .from('avatars')
-        .upload(path, file, { upsert: true, contentType: file.type });
+        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
       if (upError) throw upError;
       const { data } = supabase.storage.from('avatars').getPublicUrl(path);
       const url = `${data.publicUrl}?t=${Date.now()}`;
@@ -161,6 +207,7 @@ export default function SettingsPage() {
         .eq('id', profile.id);
       if (updateError) throw updateError;
       setProfile({ ...profile, avatar_url: url });
+      setCropSrc(null);
       setMessage('Photo updated');
     } catch (err: any) {
       setError(err.message || 'Upload failed');
@@ -364,6 +411,71 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {cropSrc && (
+              <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+                <div className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-5">
+                  <p className="text-center font-semibold mb-1">Adjust photo</p>
+                  <p className="text-center text-xs text-zinc-500 mb-4">Drag to move. Use the slider to zoom.</p>
+                  <div
+                    className="mx-auto w-[280px] h-[280px] rounded-full overflow-hidden relative bg-zinc-900 touch-none"
+                    onPointerDown={(e) => {
+                      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+                      dragRef.current = { x: e.clientX, y: e.clientY, px: cropPos.x, py: cropPos.y };
+                    }}
+                    onPointerMove={(e) => {
+                      if (!dragRef.current) return;
+                      setCropPos({
+                        x: dragRef.current.px + (e.clientX - dragRef.current.x),
+                        y: dragRef.current.py + (e.clientY - dragRef.current.y),
+                      });
+                    }}
+                    onPointerUp={() => {
+                      dragRef.current = null;
+                    }}
+                  >
+                    <img
+                      src={cropSrc}
+                      alt=""
+                      draggable={false}
+                      className="absolute left-1/2 top-1/2 max-w-none select-none"
+                      style={{
+                        width: `${280 * cropZoom}px`,
+                        height: `${280 * cropZoom}px`,
+                        transform: `translate(calc(-50% + ${cropPos.x}px), calc(-50% + ${cropPos.y}px))`,
+                        objectFit: 'cover',
+                      }}
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={3}
+                    step={0.01}
+                    value={cropZoom}
+                    onChange={(e) => setCropZoom(Number(e.target.value))}
+                    className="w-full mt-5 accent-pink-500"
+                  />
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setCropSrc(null)}
+                      className="flex-1 py-3 rounded-xl border border-zinc-700 text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void confirmCrop()}
+                      disabled={uploading}
+                      className="flex-1 py-3 rounded-xl bg-pink-500 text-sm font-semibold disabled:opacity-50"
+                    >
+                      {uploading ? 'Saving...' : 'Set photo'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Profile */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
