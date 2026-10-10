@@ -342,7 +342,7 @@ export default function Sidebar() {
               alt=""
               className="w-14 h-14 object-contain flex-shrink-0"
             />
-            <span className="font-bold text-sm truncate">
+            <span className="font-bold text-xl truncate">
               <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
                 World of Dommes
               </span>
