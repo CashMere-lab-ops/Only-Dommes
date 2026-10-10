@@ -71,6 +71,10 @@ export default function Sidebar() {
     { id: string; username?: string; display_name?: string; avatar_url?: string }[]
   >([]);
   const [searching, setSearching] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifItems, setNotifItems] = useState<
+    { id: string; title: string; body?: string | null; link?: string | null; is_read?: boolean; created_at: string }[]
+  >([]);
 
   const refreshBalance = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -117,6 +121,7 @@ export default function Sidebar() {
     setSearchOpen(false);
     setSearchQuery('');
     setSearchResults([]);
+    setNotifOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -377,17 +382,49 @@ export default function Sidebar() {
       {loggedIn && (
         <>
         <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-1 min-w-0">
-            <img
-              src="/logo-icon.png"
-              alt="World of Dommes"
-              className="w-12 h-12 object-contain flex-shrink-0"
-            />
-          </Link>
+          <div className="flex items-center gap-2 min-w-0">
+            <Link href="/" className="flex items-center">
+              <img
+                src="/logo-icon.png"
+                alt="World of Dommes"
+                className="w-12 h-12 object-contain flex-shrink-0"
+              />
+            </Link>
+            <button
+              type="button"
+              onClick={async () => {
+                const next = !notifOpen;
+                setSearchOpen(false);
+                setNotifOpen(next);
+                if (!next) return;
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+                const { data } = await supabase
+                  .from('notifications')
+                  .select('id, title, body, link, is_read, created_at')
+                  .eq('user_id', user.id)
+                  .order('created_at', { ascending: false })
+                  .limit(8);
+                setNotifItems(data || []);
+              }}
+              className="relative w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white"
+              aria-label="Notifications"
+            >
+              <Bell size={18} />
+              {notifCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-pink-500 text-[9px] font-bold flex items-center justify-center">
+                  {notifCount > 9 ? '9+' : notifCount}
+                </span>
+              )}
+            </button>
+          </div>
           <div className="flex items-center gap-2.5 flex-shrink-0">
             <button
               type="button"
-              onClick={() => setSearchOpen((v) => !v)}
+              onClick={() => {
+                setNotifOpen(false);
+                setSearchOpen((v) => !v);
+              }}
               className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white"
               aria-label="Search creators"
             >
@@ -417,6 +454,69 @@ export default function Sidebar() {
             />
           </div>
         </div>
+        {notifOpen && (
+          <div className="lg:hidden fixed top-14 inset-x-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold">Notifications</p>
+              <button
+                type="button"
+                onClick={async () => {
+                  const { data: { user } } = await supabase.auth.getUser();
+                  if (!user) return;
+                  await supabase
+                    .from('notifications')
+                    .update({ is_read: true })
+                    .eq('user_id', user.id)
+                    .eq('is_read', false);
+                  setNotifItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
+                  setNotifCount(0);
+                }}
+                className="text-xs text-pink-400"
+              >
+                Mark all read
+              </button>
+            </div>
+            {notifItems.length === 0 ? (
+              <p className="text-xs text-zinc-500 py-3">No notifications yet</p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto">
+                {notifItems.map((n) => (
+                  <Link
+                    key={n.id}
+                    href={n.link || '/notifications'}
+                    onClick={async () => {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (user) {
+                        await supabase
+                          .from('notifications')
+                          .update({ is_read: true })
+                          .eq('id', n.id)
+                          .eq('user_id', user.id);
+                      }
+                      setNotifOpen(false);
+                    }}
+                    className="flex items-start gap-3 py-2.5 border-b border-zinc-900 last:border-0"
+                  >
+                    <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${n.is_read ? 'bg-transparent' : 'bg-pink-500'}`} />
+                    <span className="min-w-0">
+                      <span className="block text-sm truncate">{n.title}</span>
+                      {n.body ? (
+                        <span className="block text-xs text-zinc-500 truncate">{n.body}</span>
+                      ) : null}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+            <Link
+              href="/notifications"
+              onClick={() => setNotifOpen(false)}
+              className="block text-center text-sm text-pink-400 pt-3"
+            >
+              See all
+            </Link>
+          </div>
+        )}
         {searchOpen && (
           <div className="lg:hidden fixed top-14 inset-x-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
             <div className="relative">
