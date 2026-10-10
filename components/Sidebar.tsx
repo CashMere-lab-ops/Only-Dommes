@@ -65,6 +65,12 @@ export default function Sidebar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifCount, setNotifCount] = useState(0);
   const [loggedIn, setLoggedIn] = useState(!!cachedProfile);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<
+    { id: string; username?: string; display_name?: string; avatar_url?: string }[]
+  >([]);
+  const [searching, setSearching] = useState(false);
 
   const refreshBalance = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -78,6 +84,40 @@ export default function Sidebar() {
       setCachedBalance(n);
     }
   }, [supabase]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!searchOpen || q.length < 3) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      const safe = q.replace(/[%_,]/g, '');
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .eq('account_type', 'creator')
+        .or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%`)
+        .limit(8);
+      if (!cancelled) {
+        setSearchResults(data || []);
+        setSearching(false);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchOpen, searchQuery, supabase]);
+
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  }, [pathname]);
 
   useEffect(() => {
     if (cachedProfile) {
@@ -335,6 +375,7 @@ export default function Sidebar() {
     <>
       {/* ── Mobile top bar: logo + balance + avatar ── */}
       {loggedIn && (
+        <>
         <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-1 min-w-0">
             <img
@@ -349,6 +390,14 @@ export default function Sidebar() {
             </span>
           </Link>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setSearchOpen((v) => !v)}
+              className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-200"
+              aria-label="Search creators"
+            >
+              <Search size={16} />
+            </button>
             <WalletBalance
               balance={profileLoaded ? balance : null}
               compact
@@ -372,6 +421,63 @@ export default function Sidebar() {
             </Link>
           </div>
         </div>
+        {searchOpen && (
+          <div className="lg:hidden fixed top-14 inset-x-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search creators"
+                className="w-full h-11 pl-9 pr-9 rounded-full bg-zinc-900 border border-zinc-800 text-sm outline-none focus:border-pink-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                  aria-label="Clear"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            {searchQuery.trim().length < 3 ? (
+              <p className="text-xs text-zinc-500 mt-3">Type 3 letters to search</p>
+            ) : searching ? (
+              <p className="text-xs text-zinc-500 mt-3">Searching...</p>
+            ) : searchResults.length === 0 ? (
+              <p className="text-xs text-zinc-500 mt-3">No creators found</p>
+            ) : (
+              <div className="mt-2 max-h-72 overflow-y-auto">
+                {searchResults.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={c.username ? `/${c.username}` : '/'}
+                    className="flex items-center gap-3 py-2"
+                    onClick={() => setSearchOpen(false)}
+                  >
+                    {c.avatar_url ? (
+                      <img src={c.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-semibold">
+                        {(c.display_name || c.username || 'C')[0]?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{c.display_name || c.username}</p>
+                      {c.username ? (
+                        <p className="text-xs text-zinc-500 truncate">@{c.username}</p>
+                      ) : null}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        </>
       )}
 
       {/* ── Desktop sidebar ── */}
