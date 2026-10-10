@@ -35,7 +35,7 @@ export default function Landing() {
 
         <div className="w-full max-w-md mt-8 space-y-3">
           <Link
-            href="/signup"
+            href="/onboarding"
             className="block w-full text-center py-3.5 rounded-full bg-pink-500 hover:bg-pink-600 font-semibold"
           >
             Sign up
