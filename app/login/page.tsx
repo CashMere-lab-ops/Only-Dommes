@@ -65,7 +65,7 @@ function LoginForm() {
         </div>
 
         <h1 className="text-3xl font-bold text-center mb-2">
-          World Of <span className="gradient-text">Dommes</span>
+          World of <span className="text-pink-500">Dommes</span>
         </h1>
         <p className="text-zinc-400 text-center mb-2">Log in to your account</p>
         {next.startsWith('/live/') ? (

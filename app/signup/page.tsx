@@ -1,258 +1,92 @@
 'use client';
-import { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+
+import { useState } from 'react';
 import { createClient } from '../../lib/supabase';
-
-function SignupForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const supabase = createClient();
-  const accountType = (searchParams.get('type') as 'creator' | 'sub') || 'sub';
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
-
-  const checkUsername = async (value: string) => {
-    const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    setUsername(clean);
-    if (clean.length < 3) {
-      setUsernameAvailable(null);
-      return;
-    }
-    const { data } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('username', clean)
-      .maybeSingle();
-    setUsernameAvailable(!data);
-  };
-
-  const calculateAge = (dob: string) => {
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    if (!username || username.length < 3) {
-      setError('Username must be at least 3 characters');
-      setLoading(false);
-      return;
-    }
-    if (usernameAvailable === false) {
-      setError('That username is already taken');
-      setLoading(false);
-      return;
-    }
-    if (!dateOfBirth) {
-      setError('Please enter your date of birth');
-      setLoading(false);
-      return;
-    }
-    const age = calculateAge(dateOfBirth);
-    if (age < 18) {
-      setError('You must be at least 18 years old to create an account');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            username: username.toLowerCase(),
-            display_name: displayName || username,
-            account_type: accountType,
-            date_of_birth: dateOfBirth,
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Signup failed');
-
-      // Wait for trigger then update profile
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-
-      await supabase
-        .from('profiles')
-        .update({
-          username: username.toLowerCase(),
-          display_name: displayName || username,
-          account_type: accountType,
-          date_of_birth: dateOfBirth,
-        })
-        .eq('id', authData.user.id);
-
-      // Show success message instead of redirecting
-      setSuccess(true);
-    } catch (err: any) {
-      console.error('Full error:', err);
-      setError(err.message || 'Something went wrong during signup');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Success screen
-  if (success) {
-    return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
-        <div className="w-16 h-16 bg-pink-500/20 rounded-full flex items-center justify-center mx-auto mb-5">
-          <span className="text-3xl">✉️</span>
-        </div>
-        <h2 className="text-2xl font-bold mb-3">Check your email</h2>
-        <p className="text-zinc-400 mb-2">
-          We’ve sent a confirmation link to:
-        </p>
-        <p className="text-pink-400 font-medium mb-6">{email}</p>
-        <p className="text-sm text-zinc-500 mb-8">
-          Click the link in the email to activate your account and you’ll be logged in automatically.
-        </p>
-        <Link
-          href="/login"
-          className="inline-block bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white font-semibold py-3 px-8 rounded-xl transition"
-        >
-          Go to Login
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <form onSubmit={handleSignup} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-5">
-      <div>
-        <label className="text-sm text-zinc-400 mb-1.5 block">Username</label>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">@</span>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => checkUsername(e.target.value)}
-            placeholder="yourusername"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 pl-8 pr-4 outline-none focus:border-pink-500"
-            required
-          />
-        </div>
-        {username.length >= 3 && (
-          <p className={`text-xs mt-1.5 ${usernameAvailable ? 'text-green-400' : 'text-red-400'}`}>
-            {usernameAvailable === null
-              ? ''
-              : usernameAvailable
-              ? '✓ Username is available'
-              : '✗ Username is already taken'}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <label className="text-sm text-zinc-400 mb-1.5 block">Display Name</label>
-        <input
-          type="text"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="How you want to be known"
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
-        />
-      </div>
-
-      <div>
-        <label className="text-sm text-zinc-400 mb-1.5 block">Date of Birth</label>
-        <input
-          type="date"
-          value={dateOfBirth}
-          onChange={(e) => setDateOfBirth(e.target.value)}
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
-          required
-        />
-        <p className="text-xs text-zinc-500 mt-1.5">You must be 18 or older to join</p>
-      </div>
-
-      <div>
-        <label className="text-sm text-zinc-400 mb-1.5 block">Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
-          required
-        />
-      </div>
-
-      <div>
-        <label className="text-sm text-zinc-400 mb-1.5 block">Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 outline-none focus:border-pink-500"
-          required
-          minLength={6}
-        />
-      </div>
-
-      {error && (
-        <div className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
-          {error}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={loading || usernameAvailable === false}
-        className="w-full bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
-      >
-        {loading ? 'Creating account...' : 'Create Account'}
-      </button>
-    </form>
-  );
-}
+import Link from 'next/link';
 
 export default function SignupPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSignup = async () => {
+    setLoading(true);
+    setMessage('');
+
+    const supabase = createClient();
+
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) {
+        setMessage(error.message);
+      } else {
+        setMessage('Success! Check your email to confirm your account.');
+      }
+    } catch (err) {
+      setMessage('Something went wrong. Please try again.');
+    }
+
+    setLoading(false);
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-4">
+    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-rose-500 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-xl">♕</span>
-            </div>
-            <span className="text-3xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-              World Of Dommes
-            </span>
-          </div>
-          <p className="text-zinc-400">Create your account</p>
+        <div className="flex justify-center -mb-4">
+          <img
+            src="/logo-icon.png"
+            alt="World of Dommes"
+            className="w-52 h-52 object-contain"
+          />
         </div>
 
-        <Suspense fallback={<div className="text-center py-10">Loading...</div>}>
-          <SignupForm />
-        </Suspense>
+        <h1 className="text-3xl font-bold text-center mb-2">
+          World of <span className="text-pink-500">Dommes</span>
+        </h1>
+        <p className="text-zinc-400 text-center mb-8">Create your free account</p>
 
-        <p className="text-center text-sm text-zinc-400 mt-6">
+        <div className="bg-zinc-900 p-8 rounded-3xl">
+          <label className="block text-sm font-medium mb-2">Email</label>
+          <input
+            type="email"
+            placeholder="you@example.com"
+            className="w-full p-4 mb-5 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+
+          <label className="block text-sm font-medium mb-2">Password</label>
+          <input
+            type="password"
+            placeholder="••••••••"
+            className="w-full p-4 mb-6 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <button
+            onClick={handleSignup}
+            disabled={loading}
+            className="w-full bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-700 py-4 rounded-2xl text-lg font-semibold transition"
+          >
+            {loading ? 'Creating account...' : 'Create Account'}
+          </button>
+
+          {message && (
+            <p className="mt-5 text-center p-3 bg-zinc-800 rounded-2xl text-sm">
+              {message}
+            </p>
+          )}
+        </div>
+
+        <p className="text-center mt-8 text-zinc-400">
           Already have an account?{' '}
-          <Link href="/login" className="text-pink-400 hover:text-pink-300">
+          <Link href="/login" className="text-pink-500 hover:underline font-medium">
             Log in
           </Link>
         </p>

@@ -584,8 +584,8 @@ export default function Sidebar() {
             alt=""
             className="w-16 h-16 object-contain flex-shrink-0"
           />
-          <span className="text-xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-            World of Dommes
+          <span className="text-xl font-bold tracking-tight">
+            World of <span className="text-pink-500">Dommes</span>
           </span>
         </Link>
 
