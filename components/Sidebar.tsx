@@ -393,12 +393,6 @@ export default function Sidebar() {
             >
               <Search size={18} />
             </button>
-            <WalletBalance
-              balance={profileLoaded ? balance : null}
-              compact
-              showTopUpHint={isSub}
-              from="account"
-            />
             <Link
               href="/account"
               className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold overflow-hidden"
@@ -414,6 +408,12 @@ export default function Sidebar() {
                 initial
               )}
             </Link>
+            <WalletBalance
+              balance={profileLoaded ? balance : null}
+              compact
+              showTopUpHint={isSub}
+              from="account"
+            />
           </div>
         </div>
         {searchOpen && (
