@@ -380,14 +380,9 @@ export default function Sidebar() {
           <Link href="/" className="flex items-center gap-1 min-w-0">
             <img
               src="/logo-icon.png"
-              alt=""
-              className="w-14 h-14 object-contain flex-shrink-0"
+              alt="World of Dommes"
+              className="w-12 h-12 object-contain flex-shrink-0"
             />
-            <span className="font-bold text-xl truncate">
-              <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
-                World of Dommes
-              </span>
-            </span>
           </Link>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
