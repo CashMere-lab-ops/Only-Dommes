@@ -388,10 +388,10 @@ export default function Sidebar() {
             <button
               type="button"
               onClick={() => setSearchOpen((v) => !v)}
-              className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-200"
+              className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-100"
               aria-label="Search creators"
             >
-              <Search size={18} />
+              <Search size={20} strokeWidth={2.4} />
             </button>
             <Link
               href="/account"
