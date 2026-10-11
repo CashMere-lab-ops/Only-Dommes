@@ -78,8 +78,16 @@ export default function Landing() {
           </button>
         </div>
 
-        <p className="mt-5 max-w-md text-center text-xs text-zinc-500 leading-relaxed">
-          By joining you agree to our terms and privacy policy, and confirm you are at least 18.
+        <p className="mt-5 max-w-md text-center text-sm text-zinc-400 leading-relaxed">
+          By joining, you agree to our{' '}
+          <Link href="/terms" className="text-white font-semibold hover:text-pink-400">
+            Terms & Conditions
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy" className="text-white font-semibold hover:text-pink-400">
+            Privacy Policy
+          </Link>
+          , and confirm that you are at least 18 years old.
         </p>
       </main>
 
