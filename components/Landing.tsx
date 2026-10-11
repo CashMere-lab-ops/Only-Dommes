@@ -3,9 +3,9 @@
 import Link from 'next/link';
 
 const cards = [
-  { label: 'Live', tone: 'from-pink-600/80 to-zinc-900' },
-  { label: 'Creators', tone: 'from-rose-500/70 to-zinc-900' },
-  { label: 'Community', tone: 'from-fuchsia-700/70 to-zinc-900' },
+  { label: 'Live', src: '/landing/live.png' },
+  { label: 'Creators', src: '/landing/creators.png' },
+  { label: 'Community', src: '/landing/community.png' },
 ];
 
 export default function Landing() {
@@ -26,9 +26,15 @@ export default function Landing() {
           {cards.map((card) => (
             <div
               key={card.label}
-              className={`flex-1 aspect-[3/4] rounded-2xl bg-gradient-to-b ${card.tone} border border-white/10 flex items-end p-3`}
+              className="flex-1 aspect-[3/4] rounded-2xl overflow-hidden relative border border-white/10"
             >
-              <span className="text-sm font-semibold">{card.label}</span>
+              <img
+                src={card.src}
+                alt={card.label}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+              <span className="absolute bottom-3 left-3 text-sm font-semibold">{card.label}</span>
             </div>
           ))}
         </div>
