@@ -32,8 +32,7 @@ export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <BackHome />
-      <main className="max-w-3xl mx-auto px-5 pt-20 pb-16">
-        <p className="text-xs uppercase tracking-wider text-pink-500 mb-3">World of Dommes</p>
+      <main className="max-w-3xl mx-auto px-5 pt-28 pb-16">
         <h1 className="text-4xl font-bold">Privacy Policy</h1>
         <p className="mt-4 text-zinc-300 leading-relaxed">
           This policy explains how Quinn Digital Platforms Ltd, trading as World of Dommes,
