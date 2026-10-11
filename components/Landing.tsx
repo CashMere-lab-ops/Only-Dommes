@@ -11,18 +11,18 @@ const cards = [
 export default function Landing() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
-      <main className="flex-1 flex flex-col items-center px-5 pt-10 pb-8">
+      <main className="flex-1 flex flex-col items-center px-5 pt-6 pb-8">
         <img
           src="/logo-icon.png"
           alt="World of Dommes"
-          className="w-44 h-44 sm:w-56 sm:h-56 object-contain"
+          className="w-52 h-52 sm:w-64 sm:h-64 object-contain"
         />
-        <h1 className="mt-1 text-4xl sm:text-5xl font-bold tracking-tight">
+        <h1 className="-mt-6 sm:-mt-8 text-4xl sm:text-6xl font-bold tracking-tight">
           World of <span className="text-pink-500">Dommes</span>
         </h1>
-        <p className="mt-1 text-sm text-zinc-400">Creators. Community. Connection.</p>
+        <p className="mt-1 text-sm sm:text-base text-zinc-400">Creators. Community. Connection.</p>
 
-        <div className="mt-8 flex gap-3 w-full max-w-md">
+        <div className="mt-6 flex gap-3 w-full max-w-md sm:max-w-xl">
           {cards.map((card) => (
             <div
               key={card.label}
