@@ -4,6 +4,7 @@ import { useState, Suspense } from 'react';
 import { createClient } from '../../lib/supabase';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import BackHome from '../../components/BackHome';
 
 function safeNext(raw: string | null): string {
   if (!raw) return '/';
@@ -55,6 +56,7 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
+      <BackHome />
       <div className="w-full max-w-md">
         <div className="flex justify-center -mb-4">
           <img

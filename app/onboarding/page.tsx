@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { Star, Heart } from 'lucide-react';
+import BackHome from '../../components/BackHome';
 
 export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center px-6">
+      <BackHome />
       <div className="text-center mb-10">
         <h1 className="text-4xl font-bold mb-2">
           Enter Your <span className="text-pink-500">World</span>

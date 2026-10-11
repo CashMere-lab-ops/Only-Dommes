@@ -1,8 +1,10 @@
 'use client';
+
 import { useState } from 'react';
 import { createClient } from '../../lib/supabase';
 import Link from 'next/link';
 import { Crown } from 'lucide-react';
+import BackHome from '../../components/BackHome';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -12,30 +14,37 @@ export default function ForgotPasswordPage() {
   const handleReset = async () => {
     setLoading(true);
     setMessage('');
+
     const supabase = createClient();
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: 'https://only-dommes.vercel.app/reset-password',
     });
+
     if (error) {
       setMessage(error.message);
     } else {
       setMessage('Check your email for the password reset link.');
     }
+
     setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
+      <BackHome />
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-6">
           <div className="w-14 h-14 bg-pink-500 rounded-2xl flex items-center justify-center">
             <Crown className="w-7 h-7 text-white" />
           </div>
         </div>
+
         <h1 className="text-3xl font-bold text-center mb-2">
-          World Of <span className="gradient-text">Dommes</span>
+          Only <span className="gradient-text">Dommes</span>
         </h1>
         <p className="text-zinc-400 text-center mb-8">Reset your password</p>
+
         <div className="bg-zinc-900 p-8 rounded-3xl">
           <label className="block text-sm font-medium mb-2">Email</label>
           <input
@@ -45,6 +54,7 @@ export default function ForgotPasswordPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+
           <button
             onClick={handleReset}
             disabled={loading}
@@ -52,12 +62,14 @@ export default function ForgotPasswordPage() {
           >
             {loading ? 'Sending...' : 'Send Reset Link'}
           </button>
+
           {message && (
             <p className="mt-5 text-center p-3 bg-zinc-800 rounded-2xl text-sm">
               {message}
             </p>
           )}
         </div>
+
         <p className="text-center mt-8 text-zinc-400">
           <Link href="/login" className="text-pink-500 hover:underline font-medium">
             Back to Log in

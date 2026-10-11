@@ -5,6 +5,7 @@ import { createClient } from '../../lib/supabase';
 import Link from 'next/link';
 import { Crown } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import BackHome from '../../components/BackHome';
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('');
@@ -36,6 +37,7 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
+      <BackHome />
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-6">
           <div className="w-14 h-14 bg-pink-500 rounded-2xl flex items-center justify-center">
