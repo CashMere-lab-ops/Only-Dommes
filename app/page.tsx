@@ -156,7 +156,11 @@ export default function Home() {
     featured?.creator?.display_name ||
     (featured?.creator?.username ? `@${featured.creator.username}` : 'Creator');
 
-  if (!userId && ready) {
+  if (!ready) {
+    return <div className="min-h-screen bg-zinc-950" />;
+  }
+
+  if (!userId) {
     return <Landing />;
   }
 
