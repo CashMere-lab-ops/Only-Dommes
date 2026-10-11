@@ -86,8 +86,7 @@ export default function Landing() {
       <footer className="px-5 pb-8 text-center text-xs text-zinc-500">
         <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mb-3">
           <Link href="/support" className="hover:text-zinc-300">Support</Link>
-          <Link href="/support" className="hover:text-zinc-300">Terms</Link>
-          <Link href="/support" className="hover:text-zinc-300">Privacy</Link>
+          <Link href="/privacy" className="hover:text-zinc-300">Privacy</Link>
           <Link href="/discover" className="hover:text-zinc-300">Discover</Link>
         </div>
         <p>© {new Date().getFullYear()} World of Dommes</p>

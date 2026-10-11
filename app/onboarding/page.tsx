@@ -64,6 +64,9 @@ export default function OnboardingPage() {
           Log in
         </Link>
       </p>
+      <p className="mt-3 text-xs text-zinc-500">
+        <Link href="/privacy" className="hover:text-pink-500">Privacy</Link>
+      </p>
     </div>
   );
 }
