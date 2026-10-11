@@ -1,10 +1,22 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Star, Heart } from 'lucide-react';
 import BackHome from '../../components/BackHome';
+import { createClient } from '../../lib/supabase';
 
 export default function OnboardingPage() {
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
+  }, []);
+
+  const href = (type: 'creator' | 'sub') =>
+    signedIn ? `/setup?type=${type}` : `/signup?type=${type}`;
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center px-6">
       <BackHome />
@@ -17,7 +29,7 @@ export default function OnboardingPage() {
 
       <div className="w-full max-w-md space-y-4">
         <Link
-          href="/signup?type=creator"
+          href={href('creator')}
           className="block bg-zinc-900 border border-pink-500/70 rounded-2xl p-6 shadow-[0_0_28px_rgba(236,72,153,0.22)] hover:border-pink-400 transition"
         >
           <div className="flex items-start gap-4">
@@ -29,15 +41,13 @@ export default function OnboardingPage() {
               <p className="text-zinc-400 text-sm mb-3">
                 Go live, sell clips, earn tips from your subs, and get weekly payouts.
               </p>
-              <span className="text-pink-500 text-sm font-medium flex items-center gap-1">
-                Get started →
-              </span>
+              <span className="text-pink-500 text-sm font-medium">Get started →</span>
             </div>
           </div>
         </Link>
 
         <Link
-          href="/signup?type=sub"
+          href={href('sub')}
           className="block bg-zinc-900 border border-zinc-800 rounded-2xl p-6 hover:border-zinc-600 transition"
         >
           <div className="flex items-start gap-4">
@@ -50,9 +60,7 @@ export default function OnboardingPage() {
                 Watch live streams, buy exclusive clips, tip your favourite creators,
                 and message them privately.
               </p>
-              <span className="text-pink-500 text-sm font-medium flex items-center gap-1">
-                Get started →
-              </span>
+              <span className="text-pink-500 text-sm font-medium">Get started →</span>
             </div>
           </div>
         </Link>
@@ -60,9 +68,7 @@ export default function OnboardingPage() {
 
       <p className="mt-8 text-zinc-400">
         Already have an account?{' '}
-        <Link href="/login" className="text-pink-500 hover:underline font-medium">
-          Log in
-        </Link>
+        <Link href="/login" className="text-pink-500 hover:underline font-medium">Log in</Link>
       </p>
       <p className="mt-3 text-xs text-zinc-500">
         <Link href="/privacy" className="hover:text-pink-500">Privacy</Link>
