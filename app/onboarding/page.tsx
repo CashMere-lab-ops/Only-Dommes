@@ -8,7 +8,7 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center px-6">
       <div className="text-center mb-10">
         <h1 className="text-4xl font-bold mb-2">
-          Welcome to World of <span className="text-pink-500">Dommes</span>
+          Enter Your <span className="text-pink-500">World</span>
         </h1>
         <p className="text-zinc-400 text-lg">Choose your account type to get started</p>
       </div>
