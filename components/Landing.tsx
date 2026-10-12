@@ -1,9 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '../lib/supabase';
-import AgeTermsTicks from './AgeTermsTicks';
 import SiteFooter from './SiteFooter';
 
 const cards = [
@@ -13,16 +11,7 @@ const cards = [
 ];
 
 export default function Landing() {
-  const [age, setAge] = useState(false);
-  const [terms, setTerms] = useState(false);
-  const [gate, setGate] = useState('');
-
   const handleGoogle = async () => {
-    if (!age || !terms) {
-      setGate('Tick both boxes to continue with Google.');
-      return;
-    }
-    setGate('');
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -34,22 +23,22 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
-      <main className="flex-1 flex flex-col items-center px-5 pt-6 pb-8">
+      <main className="flex-1 flex flex-col items-center px-5 pt-2 pb-4 sm:pt-6 sm:pb-8">
         <img
           src="/logo-icon.png"
           alt="World of Dommes"
-          className="w-52 h-52 sm:w-64 sm:h-64 object-contain"
+          className="w-28 h-28 sm:w-64 sm:h-64 object-contain"
         />
-        <h1 className="-mt-6 sm:-mt-8 text-4xl sm:text-6xl font-bold tracking-tight">
+        <h1 className="-mt-2 sm:-mt-8 text-3xl sm:text-6xl font-bold tracking-tight">
           World of <span className="text-pink-500">Dommes</span>
         </h1>
-        <p className="mt-1 text-sm sm:text-base text-zinc-400">Creators. Community. Connection.</p>
+        <p className="mt-0.5 text-xs sm:text-base text-zinc-400">Creators. Community. Connection.</p>
 
-        <div className="mt-6 flex gap-3 w-full max-w-md sm:max-w-xl">
+        <div className="mt-3 sm:mt-6 flex gap-2 sm:gap-3 w-full max-w-md sm:max-w-xl">
           {cards.map((card) => (
             <div
               key={card.label}
-              className="flex-1 aspect-[3/4] rounded-2xl overflow-hidden relative border border-white/10"
+              className="flex-1 aspect-[3/4] max-h-36 sm:max-h-none rounded-2xl overflow-hidden relative border border-white/10"
             >
               <img
                 src={card.src}
@@ -57,12 +46,12 @@ export default function Landing() {
                 className="absolute inset-0 w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-              <span className="absolute bottom-3 left-3 text-sm font-semibold">{card.label}</span>
+              <span className="absolute bottom-2 left-2 text-xs sm:text-sm font-semibold">{card.label}</span>
             </div>
           ))}
         </div>
 
-        <div className="w-full max-w-md mt-8 space-y-3">
+        <div className="w-full max-w-md mt-4 sm:mt-8 space-y-2 sm:space-y-3">
           <Link
             href="/onboarding"
             className="block w-full text-center py-2.5 text-sm sm:py-3.5 sm:text-base rounded-full bg-pink-500 hover:bg-pink-600 font-semibold"
@@ -75,7 +64,7 @@ export default function Landing() {
           >
             Log in
           </Link>
-          <p className="sm:hidden mt-7 mb-6 px-1 text-center text-xs text-zinc-400 leading-relaxed">
+          <p className="sm:hidden mt-3 mb-2 px-1 text-center text-xs text-zinc-400 leading-relaxed">
             By joining, you agree to our{' '}
             <Link href="/terms" className="text-white font-semibold hover:text-pink-400">
               Terms & Conditions
