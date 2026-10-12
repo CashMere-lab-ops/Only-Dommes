@@ -57,11 +57,17 @@ function SignupForm() {
       return;
     }
 
+    const now = new Date().toISOString();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { username: name, account_type: type },
+        data: {
+          username: name,
+          account_type: type,
+          age_confirmed_at: now,
+          terms_accepted_at: now,
+        },
       },
     });
 
@@ -77,6 +83,8 @@ function SignupForm() {
         username: name,
         display_name: name,
         account_type: type,
+        age_confirmed_at: now,
+        terms_accepted_at: now,
       });
       window.location.href = '/';
       return;

@@ -57,6 +57,8 @@ export async function GET(request: Request) {
         username: metaName,
         display_name: metaName,
         account_type: metaType,
+        age_confirmed_at: meta.age_confirmed_at || new Date().toISOString(),
+        terms_accepted_at: meta.terms_accepted_at || new Date().toISOString(),
       });
     } else if (!profile?.account_type) {
       return NextResponse.redirect(`${origin}/onboarding`);

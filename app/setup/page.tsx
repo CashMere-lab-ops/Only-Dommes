@@ -52,11 +52,14 @@ function SetupForm() {
       return;
     }
 
+    const now = new Date().toISOString();
     const { error } = await supabase.from('profiles').upsert({
       id: user.id,
       username: name,
       display_name: name,
       account_type: type,
+      age_confirmed_at: now,
+      terms_accepted_at: now,
     });
     if (error) {
       setMessage(error.message);
