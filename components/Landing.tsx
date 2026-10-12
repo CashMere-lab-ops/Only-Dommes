@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '../lib/supabase';
+import AgeTermsTicks from './AgeTermsTicks';
 
 const cards = [
   { label: 'Live', src: '/landing/live.png' },
@@ -10,7 +12,16 @@ const cards = [
 ];
 
 export default function Landing() {
+  const [age, setAge] = useState(false);
+  const [terms, setTerms] = useState(false);
+  const [gate, setGate] = useState('');
+
   const handleGoogle = async () => {
+    if (!age || !terms) {
+      setGate('Tick both boxes to continue with Google.');
+      return;
+    }
+    setGate('');
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -53,20 +64,31 @@ export default function Landing() {
         <div className="w-full max-w-md mt-8 space-y-3">
           <Link
             href="/onboarding"
-            className="block w-full text-center py-3.5 rounded-full bg-pink-500 hover:bg-pink-600 font-semibold"
+            className="block w-full text-center py-2.5 text-sm sm:py-3.5 sm:text-base rounded-full bg-pink-500 hover:bg-pink-600 font-semibold"
           >
             Sign up
           </Link>
           <Link
             href="/login"
-            className="block w-full text-center py-3.5 rounded-full bg-pink-500/15 border border-pink-500/40 text-pink-300 hover:bg-pink-500/25 font-semibold"
+            className="block w-full text-center py-2.5 text-sm sm:py-3.5 sm:text-base rounded-full bg-pink-500/15 border border-pink-500/40 text-pink-300 hover:bg-pink-500/25 font-semibold"
           >
             Log in
           </Link>
+          <p className="sm:hidden px-1 text-center text-xs text-zinc-400 leading-relaxed">
+            By joining, you agree to our{' '}
+            <Link href="/terms" className="text-white font-semibold hover:text-pink-400">
+              Terms & Conditions
+            </Link>{' '}
+            and{' '}
+            <Link href="/privacy" className="text-white font-semibold hover:text-pink-400">
+              Privacy Policy
+            </Link>
+            , and confirm that you are at least 18 years old.
+          </p>
           <button
             type="button"
             onClick={() => void handleGoogle()}
-            className="w-full flex items-center justify-center gap-3 py-3.5 rounded-full bg-white text-zinc-900 font-semibold"
+            className="w-full flex items-center justify-center gap-3 py-2.5 text-sm sm:py-3.5 sm:text-base rounded-full bg-white text-zinc-900 font-semibold"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
               <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
@@ -78,7 +100,7 @@ export default function Landing() {
           </button>
         </div>
 
-        <p className="mt-5 max-w-md text-center text-sm text-zinc-400 leading-relaxed">
+        <p className="hidden sm:block mt-5 max-w-md text-center text-sm text-zinc-400 leading-relaxed">
           By joining, you agree to our{' '}
           <Link href="/terms" className="text-white font-semibold hover:text-pink-400">
             Terms & Conditions
