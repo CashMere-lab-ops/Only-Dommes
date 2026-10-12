@@ -1,5 +1,5 @@
-import BackHome from '../../components/BackHome';
-import SiteFooter from '../../components/SiteFooter';
+import BackHome from './BackHome';
+import SiteFooter from './SiteFooter';
 
 export default function Placeholder({
   title,
