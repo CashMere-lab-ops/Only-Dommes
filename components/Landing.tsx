@@ -64,7 +64,7 @@ export default function Landing() {
           >
             Log in
           </Link>
-          <p className="sm:hidden mt-7 mb-6 px-1 text-center text-xs text-zinc-400 leading-relaxed">
+          <p className="sm:hidden mt-3 mb-2 px-1 text-center text-xs text-zinc-400 leading-relaxed">
             By joining, you agree to our{' '}
             <Link href="/terms" className="text-white font-semibold hover:text-pink-400">
               Terms & Conditions
