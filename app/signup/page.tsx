@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import BackHome from '../../components/BackHome';
 import AgeTermsTicks from '../../components/AgeTermsTicks';
+import SiteFooter from '../../components/SiteFooter';
 import { createClient } from '../../lib/supabase';
 
 function cleanUsername(value: string) {
@@ -95,8 +96,9 @@ function SignupForm() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-6">
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
       <BackHome />
+      <div className="flex-1 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex justify-center -mb-4">
           <img src="/logo-icon.png" alt="World of Dommes" className="w-52 h-52 object-contain" />
@@ -162,6 +164,8 @@ function SignupForm() {
           <Link href="/login" className="text-pink-500 hover:underline font-medium">Log in</Link>
         </p>
       </div>
+      </div>
+      <SiteFooter />
     </div>
   );
 }

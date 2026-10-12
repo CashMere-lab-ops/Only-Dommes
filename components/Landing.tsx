@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '../lib/supabase';
 import AgeTermsTicks from './AgeTermsTicks';
+import SiteFooter from './SiteFooter';
 
 const cards = [
   { label: 'Live', src: '/landing/live.png' },
@@ -74,7 +75,7 @@ export default function Landing() {
           >
             Log in
           </Link>
-          <p className="sm:hidden mt-5 mb-4 px-1 text-center text-xs text-zinc-400 leading-relaxed">
+          <p className="sm:hidden mt-7 mb-6 px-1 text-center text-xs text-zinc-400 leading-relaxed">
             By joining, you agree to our{' '}
             <Link href="/terms" className="text-white font-semibold hover:text-pink-400">
               Terms & Conditions
@@ -113,14 +114,7 @@ export default function Landing() {
         </p>
       </main>
 
-      <footer className="px-5 pb-8 text-center text-xs text-zinc-500">
-        <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mb-3">
-          <Link href="/support" className="hover:text-zinc-300">Support</Link>
-          <Link href="/privacy" className="hover:text-zinc-300">Privacy</Link>
-          <Link href="/discover" className="hover:text-zinc-300">Discover</Link>
-        </div>
-        <p>© {new Date().getFullYear()} World of Dommes</p>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

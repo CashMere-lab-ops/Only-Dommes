@@ -1,4 +1,5 @@
 import BackHome from '../../components/BackHome';
+import SiteFooter from '../../components/SiteFooter';
 
 const sections = [
   { id: 'introduction', title: '1. Introduction and scope' },
@@ -30,7 +31,7 @@ const sections = [
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
       <BackHome />
       <div style={{ height: 96 }} />
       <main className="max-w-3xl mx-auto px-5 pb-16">
@@ -334,6 +335,7 @@ export default function PrivacyPage() {
           </section>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

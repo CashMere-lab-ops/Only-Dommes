@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Star, Heart } from 'lucide-react';
 import BackHome from '../../components/BackHome';
+import SiteFooter from '../../components/SiteFooter';
 import { createClient } from '../../lib/supabase';
 
 export default function OnboardingPage() {
@@ -18,8 +19,9 @@ export default function OnboardingPage() {
     signedIn ? `/setup?type=${type}` : `/signup?type=${type}`;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center px-6">
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
       <BackHome />
+      <div className="flex-1 flex flex-col items-center justify-center px-6">
       <div className="text-center mb-10">
         <h1 className="text-4xl font-bold mb-2">
           Enter Your <span className="text-pink-500">World</span>
@@ -73,6 +75,8 @@ export default function OnboardingPage() {
       <p className="mt-3 text-xs text-zinc-500">
         <Link href="/privacy" className="hover:text-pink-500">Privacy</Link>
       </p>
+      </div>
+      <SiteFooter />
     </div>
   );
 }
