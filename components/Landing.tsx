@@ -23,7 +23,7 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
-      <main className="flex-1 flex flex-col items-center px-5 pt-3 pb-4 sm:pt-6 sm:pb-8">
+      <main className="flex-1 flex flex-col items-center px-5 pt-3 pb-12 sm:pt-6 sm:pb-14">
         <img
           src="/logo-icon.png"
           alt="World of Dommes"
