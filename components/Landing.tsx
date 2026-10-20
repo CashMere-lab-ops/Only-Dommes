@@ -85,8 +85,8 @@ export default function Landing() {
         <div className="hidden lg:flex w-full max-w-6xl items-center justify-between gap-16">
           <div className="flex-1">
             <div className="max-w-xl">
-              <img src="/logo-icon.png" alt="World of Dommes" className="w-36 h-36 object-contain mx-auto" />
-              <h1 className="-mt-4 text-6xl font-bold tracking-tight text-center">
+              <img src="/logo-icon.png" alt="World of Dommes" className="w-52 h-52 object-contain mx-auto" />
+              <h1 className="mt-2 text-6xl font-bold tracking-tight text-center">
                 World of <span className="text-pink-500">Dommes</span>
               </h1>
             </div>
