@@ -27,7 +27,7 @@ export default function Landing() {
         <img
           src="/logo-icon.png"
           alt="World of Dommes"
-          className="w-40 h-40 sm:w-64 sm:h-64 object-contain"
+          className="w-48 h-48 sm:w-72 sm:h-72 object-contain"
         />
         <h1 className="-mt-4 sm:-mt-8 text-4xl sm:text-6xl font-bold tracking-tight">
           World of <span className="text-pink-500">Dommes</span>
