@@ -23,22 +23,22 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
-      <main className="flex-1 flex flex-col items-center px-5 pt-6 pb-8">
+      <main className="flex-1 flex flex-col items-center px-5 pt-3 pb-4 sm:pt-6 sm:pb-8">
         <img
           src="/logo-icon.png"
           alt="World of Dommes"
-          className="w-52 h-52 sm:w-64 sm:h-64 object-contain"
+          className="w-40 h-40 sm:w-64 sm:h-64 object-contain"
         />
-        <h1 className="-mt-6 sm:-mt-8 text-4xl sm:text-6xl font-bold tracking-tight">
+        <h1 className="-mt-4 sm:-mt-8 text-4xl sm:text-6xl font-bold tracking-tight">
           World of <span className="text-pink-500">Dommes</span>
         </h1>
         <p className="mt-1 text-sm sm:text-base text-zinc-400">Creators. Community. Connection.</p>
 
-        <div className="mt-6 flex gap-3 w-full max-w-md sm:max-w-xl">
+        <div className="mt-4 sm:mt-6 flex gap-3 w-full max-w-md sm:max-w-xl">
           {cards.map((card) => (
             <div
               key={card.label}
-              className="flex-1 aspect-[3/4] rounded-2xl overflow-hidden relative border border-white/10"
+              className="flex-1 aspect-[4/5] sm:aspect-[3/4] rounded-2xl overflow-hidden relative border border-white/10"
             >
               <img
                 src={card.src}
@@ -51,7 +51,7 @@ export default function Landing() {
           ))}
         </div>
 
-        <div className="w-full max-w-md mt-8 space-y-3">
+        <div className="w-full max-w-md mt-5 sm:mt-8 space-y-3">
           <Link
             href="/onboarding"
             className="block w-full text-center py-2.5 text-sm sm:py-3.5 sm:text-base rounded-full bg-pink-500 hover:bg-pink-600 font-semibold"
@@ -64,7 +64,7 @@ export default function Landing() {
           >
             Log in
           </Link>
-          <p className="sm:hidden mt-3 mb-2 px-1 text-center text-xs text-zinc-400 leading-relaxed">
+          <p className="sm:hidden mt-5 mb-5 px-1 text-center text-xs text-zinc-400 leading-relaxed">
             By joining, you agree to our{' '}
             <Link href="/terms" className="text-white font-semibold hover:text-pink-400">
               Terms & Conditions
