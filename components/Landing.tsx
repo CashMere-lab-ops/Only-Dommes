@@ -56,7 +56,6 @@ export default function Landing() {
           <h1 className="-mt-4 text-4xl font-bold tracking-tight">
             World of <span className="text-pink-500">Dommes</span>
           </h1>
-          <p className="mt-1 text-sm text-zinc-400">Creators. Community. Connection.</p>
           <div className="mt-4 flex gap-3 w-full max-w-md">
             {cards.map((card) => (
               <div key={card.label} className="flex-1 aspect-[4/5] rounded-2xl overflow-hidden relative border border-white/10">
@@ -85,11 +84,12 @@ export default function Landing() {
 
         <div className="hidden lg:flex w-full max-w-6xl items-center justify-between gap-16">
           <div className="flex-1">
-            <img src="/logo-icon.png" alt="World of Dommes" className="w-36 h-36 object-contain" />
-            <h1 className="-mt-4 text-6xl font-bold tracking-tight">
-              World of <span className="text-pink-500">Dommes</span>
-            </h1>
-            <p className="mt-2 text-lg text-zinc-400">Creators. Community. Connection.</p>
+            <div className="max-w-xl">
+              <img src="/logo-icon.png" alt="World of Dommes" className="w-36 h-36 object-contain mx-auto" />
+              <h1 className="-mt-4 text-6xl font-bold tracking-tight text-center">
+                World of <span className="text-pink-500">Dommes</span>
+              </h1>
+            </div>
             <div className="mt-8 flex gap-4 max-w-xl">
               {cards.map((card) => (
                 <div key={card.label} className="flex-1 h-80 rounded-2xl overflow-hidden relative border border-white/10">
