@@ -82,11 +82,11 @@ export default function Landing() {
           </div>
         </div>
 
-        <div className="hidden lg:flex w-full max-w-6xl items-center justify-between gap-16">
+        <div className="hidden lg:flex w-full max-w-6xl items-start justify-between gap-16">
           <div className="flex-1">
             <div className="max-w-xl">
               <img src="/logo-icon.png" alt="World of Dommes" className="w-52 h-52 object-contain mx-auto" />
-              <h1 className="mt-2 text-6xl font-bold tracking-tight text-center">
+              <h1 className="-mt-2 text-6xl font-bold tracking-tight text-center">
                 World of <span className="text-pink-500">Dommes</span>
               </h1>
             </div>
@@ -101,7 +101,7 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="w-[380px] shrink-0 space-y-4">
+          <div className="w-[380px] shrink-0 space-y-4 pt-[12.25rem]">
             <Link href="/onboarding" className="block w-full text-center py-3.5 rounded-full bg-pink-500 hover:bg-pink-600 font-semibold">
               Sign up
             </Link>
