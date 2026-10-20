@@ -60,7 +60,7 @@ export default function Landing() {
           </Link>
           <Link
             href="/login"
-            className="block w-full text-center py-2.5 text-sm sm:py-3.5 sm:text-base rounded-full bg-pink-500/15 border border-pink-500/40 text-pink-300 hover:bg-pink-500/25 font-semibold"
+            className="block w-full text-center py-2.5 text-sm sm:py-3.5 sm:text-base rounded-full bg-pink-500/15 border border-pink-500/40 text-pink-300 hover:bg-pink-500/25 font-semibold mt-2"
           >
             Log in
           </Link>
