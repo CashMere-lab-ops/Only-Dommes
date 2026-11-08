@@ -754,6 +754,21 @@ export default function Sidebar() {
             from="account"
             className="h-10"
           />
+          <Link
+            href="/account"
+            className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-semibold overflow-hidden flex-shrink-0"
+            aria-label="My account"
+          >
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              initial
+            )}
+          </Link>
         </div>
       )}
 
