@@ -21,7 +21,7 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
       <BackHome />
-      <div className="flex-1 flex flex-col items-center justify-center px-6">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-20 pb-10">
       <div className="text-center mb-10">
         <h1 className="text-4xl font-bold mb-2">
           Enter Your <span className="text-pink-500">World</span>
