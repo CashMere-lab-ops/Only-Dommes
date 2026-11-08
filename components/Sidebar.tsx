@@ -366,11 +366,14 @@ export default function Sidebar() {
   useEffect(() => {
     if (hideChrome || !loggedIn) {
       document.documentElement.style.setProperty('--mobile-top-offset', '0px');
+      document.documentElement.style.setProperty('--desktop-top-offset', '0px');
       return;
     }
     document.documentElement.style.setProperty('--mobile-top-offset', '3.5rem');
+    document.documentElement.style.setProperty('--desktop-top-offset', '4rem');
     return () => {
       document.documentElement.style.setProperty('--mobile-top-offset', '0px');
+      document.documentElement.style.setProperty('--desktop-top-offset', '0px');
     };
   }, [loggedIn, hideChrome]);
 
@@ -574,6 +577,184 @@ export default function Sidebar() {
           </div>
         )}
         </>
+      )}
+
+      {/* ── Desktop top bar: search, notifications, balance ── */}
+      {loggedIn && (
+        <div className="hidden lg:flex fixed top-0 left-72 right-0 z-40 h-16 items-center justify-end gap-3 px-6 bg-zinc-950/90 backdrop-blur border-b border-zinc-800">
+          <div className="relative">
+            {searchOpen ? (
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search creators"
+                  className="w-72 h-10 pl-9 pr-9 rounded-full bg-zinc-900 border border-zinc-800 text-sm outline-none focus:border-pink-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchOpen(false);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                  aria-label="Close search"
+                >
+                  <X size={14} />
+                </button>
+                <div className="absolute right-0 top-12 w-72 rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl p-3">
+                  {searchQuery.trim().length < 3 ? (
+                    <p className="text-xs text-zinc-500">Type 3 letters to search</p>
+                  ) : searching ? (
+                    <p className="text-xs text-zinc-500">Searching...</p>
+                  ) : searchResults.length === 0 ? (
+                    <p className="text-xs text-zinc-500">No creators found</p>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto">
+                      {searchResults.map((c) => (
+                        <Link
+                          key={c.id}
+                          href={c.username ? `/${c.username}` : '/'}
+                          className="flex items-center gap-3 py-2"
+                          onClick={() => setSearchOpen(false)}
+                        >
+                          {c.avatar_url ? (
+                            <img src={c.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-semibold">
+                              {(c.display_name || c.username || 'C')[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{c.display_name || c.username}</p>
+                            {c.username ? (
+                              <p className="text-xs text-zinc-500 truncate">@{c.username}</p>
+                            ) : null}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setNotifOpen(false);
+                  setSearchOpen(true);
+                }}
+                className="w-10 h-10 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center text-zinc-300 hover:text-white hover:border-pink-500/40"
+                aria-label="Search creators"
+              >
+                <Search size={18} />
+              </button>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={async () => {
+                const next = !notifOpen;
+                setSearchOpen(false);
+                setNotifOpen(next);
+                if (!next) return;
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+                const { data } = await supabase
+                  .from('notifications')
+                  .select('id, title, body, link, is_read, created_at')
+                  .eq('user_id', user.id)
+                  .order('created_at', { ascending: false })
+                  .limit(8);
+                setNotifItems(data || []);
+              }}
+              className="relative w-10 h-10 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center text-zinc-300 hover:text-white hover:border-pink-500/40"
+              aria-label="Notifications"
+            >
+              <Bell size={18} />
+              {notifCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-pink-500 text-[9px] font-bold flex items-center justify-center">
+                  {notifCount > 9 ? '9+' : notifCount}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <div className="absolute right-0 top-12 w-80 rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold">Notifications</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) return;
+                      await supabase
+                        .from('notifications')
+                        .update({ is_read: true })
+                        .eq('user_id', user.id)
+                        .eq('is_read', false);
+                      setNotifItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
+                      setNotifCount(0);
+                    }}
+                    className="text-xs text-pink-400"
+                  >
+                    Mark all read
+                  </button>
+                </div>
+                {notifItems.length === 0 ? (
+                  <p className="text-xs text-zinc-500 py-3">No notifications yet</p>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifItems.map((n) => (
+                      <Link
+                        key={n.id}
+                        href={n.link || '/notifications'}
+                        onClick={async () => {
+                          const { data: { user } } = await supabase.auth.getUser();
+                          if (user) {
+                            await supabase
+                              .from('notifications')
+                              .update({ is_read: true })
+                              .eq('id', n.id)
+                              .eq('user_id', user.id);
+                          }
+                          setNotifOpen(false);
+                        }}
+                        className="flex items-start gap-3 py-2.5 border-b border-zinc-900 last:border-0"
+                      >
+                        <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${n.is_read ? 'bg-transparent' : 'bg-pink-500'}`} />
+                        <span className="min-w-0">
+                          <span className="block text-sm truncate">{n.title}</span>
+                          {n.body ? (
+                            <span className="block text-xs text-zinc-500 truncate">{n.body}</span>
+                          ) : null}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                <Link
+                  href="/notifications"
+                  onClick={() => setNotifOpen(false)}
+                  className="block text-center text-sm text-pink-400 pt-3"
+                >
+                  See all
+                </Link>
+              </div>
+            )}
+          </div>
+
+          <WalletBalance
+            balance={profileLoaded ? balance : null}
+            compact
+            showTopUpHint={isSub}
+            from="account"
+            className="h-10"
+          />
+        </div>
       )}
 
       {/* ── Desktop sidebar ── */}

@@ -93,6 +93,13 @@ body {
   }
 }
 
+/* Clear fixed desktop top bar */
+@media (min-width: 1024px) {
+  main {
+    padding-top: var(--desktop-top-offset, 0px);
+  }
+}
+
 /* ===== Mux player — cleaner skip / controls on phone & tablet ===== */
 .wod-mux-player {
   --media-control-background: transparent;
