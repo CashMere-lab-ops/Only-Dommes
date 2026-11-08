@@ -76,6 +76,9 @@ export default function Sidebar() {
     { id: string; title: string; body?: string | null; link?: string | null; is_read?: boolean; created_at: string }[]
   >([]);
   const notifRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const searchDesktopRef = useRef<HTMLDivElement>(null);
+  const searchBtnRef = useRef<HTMLButtonElement>(null);
 
   const refreshBalance = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -128,6 +131,19 @@ export default function Sidebar() {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [notifOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const inside =
+        (searchRef.current && searchRef.current.contains(e.target as Node)) ||
+        (searchDesktopRef.current && searchDesktopRef.current.contains(e.target as Node)) ||
+        (searchBtnRef.current && searchBtnRef.current.contains(e.target as Node));
+      if (!inside) setSearchOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [searchOpen]);
 
   useEffect(() => {
     setSearchOpen(false);
@@ -435,6 +451,7 @@ export default function Sidebar() {
               )}
             </button>
             <button
+              ref={searchBtnRef}
               type="button"
               onClick={() => {
                 setNotifOpen(false);
@@ -533,7 +550,7 @@ export default function Sidebar() {
           </div>
         )}
         {searchOpen && (
-          <div className="lg:hidden fixed top-14 inset-x-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
+          <div ref={searchRef} className="lg:hidden fixed top-14 inset-x-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
               <input
@@ -554,9 +571,7 @@ export default function Sidebar() {
                 </button>
               )}
             </div>
-            {searchQuery.trim().length < 3 ? (
-              <p className="text-xs text-zinc-500 mt-3">Type 3 letters to search</p>
-            ) : searching ? (
+            {searchQuery.trim().length < 3 ? null : searching ? (
               <p className="text-xs text-zinc-500 mt-3">Searching...</p>
             ) : searchResults.length === 0 ? (
               <p className="text-xs text-zinc-500 mt-3">No creators found</p>
@@ -594,7 +609,7 @@ export default function Sidebar() {
       {/* ── Desktop top bar: search, notifications, balance ── */}
       {loggedIn && (
         <div className="hidden lg:flex fixed top-0 left-72 right-0 z-40 h-16 items-center justify-end gap-3 px-6 bg-zinc-950/90 backdrop-blur border-b border-zinc-800">
-          <div className="relative">
+          <div className="relative" ref={searchDesktopRef}>
             {searchOpen ? (
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -616,10 +631,9 @@ export default function Sidebar() {
                 >
                   <X size={14} />
                 </button>
+                {searchQuery.trim().length >= 3 && (
                 <div className="absolute right-0 top-12 w-72 rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl p-3">
-                  {searchQuery.trim().length < 3 ? (
-                    <p className="text-xs text-zinc-500">Type 3 letters to search</p>
-                  ) : searching ? (
+                  {searching ? (
                     <p className="text-xs text-zinc-500">Searching...</p>
                   ) : searchResults.length === 0 ? (
                     <p className="text-xs text-zinc-500">No creators found</p>
@@ -650,6 +664,7 @@ export default function Sidebar() {
                     </div>
                   )}
                 </div>
+                )}
               </div>
             ) : (
               <button
