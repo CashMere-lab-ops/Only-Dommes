@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -75,6 +75,7 @@ export default function Sidebar() {
   const [notifItems, setNotifItems] = useState<
     { id: string; title: string; body?: string | null; link?: string | null; is_read?: boolean; created_at: string }[]
   >([]);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   const refreshBalance = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -116,6 +117,17 @@ export default function Sidebar() {
       window.clearTimeout(timer);
     };
   }, [searchOpen, searchQuery, supabase]);
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [notifOpen]);
 
   useEffect(() => {
     setSearchOpen(false);
@@ -654,7 +666,7 @@ export default function Sidebar() {
             )}
           </div>
 
-          <div className="relative">
+          <div className="relative" ref={notifRef}>
             <button
               type="button"
               onClick={async () => {
