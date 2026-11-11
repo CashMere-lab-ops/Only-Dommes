@@ -194,9 +194,12 @@ export default function AdminPage() {
                   {usage?.mux?.connected ? (
                     <>
                       <p className="text-2xl font-semibold">{usage.mux.delivered_minutes}</p>
-                      <p className="text-xs text-zinc-500">minutes delivered</p>
+                      <p className="text-xs text-zinc-500">minutes used</p>
+                      <p className="mt-3 text-sm">
+                        {usage.mux.remaining_minutes?.toLocaleString()} left of {usage.mux.free_minutes?.toLocaleString()}
+                      </p>
                       {usage.mux.assets != null && (
-                        <p className="mt-3 text-sm">{usage.mux.assets} assets</p>
+                        <p className="text-sm">{usage.mux.assets} clips stored</p>
                       )}
                       <p className="text-xs text-zinc-500 mt-2">{usage.mux.note}</p>
                     </>

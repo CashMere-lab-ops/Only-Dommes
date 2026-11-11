@@ -134,8 +134,13 @@ async function muxUsage() {
   if (!id || !secret) return { connected: false, note: 'Mux keys are not set.' };
 
   const auth = 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
+  const hour = 60 * 60;
+  const end = Math.floor(Date.now() / 1000 / hour) * hour - 13 * hour;
+  const start = end - 30 * 24 * hour;
+
   const params = new URLSearchParams();
-  params.append('timeframe[]', '30:days');
+  params.append('timeframe[]', String(start));
+  params.append('timeframe[]', String(end));
   params.set('limit', '100');
 
   const usageRes = await fetch(
@@ -144,10 +149,7 @@ async function muxUsage() {
   );
   const usageText = await usageRes.text();
   if (!usageRes.ok) {
-    return {
-      connected: false,
-      note: `Mux ${usageRes.status}: ${usageText.slice(0, 180)}`,
-    };
+    return { connected: false, note: `Mux ${usageRes.status}: ${usageText.slice(0, 180)}` };
   }
 
   const usage = JSON.parse(usageText);
@@ -156,6 +158,8 @@ async function muxUsage() {
     (n: number, r: any) => n + Number(r.delivered_seconds || 0),
     0
   );
+  const used = Math.round(seconds / 60);
+  const free = 100000;
 
   const assetsRes = await fetch('https://api.mux.com/video/v1/assets?limit=1', {
     headers: { Authorization: auth },
@@ -166,9 +170,11 @@ async function muxUsage() {
   return {
     connected: true,
     window: 'Last 30 days',
-    delivered_minutes: Math.round(seconds / 60),
+    delivered_minutes: used,
+    free_minutes: free,
+    remaining_minutes: Math.max(0, free - used),
     assets: assets.total_row_count ?? null,
-    note: 'Delivery minutes can lag about 12 hours.',
+    note: 'Ends 13 hours ago. First 100,000 minutes each month are free.',
   };
 }
 
