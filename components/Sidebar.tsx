@@ -21,6 +21,7 @@ import {
   HelpCircle,
   User,
   Menu,
+  Shield,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import WalletBalance from './WalletBalance';
@@ -32,6 +33,7 @@ let cachedProfile: {
   avatar_url?: string;
   account_type?: string;
   balance_gbp?: number;
+  is_admin?: boolean;
 } | null = null;
 
 export function setCachedBalance(balance: number) {
@@ -176,7 +178,7 @@ export default function Sidebar() {
 
       const { data } = await supabase
         .from('profiles')
-        .select('username, display_name, avatar_url, account_type, balance_gbp')
+        .select('username, display_name, avatar_url, account_type, balance_gbp, is_admin')
         .eq('id', user.id)
         .single();
 
@@ -332,6 +334,7 @@ export default function Sidebar() {
   ];
 
   const isCreator = profile?.account_type === 'creator';
+  const isAdmin = !!profile?.is_admin;
 
   const desktopMoreItems = [
     { href: '/account', label: 'My Account', icon: User },
@@ -344,6 +347,7 @@ export default function Sidebar() {
     { href: '/notifications', label: 'Notifications', icon: Bell, badge: notifCount },
     { href: '/settings', label: 'Settings', icon: Settings },
     { href: '/support', label: 'Support', icon: HelpCircle },
+    ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: Shield }] : []),
   ];
 
   const mobileMoreItems = [
@@ -359,6 +363,7 @@ export default function Sidebar() {
     { href: '/notifications', label: 'Notifications', icon: Bell, badge: notifCount },
     { href: '/settings', label: 'Settings', icon: Settings },
     { href: '/support', label: 'Support', icon: HelpCircle },
+    ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: Shield }] : []),
   ];
 
   // Bottom bar: Home · Live · Dashboard · Messages · More (Clips lives in More)
