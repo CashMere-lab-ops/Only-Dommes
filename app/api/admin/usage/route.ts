@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { getMux } from '../../../../lib/mux';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,92 +29,147 @@ async function requireAdmin(request: Request) {
   return { admin };
 }
 
-async function livekitUsage() {
+async function livekitUsage(admin: any) {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
+  const url = process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL;
   const projectId = process.env.LIVEKIT_PROJECT_ID;
-  if (!apiKey || !apiSecret || !projectId) {
-    return { connected: false, note: 'Add LIVEKIT_PROJECT_ID in Vercel. It starts with p_ in the LiveKit project URL.' };
+
+  let rooms = 0;
+  let roomNote = '';
+  if (apiKey && apiSecret && url) {
+    try {
+      const host = url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+      const roomsClient = new RoomServiceClient(host, apiKey, apiSecret);
+      const list = await roomsClient.listRooms();
+      rooms = list.length;
+    } catch (e: any) {
+      roomNote = e?.message || 'Could not list rooms';
+    }
   }
-  const at = new AccessToken(apiKey, apiSecret, { ttl: 60 * 10 });
+
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: streams } = await admin
+    .from('live_streams')
+    .select('started_at, ended_at, peak_viewers, viewer_count')
+    .gte('started_at', since);
+  let siteMinutes = 0;
+  for (const s of streams || []) {
+    const from = new Date(s.started_at).getTime();
+    const to = s.ended_at ? new Date(s.ended_at).getTime() : Date.now();
+    const mins = Math.max(0, (to - from) / 60000);
+    const people = Math.max(1, Number(s.peak_viewers || s.viewer_count || 1));
+    siteMinutes += mins * people;
+  }
+
+  if (!apiKey || !apiSecret || !projectId) {
+    return {
+      connected: true,
+      window: 'Last 7 days',
+      rooms,
+      minutes: Math.round(siteMinutes),
+      source: 'Site records',
+      note: roomNote || 'Add LIVEKIT_PROJECT_ID for LiveKit Cloud totals. Showing minutes from your own lives.',
+    };
+  }
+
+  const at = new AccessToken(apiKey, apiSecret, {
+    identity: 'wod-admin',
+    ttl: 60 * 10,
+  });
   at.addGrant({ roomList: true });
   const token = await at.toJwt();
   const end = new Date();
   const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
-  let sessions = 0;
+  const apiUrl =
+    `https://cloud-api.livekit.io/api/project/${projectId}/sessions` +
+    `?limit=100&page=0&start=${day(start)}&end=${day(end)}`;
+  const res = await fetch(apiUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    return {
+      connected: true,
+      window: 'Last 7 days',
+      rooms,
+      minutes: Math.round(siteMinutes),
+      source: 'Site records',
+      note: 'LiveKit Cloud analytics needs the Scale plan. Showing minutes from your own lives and calls rooms.',
+    };
+  }
+  if (!res.ok) {
+    return {
+      connected: true,
+      window: 'Last 7 days',
+      rooms,
+      minutes: Math.round(siteMinutes),
+      source: 'Site records',
+      note: `LiveKit Cloud returned ${res.status}. Showing site records instead.`,
+    };
+  }
+
+  const json = await res.json();
+  const rows = json.sessions || [];
   let minutes = 0;
   let bytesOut = 0;
-  for (let page = 0; page < 5; page++) {
-    const url =
-      `https://cloud-api.livekit.io/api/project/${projectId}/sessions` +
-      `?limit=100&page=${page}&start=${day(start)}&end=${day(end)}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
-    if (!res.ok) {
-      return { connected: false, note: `LiveKit returned ${res.status}. Check LIVEKIT_PROJECT_ID.` };
-    }
-    const json = await res.json();
-    const rows = json.sessions || json.data || [];
-    if (!rows.length) break;
-    for (const s of rows) {
-      sessions += 1;
-      minutes += Number(s.connectionMinutes || s.connection_minutes || 0);
-      bytesOut += Number(s.bandwidthOut || s.bandwidth_out || 0);
-      if (!s.connectionMinutes && s.numParticipants && s.createdAt) {
-        const from = new Date(s.createdAt).getTime();
-        const to = s.endedAt ? new Date(s.endedAt).getTime() : Date.now();
-        minutes += Math.max(0, (to - from) / 60000) * Number(s.numParticipants || 1);
-      }
-    }
-    if (rows.length < 100) break;
+  for (const s of rows) {
+    minutes += Number(s.connectionMinutes || 0);
+    bytesOut += Number(s.bandwidthOut || 0);
   }
   return {
     connected: true,
     window: 'Last 7 days',
-    sessions,
+    rooms,
+    sessions: rows.length,
     minutes: Math.round(minutes),
     data_gb: Math.round((bytesOut / (1024 * 1024 * 1024)) * 100) / 100,
+    source: 'LiveKit Cloud',
   };
 }
 
 async function muxUsage() {
-  const id = process.env.MUX_TOKEN_ID;
-  const secret = process.env.MUX_TOKEN_SECRET;
-  if (!id || !secret) return { connected: false, note: 'Mux keys are not set.' };
-  const auth = 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
-  const end = Math.floor(Date.now() / 1000) - 13 * 60 * 60;
-  const start = end - 30 * 24 * 60 * 60;
-  const usageRes = await fetch(
-    `https://api.mux.com/video/v1/delivery-usage?timeframe[]=${start}&timeframe[]=${end}&limit=100`,
-    { headers: { Authorization: auth }, cache: 'no-store' }
-  );
-  if (!usageRes.ok) return { connected: false, note: `Mux returned ${usageRes.status}.` };
-  const usage = await usageRes.json();
-  const rows = usage.data || [];
-  const seconds = rows.reduce((n: number, r: any) => n + Number(r.delivered_seconds || 0), 0);
-  const assetsRes = await fetch('https://api.mux.com/video/v1/assets?limit=1', {
-    headers: { Authorization: auth },
-    cache: 'no-store',
-  });
-  const assets = assetsRes.ok ? await assetsRes.json() : {};
-  return {
-    connected: true,
-    window: 'Last 30 days',
-    delivered_minutes: Math.round(seconds / 60),
-    assets: assets.total_row_count ?? null,
-    note: 'Delivery minutes update hourly and can lag about 12 hours.',
-  };
+  try {
+    const mux = getMux();
+    const end = Math.floor(Date.now() / 1000) - 13 * 60 * 60;
+    const start = end - 30 * 24 * 60 * 60;
+    const usage = await mux.video.deliveryUsage.list({
+      timeframe: [String(start), String(end)],
+    } as any);
+    const rows = (usage as any).data || usage || [];
+    const seconds = (Array.isArray(rows) ? rows : []).reduce(
+      (n: number, r: any) => n + Number(r.delivered_seconds || 0),
+      0
+    );
+    const assets = await mux.video.assets.list({ limit: 1 });
+    return {
+      connected: true,
+      window: 'Last 30 days',
+      delivered_minutes: Math.round(seconds / 60),
+      assets: (assets as any).total_row_count ?? null,
+      note: 'Delivery minutes can lag about 12 hours.',
+    };
+  } catch (e: any) {
+    return { connected: false, note: e?.message || 'Mux request failed' };
+  }
 }
 
 async function supabaseUsage(admin: any) {
   let bytes = 0;
   let files = 0;
+  let note = 'File storage used of the 100 GB Pro quota.';
   for (let from = 0; from < 5000; from += 1000) {
     const { data, error } = await admin
       .schema('storage')
       .from('objects')
       .select('metadata')
       .range(from, from + 999);
-    if (error || !data?.length) break;
+    if (error) {
+      note = error.message;
+      break;
+    }
+    if (!data?.length) break;
     files += data.length;
     for (const row of data) {
       const size = Number(row.metadata?.size || 0);
@@ -121,13 +177,12 @@ async function supabaseUsage(admin: any) {
     }
     if (data.length < 1000) break;
   }
-  const gb = Math.round((bytes / (1024 * 1024 * 1024)) * 100) / 100;
   return {
     connected: true,
-    storage_gb: gb,
+    storage_gb: Math.round((bytes / (1024 * 1024 * 1024)) * 100) / 100,
     storage_quota_gb: 100,
     files,
-    note: 'File storage used of the 100 GB Pro quota.',
+    note,
   };
 }
 
@@ -135,7 +190,7 @@ export async function GET(request: Request) {
   const gate = await requireAdmin(request);
   if (gate.error) return gate.error;
   const [livekit, mux, supabase] = await Promise.all([
-    livekitUsage().catch((e) => ({ connected: false, note: e.message })),
+    livekitUsage(gate.admin).catch((e) => ({ connected: false, note: e.message })),
     muxUsage().catch((e) => ({ connected: false, note: e.message })),
     supabaseUsage(gate.admin).catch((e) => ({ connected: false, note: e.message })),
   ]);

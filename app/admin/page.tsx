@@ -176,8 +176,13 @@ export default function AdminPage() {
                     <>
                       <p className="text-2xl font-semibold">{usage.livekit.minutes}</p>
                       <p className="text-xs text-zinc-500">connection minutes</p>
-                      <p className="mt-3 text-sm">{usage.livekit.data_gb} GB data out</p>
-                      <p className="text-xs text-zinc-500">{usage.livekit.sessions} sessions</p>
+                      <p className="mt-3 text-sm">{usage.livekit.rooms ?? 0} rooms open now</p>
+                      {usage.livekit.data_gb != null && (
+                        <p className="text-sm">{usage.livekit.data_gb} GB data out</p>
+                      )}
+                      {usage.livekit.note && (
+                        <p className="text-xs text-zinc-500 mt-2">{usage.livekit.note}</p>
+                      )}
                     </>
                   ) : (
                     <p className="text-sm text-zinc-400">{usage?.livekit?.note || 'Loading...'}</p>
