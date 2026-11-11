@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
-import { getMux } from '../../../../lib/mux';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,29 +129,47 @@ async function livekitUsage(admin: any) {
 }
 
 async function muxUsage() {
-  try {
-    const mux = getMux();
-    const end = Math.floor(Date.now() / 1000) - 13 * 60 * 60;
-    const start = end - 30 * 24 * 60 * 60;
-    const usage = await mux.video.deliveryUsage.list({
-      timeframe: [String(start), String(end)],
-    } as any);
-    const rows = (usage as any).data || usage || [];
-    const seconds = (Array.isArray(rows) ? rows : []).reduce(
-      (n: number, r: any) => n + Number(r.delivered_seconds || 0),
-      0
-    );
-    const assets = await mux.video.assets.list({ limit: 1 });
+  const id = process.env.MUX_TOKEN_ID?.trim();
+  const secret = process.env.MUX_TOKEN_SECRET?.trim();
+  if (!id || !secret) return { connected: false, note: 'Mux keys are not set.' };
+
+  const auth = 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64');
+  const params = new URLSearchParams();
+  params.append('timeframe[]', '30:days');
+  params.set('limit', '100');
+
+  const usageRes = await fetch(
+    `https://api.mux.com/video/v1/delivery-usage?${params.toString()}`,
+    { headers: { Authorization: auth }, cache: 'no-store' }
+  );
+  const usageText = await usageRes.text();
+  if (!usageRes.ok) {
     return {
-      connected: true,
-      window: 'Last 30 days',
-      delivered_minutes: Math.round(seconds / 60),
-      assets: (assets as any).total_row_count ?? null,
-      note: 'Delivery minutes can lag about 12 hours.',
+      connected: false,
+      note: `Mux ${usageRes.status}: ${usageText.slice(0, 180)}`,
     };
-  } catch (e: any) {
-    return { connected: false, note: e?.message || 'Mux request failed' };
   }
+
+  const usage = JSON.parse(usageText);
+  const rows = usage.data || [];
+  const seconds = rows.reduce(
+    (n: number, r: any) => n + Number(r.delivered_seconds || 0),
+    0
+  );
+
+  const assetsRes = await fetch('https://api.mux.com/video/v1/assets?limit=1', {
+    headers: { Authorization: auth },
+    cache: 'no-store',
+  });
+  const assets = assetsRes.ok ? await assetsRes.json() : {};
+
+  return {
+    connected: true,
+    window: 'Last 30 days',
+    delivered_minutes: Math.round(seconds / 60),
+    assets: assets.total_row_count ?? null,
+    note: 'Delivery minutes can lag about 12 hours.',
+  };
 }
 
 async function supabaseUsage(admin: any) {
