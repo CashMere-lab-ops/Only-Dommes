@@ -35,6 +35,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [data, setData] = useState<Overview | null>(null);
+  const [usage, setUsage] = useState<any>(null);
   const [range, setRange] = useState('30d');
 
   useEffect(() => {
@@ -56,6 +57,11 @@ export default function AdminPage() {
       }
       const json = await res.json();
       setData(json);
+      const usageRes = await fetch('/api/admin/usage', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (usageRes.ok) setUsage(await usageRes.json());
       setLoading(false);
     };
     void load();
@@ -160,6 +166,52 @@ export default function AdminPage() {
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                  <p className="text-sm font-medium">LiveKit</p>
+                  <p className="text-xs text-zinc-500 mb-3">{usage?.livekit?.window || 'Lives and calls'}</p>
+                  {usage?.livekit?.connected ? (
+                    <>
+                      <p className="text-2xl font-semibold">{usage.livekit.minutes}</p>
+                      <p className="text-xs text-zinc-500">connection minutes</p>
+                      <p className="mt-3 text-sm">{usage.livekit.data_gb} GB data out</p>
+                      <p className="text-xs text-zinc-500">{usage.livekit.sessions} sessions</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-400">{usage?.livekit?.note || 'Loading...'}</p>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                  <p className="text-sm font-medium">Mux</p>
+                  <p className="text-xs text-zinc-500 mb-3">{usage?.mux?.window || 'Paid clips'}</p>
+                  {usage?.mux?.connected ? (
+                    <>
+                      <p className="text-2xl font-semibold">{usage.mux.delivered_minutes}</p>
+                      <p className="text-xs text-zinc-500">minutes delivered</p>
+                      {usage.mux.assets != null && (
+                        <p className="mt-3 text-sm">{usage.mux.assets} assets</p>
+                      )}
+                      <p className="text-xs text-zinc-500 mt-2">{usage.mux.note}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-400">{usage?.mux?.note || 'Loading...'}</p>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                  <p className="text-sm font-medium">Supabase</p>
+                  <p className="text-xs text-zinc-500 mb-3">File storage</p>
+                  {usage?.supabase?.connected ? (
+                    <>
+                      <p className="text-2xl font-semibold">{usage.supabase.storage_gb} GB</p>
+                      <p className="text-xs text-zinc-500">of {usage.supabase.storage_quota_gb} GB</p>
+                      <p className="mt-3 text-sm">{usage.supabase.files} files</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-400">{usage?.supabase?.note || 'Loading...'}</p>
+                  )}
+                </div>
               </div>
             </>
           )}
