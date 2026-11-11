@@ -213,8 +213,16 @@ export default function AdminPage() {
                   {usage?.supabase?.connected ? (
                     <>
                       <p className="text-2xl font-semibold">{usage.supabase.storage_gb} GB</p>
-                      <p className="text-xs text-zinc-500">of {usage.supabase.storage_quota_gb} GB</p>
-                      <p className="mt-3 text-sm">{usage.supabase.files} files</p>
+                      <p className="text-xs text-zinc-500">used</p>
+                      <p className="mt-3 text-sm">
+                        {usage.supabase.remaining_gb} GB left of {usage.supabase.storage_quota_gb} GB
+                      </p>
+                      <p className="text-sm">{usage.supabase.files} files</p>
+                      {usage.supabase.buckets?.length > 0 && (
+                        <p className="text-xs text-zinc-500 mt-2">
+                          {usage.supabase.buckets.map((b: any) => `${b.name} ${b.files}`).join(' · ')}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <p className="text-sm text-zinc-400">{usage?.supabase?.note || 'Loading...'}</p>

@@ -178,34 +178,65 @@ async function muxUsage() {
   };
 }
 
+async function listFolder(admin: any, bucket: string, prefix: string) {
+  const { data, error } = await admin.storage.from(bucket).list(prefix, {
+    limit: 1000,
+    sortBy: { column: 'name', order: 'asc' },
+  });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 async function supabaseUsage(admin: any) {
+  const { data: buckets, error } = await admin.storage.listBuckets();
+  if (error) return { connected: false, note: error.message };
+
   let bytes = 0;
   let files = 0;
-  let note = 'File storage used of the 100 GB Pro quota.';
-  for (let from = 0; from < 5000; from += 1000) {
-    const { data, error } = await admin
-      .schema('storage')
-      .from('objects')
-      .select('metadata')
-      .range(from, from + 999);
-    if (error) {
-      note = error.message;
-      break;
+  const byBucket: { name: string; files: number; gb: number }[] = [];
+
+  for (const bucket of buckets || []) {
+    let bucketBytes = 0;
+    let bucketFiles = 0;
+    const queue = [''];
+    const seen = new Set<string>();
+
+    while (queue.length && seen.size < 200) {
+      const prefix = queue.shift() || '';
+      if (seen.has(prefix)) continue;
+      seen.add(prefix);
+      const rows = await listFolder(admin, bucket.name, prefix);
+      for (const row of rows) {
+        const isFolder = !row.metadata && !row.id;
+        const path = prefix ? `${prefix}/${row.name}` : row.name;
+        if (isFolder) {
+          queue.push(path);
+          continue;
+        }
+        bucketFiles += 1;
+        const size = Number(row.metadata?.size || 0);
+        if (Number.isFinite(size)) bucketBytes += size;
+      }
     }
-    if (!data?.length) break;
-    files += data.length;
-    for (const row of data) {
-      const size = Number(row.metadata?.size || 0);
-      if (Number.isFinite(size)) bytes += size;
-    }
-    if (data.length < 1000) break;
+
+    files += bucketFiles;
+    bytes += bucketBytes;
+    byBucket.push({
+      name: bucket.name,
+      files: bucketFiles,
+      gb: Math.round((bucketBytes / (1024 * 1024 * 1024)) * 100) / 100,
+    });
   }
+
+  const gb = Math.round((bytes / (1024 * 1024 * 1024)) * 100) / 100;
   return {
     connected: true,
-    storage_gb: Math.round((bytes / (1024 * 1024 * 1024)) * 100) / 100,
+    storage_gb: gb,
     storage_quota_gb: 100,
+    remaining_gb: Math.round((100 - gb) * 100) / 100,
     files,
-    note,
+    buckets: byBucket,
+    note: 'File storage used of the 100 GB Pro quota.',
   };
 }
 
