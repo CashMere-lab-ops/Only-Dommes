@@ -417,7 +417,7 @@ export default function Sidebar() {
       {/* ── Mobile top bar: logo + balance + avatar ── */}
       {loggedIn && (
         <>
-        <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
+        <div className="lg:hidden fixed top-0 inset-x-0 z-50 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
           <div className="flex items-center min-w-0">
             <Link href="/" className="flex items-center">
               <img
@@ -492,7 +492,7 @@ export default function Sidebar() {
           </div>
         </div>
         {notifOpen && (
-          <div className="lg:hidden fixed top-14 inset-x-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
+          <div className="lg:hidden fixed top-14 inset-x-0 z-[60] bg-zinc-950 border-b border-zinc-800 px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-semibold">Notifications</p>
               <button
@@ -555,7 +555,7 @@ export default function Sidebar() {
           </div>
         )}
         {searchOpen && (
-          <div ref={searchRef} className="lg:hidden fixed top-14 inset-x-0 z-40 bg-zinc-950 border-b border-zinc-800 px-4 py-3">
+          <div ref={searchRef} className="lg:hidden fixed top-14 inset-x-0 z-[60] bg-zinc-950 border-b border-zinc-800 px-4 py-3">
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
               <input
