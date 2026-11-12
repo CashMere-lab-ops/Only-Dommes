@@ -613,7 +613,7 @@ export default function Sidebar() {
 
       {/* ── Desktop top bar: search, notifications, balance ── */}
       {loggedIn && (
-        <div className="hidden lg:flex fixed top-0 left-72 right-0 z-40 h-16 items-center justify-end gap-3 px-6 bg-zinc-950/90 backdrop-blur border-b border-zinc-800">
+        <div className="hidden lg:flex fixed top-0 left-72 right-0 z-50 h-16 items-center justify-end gap-3 px-6 bg-zinc-950/90 backdrop-blur border-b border-zinc-800">
           <div className="relative" ref={searchDesktopRef}>
             {searchOpen ? (
               <div className="relative">
@@ -637,7 +637,7 @@ export default function Sidebar() {
                   <X size={14} />
                 </button>
                 {searchQuery.trim().length >= 3 && (
-                <div className="absolute right-0 top-12 w-72 rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl p-3">
+                <div className="absolute right-0 top-12 z-[60] w-72 rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl p-3">
                   {searching ? (
                     <p className="text-xs text-zinc-500">Searching...</p>
                   ) : searchResults.length === 0 ? (
@@ -715,7 +715,7 @@ export default function Sidebar() {
               )}
             </button>
             {notifOpen && (
-              <div className="absolute right-0 top-12 w-80 rounded-2xl border border-zinc-800 bg-zinc-950 shadow-xl p-3">
+              <div className="absolute right-0 top-12 z-[60] w-80 rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl p-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-semibold">Notifications</p>
                   <button
