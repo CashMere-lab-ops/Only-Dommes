@@ -78,6 +78,7 @@ export default function Sidebar() {
     { id: string; title: string; body?: string | null; link?: string | null; is_read?: boolean; created_at: string }[]
   >([]);
   const notifRef = useRef<HTMLDivElement>(null);
+  const notifPanelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchDesktopRef = useRef<HTMLDivElement>(null);
   const searchBtnRef = useRef<HTMLButtonElement>(null);
@@ -126,9 +127,11 @@ export default function Sidebar() {
   useEffect(() => {
     if (!notifOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setNotifOpen(false);
-      }
+      const target = e.target as Node;
+      const inside =
+        (notifRef.current && notifRef.current.contains(target)) ||
+        (notifPanelRef.current && notifPanelRef.current.contains(target));
+      if (!inside) setNotifOpen(false);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -492,7 +495,7 @@ export default function Sidebar() {
           </div>
         </div>
         {notifOpen && (
-          <div className="lg:hidden fixed top-14 inset-x-0 z-[60] bg-zinc-950 border-b border-zinc-800 px-4 py-3">
+          <div ref={notifPanelRef} className="lg:hidden fixed top-14 inset-x-0 z-[60] bg-zinc-950 border-b border-zinc-800 px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-semibold">Notifications</p>
               <button
