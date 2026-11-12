@@ -79,6 +79,7 @@ export default function Sidebar() {
   >([]);
   const notifRef = useRef<HTMLDivElement>(null);
   const notifPanelRef = useRef<HTMLDivElement>(null);
+  const notifBtnRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchDesktopRef = useRef<HTMLDivElement>(null);
   const searchBtnRef = useRef<HTMLButtonElement>(null);
@@ -128,6 +129,7 @@ export default function Sidebar() {
     if (!notifOpen) return;
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
+      if (notifBtnRef.current && notifBtnRef.current.contains(target)) return;
       const inside =
         (notifRef.current && notifRef.current.contains(target)) ||
         (notifPanelRef.current && notifPanelRef.current.contains(target));
@@ -432,6 +434,7 @@ export default function Sidebar() {
           </div>
           <div className="flex items-center gap-2.5 flex-shrink-0">
             <button
+              ref={notifBtnRef}
               type="button"
               onClick={async () => {
                 const next = !notifOpen;
