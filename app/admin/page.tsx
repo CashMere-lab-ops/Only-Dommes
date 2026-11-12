@@ -223,9 +223,6 @@ export default function AdminPage() {
                           Database disk {usage.supabase.disk.used_gb} GB of {usage.supabase.disk.included_gb} GB included
                         </p>
                       )}
-                      {usage.supabase.platform_note && (
-                        <p className="text-xs text-zinc-500 mt-2">{usage.supabase.platform_note}</p>
-                      )}
                       {usage.supabase.buckets?.length > 0 && (
                         <p className="text-xs text-zinc-500 mt-2">
                           {usage.supabase.buckets.map((b: any) => `${b.name} ${b.files}`).join(' · ')}

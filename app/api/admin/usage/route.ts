@@ -269,9 +269,7 @@ async function supabasePlatform() {
 
   return {
     disk,
-    platform_note: diskRes.ok
-      ? 'Monthly egress is only in Supabase → Organization → Usage. The API does not give that number.'
-      : `Disk ${diskRes.status}: ${diskText.slice(0, 140)}`,
+    platform_note: diskRes.ok ? null : `Disk ${diskRes.status}: ${diskText.slice(0, 140)}`,
   };
 }
 
