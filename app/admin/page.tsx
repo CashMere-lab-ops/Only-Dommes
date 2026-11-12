@@ -223,11 +223,6 @@ export default function AdminPage() {
                           Database disk {usage.supabase.disk.used_gb} GB of {usage.supabase.disk.included_gb} GB included
                         </p>
                       )}
-                      {usage.supabase.egress && (
-                        <p className="text-sm">
-                          Egress {usage.supabase.egress.used_gb} GB · {usage.supabase.egress.remaining_gb} GB left of {usage.supabase.egress.quota_gb} GB
-                        </p>
-                      )}
                       {usage.supabase.platform_note && (
                         <p className="text-xs text-zinc-500 mt-2">{usage.supabase.platform_note}</p>
                       )}

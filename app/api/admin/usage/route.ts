@@ -261,39 +261,17 @@ async function supabasePlatform() {
   if (diskRes.ok) {
     const json = JSON.parse(diskText);
     const used = Number(json.metrics?.fs_used_bytes || 0);
-    const size = Number(json.metrics?.fs_size_bytes || 0);
     disk = {
       used_gb: Math.round((used / 1024 ** 3) * 100) / 100,
-      size_gb: Math.round((size / 1024 ** 3) * 100) / 100,
       included_gb: 8,
     };
   }
 
-  const egressRes = await fetch(
-    `https://api.supabase.com/v1/projects/${ref}/daily-stats?attribute=egress`,
-    { headers, cache: 'no-store' }
-  );
-  const egressText = await egressRes.text();
-  let egress: any = null;
-  if (egressRes.ok) {
-    const json = JSON.parse(egressText);
-    const rows = json.result || json.data || json || [];
-    const bytes = (Array.isArray(rows) ? rows : []).reduce(
-      (n: number, r: any) => n + Number(r.total_egress || r.egress || r.value || 0),
-      0
-    );
-    const used = Math.round((bytes / 1024 ** 3) * 100) / 100;
-    egress = { used_gb: used, quota_gb: 250, remaining_gb: Math.max(0, 250 - used) };
-  }
-
   return {
     disk,
-    egress,
-    platform_note: !diskRes.ok
-      ? `Disk ${diskRes.status}: ${diskText.slice(0, 140)}`
-      : !egressRes.ok
-        ? `Egress ${egressRes.status}: ${egressText.slice(0, 140)}`
-        : null,
+    platform_note: diskRes.ok
+      ? 'Monthly egress is only in Supabase → Organization → Usage. The API does not give that number.'
+      : `Disk ${diskRes.status}: ${diskText.slice(0, 140)}`,
   };
 }
 
