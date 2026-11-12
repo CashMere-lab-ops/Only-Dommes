@@ -213,11 +213,24 @@ export default function AdminPage() {
                   {usage?.supabase?.connected ? (
                     <>
                       <p className="text-2xl font-semibold">{usage.supabase.storage_gb} GB</p>
-                      <p className="text-xs text-zinc-500">used</p>
+                      <p className="text-xs text-zinc-500">file storage used</p>
                       <p className="mt-3 text-sm">
                         {usage.supabase.remaining_gb} GB left of {usage.supabase.storage_quota_gb} GB
                       </p>
                       <p className="text-sm">{usage.supabase.files} files</p>
+                      {usage.supabase.disk && (
+                        <p className="text-sm mt-3">
+                          Database disk {usage.supabase.disk.used_gb} GB of {usage.supabase.disk.included_gb} GB included
+                        </p>
+                      )}
+                      {usage.supabase.egress && (
+                        <p className="text-sm">
+                          Egress {usage.supabase.egress.used_gb} GB · {usage.supabase.egress.remaining_gb} GB left of {usage.supabase.egress.quota_gb} GB
+                        </p>
+                      )}
+                      {usage.supabase.platform_note && (
+                        <p className="text-xs text-zinc-500 mt-2">{usage.supabase.platform_note}</p>
+                      )}
                       {usage.supabase.buckets?.length > 0 && (
                         <p className="text-xs text-zinc-500 mt-2">
                           {usage.supabase.buckets.map((b: any) => `${b.name} ${b.files}`).join(' · ')}

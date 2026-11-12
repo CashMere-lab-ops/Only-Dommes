@@ -229,6 +229,7 @@ async function supabaseUsage(admin: any) {
   }
 
   const gb = Math.round((bytes / (1024 * 1024 * 1024)) * 100) / 100;
+  const extra = await supabasePlatform();
   return {
     connected: true,
     storage_gb: gb,
@@ -237,6 +238,62 @@ async function supabaseUsage(admin: any) {
     files,
     buckets: byBucket,
     note: 'File storage used of the 100 GB Pro quota.',
+    ...extra,
+  };
+}
+
+async function supabasePlatform() {
+  const token = process.env.SUPABASE_ACCESS_TOKEN?.trim();
+  const ref = process.env.SUPABASE_PROJECT_REF?.trim();
+  if (!token || !ref) {
+    return {
+      platform_note: 'Add SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF in Vercel for database disk and egress.',
+    };
+  }
+
+  const headers = { Authorization: `Bearer ${token}` };
+  const diskRes = await fetch(
+    `https://api.supabase.com/v1/projects/${ref}/config/disk/util`,
+    { headers, cache: 'no-store' }
+  );
+  const diskText = await diskRes.text();
+  let disk: any = null;
+  if (diskRes.ok) {
+    const json = JSON.parse(diskText);
+    const used = Number(json.metrics?.fs_used_bytes || 0);
+    const size = Number(json.metrics?.fs_size_bytes || 0);
+    disk = {
+      used_gb: Math.round((used / 1024 ** 3) * 100) / 100,
+      size_gb: Math.round((size / 1024 ** 3) * 100) / 100,
+      included_gb: 8,
+    };
+  }
+
+  const egressRes = await fetch(
+    `https://api.supabase.com/v1/projects/${ref}/daily-stats?attribute=egress`,
+    { headers, cache: 'no-store' }
+  );
+  const egressText = await egressRes.text();
+  let egress: any = null;
+  if (egressRes.ok) {
+    const json = JSON.parse(egressText);
+    const rows = json.result || json.data || json || [];
+    const bytes = (Array.isArray(rows) ? rows : []).reduce(
+      (n: number, r: any) => n + Number(r.total_egress || r.egress || r.value || 0),
+      0
+    );
+    const used = Math.round((bytes / 1024 ** 3) * 100) / 100;
+    egress = { used_gb: used, quota_gb: 250, remaining_gb: Math.max(0, 250 - used) };
+  }
+
+  return {
+    disk,
+    egress,
+    platform_note: !diskRes.ok
+      ? `Disk ${diskRes.status}: ${diskText.slice(0, 140)}`
+      : !egressRes.ok
+        ? `Egress ${egressRes.status}: ${egressText.slice(0, 140)}`
+        : null,
   };
 }
 
