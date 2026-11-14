@@ -1168,9 +1168,6 @@ export function HighlightRail({
           </button>
         ))}
       </div>
-      {isOwner && (
-        <p className="text-[10px] text-zinc-600 mt-1">Hold a highlight to delete</p>
-      )}
       {openId && items.length > 0 && (
         <StoryViewer
           groups={[group]}

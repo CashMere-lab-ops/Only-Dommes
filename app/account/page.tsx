@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Edit3, TrendingUp, Users, DollarSign, Heart,
+  ArrowLeft, Edit3, Users, Heart,
   LogOut
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
@@ -176,7 +176,7 @@ export default function MyAccountPage() {
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 mt-8">
+            <div className="grid grid-cols-2 gap-4 mb-10 mt-8 max-w-md">
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
                   <Users size={16} />
@@ -190,20 +190,6 @@ export default function MyAccountPage() {
                   <span>Subscribers</span>
                 </div>
                 <div className="text-3xl font-semibold">{subscribersCount}</div>
-              </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                  <DollarSign size={16} />
-                  <span>Total Earnings</span>
-                </div>
-                <div className="text-3xl font-semibold">£0</div>
-              </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                  <TrendingUp size={16} />
-                  <span>This Month</span>
-                </div>
-                <div className="text-3xl font-semibold">£0</div>
               </div>
             </div>
 
