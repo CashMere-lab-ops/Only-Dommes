@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Edit3, TrendingUp, Users, DollarSign, Heart,
-  LogOut, Phone
+  LogOut
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -79,7 +79,6 @@ export default function MyAccountPage() {
         year: 'numeric',
       })
     : 'Recently';
-  const isCreator = profile?.account_type === 'creator';
 
   return (
     <AuthGuard>
@@ -205,58 +204,6 @@ export default function MyAccountPage() {
                   <span>This Month</span>
                 </div>
                 <div className="text-3xl font-semibold">£0</div>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="mb-10">
-              <h2 className="text-xl font-semibold mb-4 px-1">Quick Actions</h2>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Link
-                  href="/settings"
-                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
-                >
-                  <Edit3 className="text-pink-400 mb-3" size={24} />
-                  <div className="font-semibold">Edit Profile</div>
-                  <div className="text-sm text-zinc-400">Update bio, photos & links</div>
-                </Link>
-                <Link
-                  href="/calls"
-                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
-                >
-                  <Phone className="text-pink-400 mb-3" size={24} />
-                  <div className="font-semibold">Call history</div>
-                  <div className="text-sm text-zinc-400">
-                    {isCreator ? 'Earnings & ratings' : 'Your past calls'}
-                  </div>
-                </Link>
-                <Link
-                  href="/earnings"
-                  className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
-                >
-                  <TrendingUp className="text-pink-400 mb-3" size={24} />
-                  <div className="font-semibold">View Earnings</div>
-                  <div className="text-sm text-zinc-400">Payouts & analytics</div>
-                </Link>
-                {isCreator ? (
-                  <Link
-                    href="/dashboard"
-                    className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
-                  >
-                    <Users className="text-pink-400 mb-3" size={24} />
-                    <div className="font-semibold">Manage Subscribers</div>
-                    <div className="text-sm text-zinc-400">View your fans</div>
-                  </Link>
-                ) : (
-                  <Link
-                    href="/subscriptions"
-                    className="group bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-pink-500/50 rounded-2xl p-5 flex flex-col items-start transition"
-                  >
-                    <Users className="text-pink-400 mb-3" size={24} />
-                    <div className="font-semibold">My Subscriptions</div>
-                    <div className="text-sm text-zinc-400">Creators you support</div>
-                  </Link>
-                )}
               </div>
             </div>
 
