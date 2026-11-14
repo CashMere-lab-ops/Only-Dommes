@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Edit3, TrendingUp, Users, DollarSign, Heart,
-  Settings, Bell, Shield, LogOut, Phone, Wallet, Ban
+  LogOut, Phone
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -257,92 +257,6 @@ export default function MyAccountPage() {
                     <div className="text-sm text-zinc-400">Creators you support</div>
                   </Link>
                 )}
-              </div>
-            </div>
-
-            <div className="space-y-8">
-              <div>
-                <h2 className="text-xl font-semibold mb-4 px-1">Account</h2>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
-                  <Link
-                    href="/settings"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Settings size={20} /> Account Settings
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                  <Link
-                    href="/settings"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Bell size={20} /> Notifications
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                  <Link
-                    href="/settings"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Shield size={20} /> Privacy & Safety
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                  <Link
-                    href="/blocked"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Ban size={20} /> Blocked
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-xl font-semibold mb-4 px-1">Billing & Support</h2>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl divide-y divide-zinc-800">
-                  <Link
-                    href="/calls"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-t-2xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Phone size={20} /> Call history
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                  <Link
-                    href="/wallet?from=account"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Wallet size={20} /> Wallet & top up
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                  <Link
-                    href="/earnings"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <DollarSign size={20} /> Payout History
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                  <Link
-                    href="/support"
-                    className="flex items-center justify-between px-5 py-4 hover:bg-zinc-800 transition rounded-b-2xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Heart size={20} /> Contact Support
-                    </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                </div>
               </div>
             </div>
 

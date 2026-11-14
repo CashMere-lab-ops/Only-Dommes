@@ -22,6 +22,9 @@ import {
   User,
   Menu,
   Shield,
+  Phone,
+  Wallet,
+  DollarSign,
 } from 'lucide-react';
 import { createClient } from '../lib/supabase';
 import WalletBalance from './WalletBalance';
@@ -351,7 +354,6 @@ export default function Sidebar() {
     { href: '/library', label: 'My Library', icon: BookOpen },
     { href: '/notifications', label: 'Notifications', icon: Bell, badge: notifCount },
     { href: '/settings', label: 'Settings', icon: Settings },
-    { href: '/support', label: 'Support', icon: HelpCircle },
     ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: Shield }] : []),
   ];
 
@@ -367,8 +369,14 @@ export default function Sidebar() {
     { href: '/library', label: 'My Library', icon: BookOpen },
     { href: '/notifications', label: 'Notifications', icon: Bell, badge: notifCount },
     { href: '/settings', label: 'Settings', icon: Settings },
-    { href: '/support', label: 'Support', icon: HelpCircle },
     ...(isAdmin ? [{ href: '/admin', label: 'Admin', icon: Shield }] : []),
+  ];
+
+  const billingItems = [
+    { href: '/wallet?from=account', label: 'Wallet & top up', icon: Wallet },
+    { href: '/calls', label: 'Call history', icon: Phone },
+    { href: '/earnings', label: 'Payout history', icon: DollarSign },
+    { href: '/support', label: 'Support', icon: HelpCircle },
   ];
 
   // Bottom bar: Home · Live · Dashboard · Messages · More (Clips lives in More)
@@ -861,6 +869,19 @@ export default function Sidebar() {
               </Link>
             );
           })}
+
+          <div className="pt-5 pb-2 px-3.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+            Billing
+          </div>
+          {billingItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link key={item.href} href={item.href} className={linkClass(item.href.split('?')[0])}>
+                <Icon size={22} className="flex-shrink-0" />
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Profile + balance + logout */}
@@ -1005,6 +1026,30 @@ export default function Sidebar() {
                   </Link>
                 );
               })}
+            </div>
+
+            <div className="mt-6">
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
+                Billing
+              </p>
+              <div className="grid grid-cols-4 gap-3">
+                {billingItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setShowMoreMenu(false)}
+                      className="flex flex-col items-center justify-center bg-zinc-800 rounded-2xl p-4 active:bg-zinc-700 transition"
+                    >
+                      <Icon size={26} className="text-white mb-2" />
+                      <span className="text-xs text-white text-center font-medium leading-tight">
+                        {item.label}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="mt-6 pt-4 border-t border-zinc-700">
