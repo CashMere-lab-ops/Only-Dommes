@@ -637,6 +637,13 @@ export default function Sidebar() {
       {/* ── Desktop top bar: search, notifications, balance ── */}
       {loggedIn && (
         <div className="hidden lg:flex fixed top-0 left-72 right-0 z-50 h-16 items-center justify-end gap-3 px-6 bg-zinc-950/90 backdrop-blur border-b border-zinc-800">
+          <WalletBalance
+            balance={profileLoaded ? balance : null}
+            compact
+            showTopUpHint={isSub}
+            from="account"
+            className="h-10"
+          />
           <div className="relative" ref={searchDesktopRef}>
             {searchOpen ? (
               <div className="relative">
@@ -802,13 +809,6 @@ export default function Sidebar() {
             )}
           </div>
 
-          <WalletBalance
-            balance={profileLoaded ? balance : null}
-            compact
-            showTopUpHint={isSub}
-            from="account"
-            className="h-10"
-          />
           <Link
             href="/account"
             className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-semibold overflow-hidden flex-shrink-0"
