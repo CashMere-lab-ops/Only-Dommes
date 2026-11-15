@@ -730,7 +730,7 @@ export default function PublicProfilePage() {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-zinc-400">@{profile.username}</p>
+              <p className="text-sm text-pink-400">@{profile.username}</p>
             </div>
 
             <div className="flex gap-5 mt-4 text-sm">
