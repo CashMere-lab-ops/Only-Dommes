@@ -450,6 +450,25 @@ export default function Sidebar() {
             </Link>
           </div>
           <div className="flex items-center gap-2.5 flex-shrink-0">
+            <WalletBalance
+              balance={profileLoaded ? balance : null}
+              compact
+              showTopUpHint={isSub}
+              from="account"
+              className="h-9"
+            />
+            <button
+              ref={searchBtnRef}
+              type="button"
+              onClick={() => {
+                setNotifOpen(false);
+                setSearchOpen((v) => !v);
+              }}
+              className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white"
+              aria-label="Search creators"
+            >
+              <Search size={18} strokeWidth={2.25} />
+            </button>
             <button
               ref={notifBtnRef}
               type="button"
@@ -478,18 +497,6 @@ export default function Sidebar() {
                 </span>
               )}
             </button>
-            <button
-              ref={searchBtnRef}
-              type="button"
-              onClick={() => {
-                setNotifOpen(false);
-                setSearchOpen((v) => !v);
-              }}
-              className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-white"
-              aria-label="Search creators"
-            >
-              <Search size={18} strokeWidth={2.25} />
-            </button>
             <Link
               href="/account"
               className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-semibold overflow-hidden"
@@ -505,13 +512,6 @@ export default function Sidebar() {
                 initial
               )}
             </Link>
-            <WalletBalance
-              balance={profileLoaded ? balance : null}
-              compact
-              showTopUpHint={isSub}
-              from="account"
-              className="h-9"
-            />
           </div>
         </div>
         {notifOpen && (
