@@ -175,6 +175,11 @@ export default function FeedPosts({
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
       setComments((prev) => ({ ...prev, [postId]: data || [] }));
+      const real = (data || []).length;
+      setPosts((prev: any[]) =>
+        prev.map((p) => (p.id === postId ? { ...p, comments_count: real } : p))
+      );
+      await supabase.from('posts').update({ comments_count: real }).eq('id', postId);
     }
   };
 
@@ -191,9 +196,14 @@ export default function FeedPosts({
         .single();
       if (error) throw error;
       setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] || []), data] }));
+      const { count } = await supabase
+        .from('post_comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId);
+      await supabase.from('posts').update({ comments_count: count || 0 }).eq('id', postId);
       setPosts((prev: any[]) =>
         prev.map((p) =>
-          p.id === postId ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p
+          p.id === postId ? { ...p, comments_count: count || 0 } : p
         )
       );
       if (post?.creator_id && post.creator_id !== userId) {
