@@ -500,62 +500,74 @@ export default function FeedPosts({
                   <Share2 size={20} />
                 </button>
               </div>
-
-              {isCommentsOpen && (
-                <div className="border-t border-zinc-800 px-4 py-3">
-                  <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
-                    {postComments.length === 0 ? (
-                      <p className="text-sm text-zinc-500 text-center py-2">No comments yet</p>
-                    ) : (
-                      postComments.map((comment) => (
-                        <div key={comment.id} className="flex gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold overflow-hidden">
-                            {comment.profiles?.avatar_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={comment.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              (comment.profiles?.display_name || 'U').charAt(0)
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm">
-                              <span className="font-semibold text-pink-400">
-                                {comment.profiles?.display_name || 'User'}
-                              </span>{' '}
-                              <span className="text-zinc-300">{comment.content}</span>
-                            </p>
-                            <p className="text-xs text-zinc-500">{formatTime(comment.created_at)}</p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={newComment[post.id] || ''}
-                      onChange={(e) =>
-                        setNewComment((prev) => ({ ...prev, [post.id]: e.target.value }))
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddComment(post.id);
-                      }}
-                      placeholder="Add a comment..."
-                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded-full px-4 py-2 text-sm outline-none focus:border-pink-500"
-                    />
-                    <button
-                      onClick={() => handleAddComment(post.id)}
-                      disabled={postingComment === post.id || !newComment[post.id]?.trim()}
-                      className="w-9 h-9 rounded-full bg-pink-600 hover:bg-pink-700 flex items-center justify-center disabled:opacity-40"
-                    >
-                      <Send size={16} />
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}
       </div>
+
+      {openComments && (() => {
+        const post = posts.find((p) => p.id === openComments);
+        const postComments = comments[openComments] || [];
+        if (!post) return null;
+        return (
+          <div className="fixed inset-0 z-[80] flex items-end lg:items-center justify-center" onClick={() => setOpenComments(null)}>
+            <div className="absolute inset-0 bg-black/70" />
+            <div
+              className="relative w-full lg:max-w-md bg-zinc-950 border border-zinc-800 rounded-t-3xl lg:rounded-3xl max-h-[75vh] lg:max-h-[70vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                <p className="font-semibold">Comments</p>
+                <button type="button" onClick={() => setOpenComments(null)} className="text-zinc-400 hover:text-white" aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                {postComments.length === 0 ? (
+                  <p className="text-sm text-zinc-500 text-center py-8">No comments yet</p>
+                ) : (
+                  postComments.map((comment) => (
+                    <div key={comment.id} className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0">
+                        {comment.profiles?.avatar_url ? (
+                          <img src={comment.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          (comment.profiles?.display_name || 'U').charAt(0)
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm leading-snug">
+                          <span className="font-semibold mr-1.5">{comment.profiles?.display_name || 'User'}</span>
+                          <span className="text-zinc-200">{comment.content}</span>
+                        </p>
+                        <p className="text-[11px] text-zinc-500 mt-1">{formatTime(comment.created_at)}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="border-t border-zinc-800 px-4 py-3 flex items-center gap-2">
+                <input
+                  value={newComment[openComments] || ''}
+                  onChange={(e) => setNewComment((prev) => ({ ...prev, [openComments]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddComment(openComments);
+                  }}
+                  placeholder="Add a comment..."
+                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2.5 text-sm outline-none focus:border-pink-500"
+                />
+                <button
+                  onClick={() => handleAddComment(openComments)}
+                  disabled={postingComment === openComments || !newComment[openComments]?.trim()}
+                  className="text-sm font-semibold text-pink-400 disabled:opacity-40 px-2"
+                >
+                  Post
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {tipPost && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
