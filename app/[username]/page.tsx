@@ -616,25 +616,41 @@ export default function PublicProfilePage() {
     <div className="min-h-screen bg-zinc-950 text-white flex">
       <Sidebar />
       <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-        <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => router.back()} className="text-zinc-400 hover:text-white">
-            <ArrowLeft size={22} />
-          </button>
-          <h1 className="text-lg font-semibold flex-1 truncate">@{profile.username}</h1>
-          {!isOwnProfile && (
-            <button
-              type="button"
-              onClick={() => setShowMore(true)}
-              className="text-zinc-400 hover:text-white p-1"
-            >
-              <MoreHorizontal size={22} />
-            </button>
-          )}
-        </div>
+        <div className="max-w-3xl mx-auto">
+          <div className="relative h-40 sm:h-52 bg-zinc-900">
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt=""
+                className="w-full h-full object-cover blur-sm scale-110 opacity-70"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-pink-600/40 via-zinc-900 to-purple-900/40" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-black/20" />
+            <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+              <button
+                onClick={() => router.back()}
+                className="w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center"
+                aria-label="Back"
+              >
+                <ArrowLeft size={18} />
+              </button>
+              {!isOwnProfile && (
+                <button
+                  type="button"
+                  onClick={() => setShowMore(true)}
+                  className="w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center"
+                  aria-label="More"
+                >
+                  <MoreHorizontal size={18} />
+                </button>
+              )}
+            </div>
+          </div>
 
-        <div className="max-w-3xl mx-auto px-4 lg:px-8 py-8">
-          <div className="flex flex-col sm:flex-row gap-6 mb-6">
-            <div className="flex flex-col items-center gap-3 flex-shrink-0">
+          <div className="px-4 lg:px-8 -mt-12">
+            <div className="flex items-end justify-between gap-3">
               <div className="relative">
                 <ProfileStoryRing
                   profileId={profile.id}
@@ -645,14 +661,11 @@ export default function PublicProfilePage() {
                   live={!!liveStream}
                 >
                   <div
-                    className={`w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ${
-                      liveStream
-                        ? 'ring-4 ring-red-500 ring-offset-2 ring-offset-zinc-950 shadow-[0_0_24px_rgba(239,68,68,0.45)]'
-                        : 'ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950'
+                    className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-4xl font-bold overflow-hidden ring-4 ring-zinc-950 ${
+                      liveStream ? 'shadow-[0_0_24px_rgba(239,68,68,0.45)]' : ''
                     }`}
                   >
                     {profile.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={profile.avatar_url}
                         alt={displayName}
@@ -663,146 +676,110 @@ export default function PublicProfilePage() {
                     )}
                   </div>
                 </ProfileStoryRing>
-                {isOwnProfile && profile.account_type === 'creator' && (
-                  <Link
-                    href="/?addstory=1"
-                    className="mt-2 text-xs font-medium text-pink-400 hover:text-pink-300"
-                  >
-                    Add story
-                  </Link>
-                )}
                 {liveStream && (
                   <Link
                     href={`/live/${liveStream.id}`}
-                    className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-600 hover:bg-red-500 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-lg border border-red-400/40"
+                    className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-600 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1"
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                     LIVE
                   </Link>
                 )}
               </div>
+              <div className="flex items-center gap-2 pb-1">
+                {isOwnProfile ? (
+                  <Link
+                    href="/settings"
+                    className="px-4 py-2 rounded-full bg-zinc-900 border border-zinc-700 text-sm font-medium"
+                  >
+                    Edit profile
+                  </Link>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleFollow}
+                      disabled={followLoading || blockedPair}
+                      className={`px-4 py-2 rounded-full text-sm font-medium disabled:opacity-50 ${
+                        isFollowing
+                          ? 'bg-zinc-800 border border-zinc-700'
+                          : 'bg-white text-black'
+                      }`}
+                    >
+                      {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
+                    </button>
+                    {messagingAllowed ? (
+                      <button
+                        onClick={handleMessage}
+                        className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center"
+                        aria-label="Message"
+                      >
+                        <MessageCircle size={16} />
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold">{displayName}</h1>
+                {profile.account_type === 'creator' && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                    Creator
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-zinc-400">@{profile.username}</p>
+            </div>
+
+            <div className="flex gap-5 mt-4 text-sm">
+              <span><b>{posts.length}</b> <span className="text-zinc-400">posts</span></span>
+              <span><b>{followersCount}</b> <span className="text-zinc-400">followers</span></span>
+              <span><b>{subscribersCount}</b> <span className="text-zinc-400">subscribers</span></span>
+            </div>
+
+            {profile.bio && (
+              <p className="mt-3 text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                {profile.bio}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 mt-3">
               {profile.x_username && (
                 <a
                   href={`https://x.com/${profile.x_username}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-xl transition"
+                  className="text-sm text-pink-400"
                 >
-                  <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
-                    <span className="text-white font-bold text-xs">𝕏</span>
-                  </div>
-                  <span className="text-sm font-medium">@{profile.x_username}</span>
+                  @{profile.x_username}
                 </a>
               )}
+              {joinedDate && <span className="text-xs text-zinc-500">Joined {joinedDate}</span>}
             </div>
 
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                <div className="space-y-1">
-                  <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
-                    {displayName}
-                  </h1>
-                  <p className="text-pink-400 text-lg leading-tight">
-                    @{profile.username}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2.5 text-sm text-zinc-400 pt-1">
-                    {joinedDate && <span>Joined {joinedDate}</span>}
-                    {profile.account_type && (
-                      <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
-                        {profile.account_type}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {isOwnProfile ? (
-                  <Link
-                    href="/account"
-                    className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit"
-                  >
-                    Edit Profile
-                  </Link>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {showSubscribe && (
-                      <button
-                        onClick={handleSubscribe}
-                        disabled={subLoading}
-                        className={`px-5 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50 ${
-                          isSubscribed
-                            ? 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white'
-                            : 'bg-gradient-to-r from-pink-600 to-rose-500 hover:opacity-90 text-white'
-                        }`}
-                      >
-                        {subLoading
-                          ? '...'
-                          : isSubscribed
-                          ? 'Subscribed · Cancel'
-                          : `Subscribe · £${subPrice}/mo`}
-                      </button>
-                    )}
-
-                    <button
-                      onClick={handleFollow}
-                      disabled={followLoading || blockedPair}
-                      className={`px-5 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-50 ${
-                        isFollowing
-                          ? 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white'
-                          : 'bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white'
-                      }`}
-                    >
-                      {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
-                    </button>
-
-                    {messagingAllowed ? (
-                      <button
-                        onClick={handleMessage}
-                        className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition"
-                      >
-                        <MessageCircle size={16} />
-                        Message
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 px-5 py-2.5 rounded-xl text-sm font-medium text-zinc-500 cursor-not-allowed"
-                        title={
-                          blockedPair
-                            ? 'Unavailable'
-                            : (profile.message_privacy || 'everyone') === 'subscribers'
-                            ? 'Subscribers only'
-                            : 'Not accepting messages'
-                        }
-                      >
-                        <MessageCircle size={16} />
-                        {blockedPair
-                          ? 'Unavailable'
-                          : (profile.message_privacy || 'everyone') === 'subscribers'
-                          ? 'Subscribers only'
-                          : 'Messages off'}
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => setShowMore(true)}
-                      className="hidden lg:inline-flex w-10 h-10 items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white transition"
-                      title="More"
-                    >
-                      <MoreHorizontal size={20} />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {profile.bio && (
-                <p className="mt-5 text-zinc-300 max-w-2xl leading-relaxed">
-                  {profile.bio}
-                </p>
-              )}
-            </div>
+            {showSubscribe && (
+              <button
+                onClick={handleSubscribe}
+                disabled={subLoading}
+                className={`mt-4 w-full py-3 rounded-full text-sm font-semibold disabled:opacity-50 ${
+                  isSubscribed
+                    ? 'bg-zinc-800 border border-zinc-700'
+                    : 'bg-gradient-to-r from-pink-600 to-rose-500'
+                }`}
+              >
+                {subLoading
+                  ? '...'
+                  : isSubscribed
+                  ? 'Subscribed · Cancel'
+                  : `Subscribe · £${subPrice}/mo`}
+              </button>
+            )}
           </div>
+        </div>
+
+        <div className="max-w-3xl mx-auto px-4 lg:px-8 py-6">
 
           {liveStream && (
             <Link
@@ -855,37 +832,6 @@ export default function PublicProfilePage() {
               isOwner={isOwnProfile}
             />
           )}
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-              <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                <Users size={16} />
-                <span>Followers</span>
-              </div>
-              <div className="text-3xl font-semibold">{followersCount}</div>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-              <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                <Heart size={16} />
-                <span>Subscribers</span>
-              </div>
-              <div className="text-3xl font-semibold">{subscribersCount}</div>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-              <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                <DollarSign size={16} />
-                <span>Total Tips</span>
-              </div>
-              <div className="text-3xl font-semibold">£0</div>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-              <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                <TrendingUp size={16} />
-                <span>Posts</span>
-              </div>
-              <div className="text-3xl font-semibold">{posts.length}</div>
-            </div>
-          </div>
 
           {profile?.account_type === 'creator' && clips.length > 0 && (
             <div className="mb-10">
