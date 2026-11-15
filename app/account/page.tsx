@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Edit3, Users, Heart,
-  LogOut
+  Edit3, LogOut
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -19,6 +18,8 @@ export default function MyAccountPage() {
   const [loading, setLoading] = useState(true);
   const [followersCount, setFollowersCount] = useState(0);
   const [subscribersCount, setSubscribersCount] = useState(0);
+  const [postsCount, setPostsCount] = useState(0);
+  const [liveStream, setLiveStream] = useState<any>(null);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -46,6 +47,25 @@ export default function MyAccountPage() {
         .eq('creator_id', user.id)
         .eq('status', 'active');
       setSubscribersCount(sCount || 0);
+
+      const { count: pCount } = await supabase
+        .from('posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('creator_id', user.id);
+      setPostsCount(pCount || 0);
+
+      if (data?.account_type === 'creator') {
+        const { data: live } = await supabase
+          .from('live_streams')
+          .select('id, title, status, thumbnail_url, viewer_count, private_active')
+          .eq('creator_id', user.id)
+          .in('status', ['active', 'idle_ready', 'disconnected'])
+          .eq('private_active', false)
+          .order('started_at', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        setLiveStream(live || null);
+      }
 
       setLoading(false);
     };
@@ -85,70 +105,101 @@ export default function MyAccountPage() {
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-          <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
-            <div className="flex flex-col sm:flex-row gap-6 mb-6">
-              <div className="flex flex-col items-center gap-3 flex-shrink-0">
-                <ProfileStoryRing
-                  profileId={profile.id}
-                  userId={profile.id}
-                  avatarUrl={profile.avatar_url}
-                  name={displayName}
-                  username={profile.username}
+          <div className="max-w-3xl mx-auto">
+            <div className="relative h-40 sm:h-52 bg-zinc-900">
+              {profile.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt=""
+                  className="w-full h-full object-cover blur-sm scale-110 opacity-70"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-pink-600/40 via-zinc-900 to-purple-900/40" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-black/20" />
+            </div>
+
+            <div className="px-4 lg:px-8 -mt-12">
+              <div className="flex items-end justify-between gap-3">
+                <div className="relative">
+                  <ProfileStoryRing
+                    profileId={profile.id}
+                    userId={profile.id}
+                    avatarUrl={profile.avatar_url}
+                    name={displayName}
+                    username={profile.username}
+                    live={!!liveStream}
+                  >
+                    <div
+                      className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-4xl font-bold overflow-hidden ring-4 ring-zinc-950 ${
+                        liveStream ? 'shadow-[0_0_24px_rgba(239,68,68,0.45)]' : ''
+                      }`}
+                    >
+                      {profile.avatar_url ? (
+                        <img src={profile.avatar_url} alt={displayName} className="w-full h-full object-cover" />
+                      ) : (
+                        initial
+                      )}
+                    </div>
+                  </ProfileStoryRing>
+                  {liveStream && (
+                    <Link
+                      href={`/live/${liveStream.id}`}
+                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-600 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                      LIVE
+                    </Link>
+                  )}
+                </div>
+                <Link
+                  href="/settings"
+                  className="px-4 py-2 rounded-full bg-zinc-900 border border-zinc-700 text-sm font-medium inline-flex items-center gap-2"
                 >
-                  <div className="w-28 h-28 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-5xl font-bold overflow-hidden ring-2 ring-zinc-800 ring-offset-2 ring-offset-zinc-950">
-                    {profile?.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                    ) : (
-                      initial
-                    )}
-                  </div>
-                </ProfileStoryRing>
-                {profile?.x_username && (
+                  <Edit3 size={14} /> Edit profile
+                </Link>
+              </div>
+
+              <div className="mt-3">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold">{displayName}</h1>
+                  {profile.account_type === 'creator' && (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                      Creator
+                    </span>
+                  )}
+                </div>
+                {profile.x_username ? (
                   <a
                     href={`https://x.com/${profile.x_username}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-xl transition"
+                    className="text-sm text-pink-400"
                   >
-                    <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center">
-                      <span className="text-white font-bold text-xs">𝕏</span>
-                    </div>
-                    <span className="text-sm font-medium">@{profile.x_username}</span>
+                    @{profile.x_username}
                   </a>
+                ) : (
+                  <p className="text-sm text-pink-400">@{username}</p>
                 )}
               </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div className="space-y-1">
-                    <h1 className="text-3xl sm:text-4xl font-bold leading-tight">{displayName}</h1>
-                    <p className="text-pink-400 text-lg leading-tight">@{username}</p>
-                    <div className="flex flex-wrap items-center gap-2.5 text-sm text-zinc-400 pt-1">
-                      <span>Joined {joinedDate}</span>
-                      {profile?.account_type && (
-                        <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
-                          {profile.account_type}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <Link
-                    href="/settings"
-                    className="inline-flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 px-5 py-2.5 rounded-xl text-sm font-medium transition w-fit flex-shrink-0"
-                  >
-                    <Edit3 size={18} /> Edit Profile
-                  </Link>
-                </div>
-                {profile?.bio && (
-                  <p className="mt-6 text-zinc-300 max-w-2xl leading-relaxed">
-                    {profile.bio}
-                  </p>
-                )}
+              <div className="flex gap-5 mt-4 text-sm">
+                <span><b>{postsCount}</b> <span className="text-zinc-400">posts</span></span>
+                <span><b>{followersCount}</b> <span className="text-zinc-400">followers</span></span>
+                <span><b>{subscribersCount}</b> <span className="text-zinc-400">subscribers</span></span>
               </div>
+
+              {profile.bio && (
+                <p className="mt-3 text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                  {profile.bio}
+                </p>
+              )}
+              <p className="mt-3 text-xs text-zinc-500">Joined {joinedDate}</p>
             </div>
+          </div>
 
-            {profile?.id && (
+          <div className="max-w-3xl mx-auto px-4 lg:px-8 py-6">
+            {profile.account_type === 'creator' && (
               <HighlightRail
                 profileId={profile.id}
                 userId={profile.id}
@@ -158,24 +209,6 @@ export default function MyAccountPage() {
                 isOwner
               />
             )}
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-4 mb-10 mt-8 max-w-md">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                  <Users size={16} />
-                  <span>Followers</span>
-                </div>
-                <div className="text-3xl font-semibold">{followersCount}</div>
-              </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
-                  <Heart size={16} />
-                  <span>Subscribers</span>
-                </div>
-                <div className="text-3xl font-semibold">{subscribersCount}</div>
-              </div>
-            </div>
 
             <div className="mt-10">
               <button
