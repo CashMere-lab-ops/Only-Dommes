@@ -760,21 +760,22 @@ export default function PublicProfilePage() {
             </div>
 
             {showSubscribe && (
-              <button
-                onClick={handleSubscribe}
-                disabled={subLoading}
-                className={`mt-4 w-full py-3 rounded-full text-sm font-semibold disabled:opacity-50 ${
-                  isSubscribed
-                    ? 'bg-zinc-800 border border-zinc-700'
-                    : 'bg-gradient-to-r from-pink-600 to-rose-500'
-                }`}
-              >
-                {subLoading
-                  ? '...'
-                  : isSubscribed
-                  ? 'Subscribed · Cancel'
-                  : `Subscribe · £${subPrice}/mo`}
-              </button>
+              isSubscribed ? (
+                <Link
+                  href="/subscriptions"
+                  className="mt-4 w-full py-3 rounded-full text-sm font-semibold text-center border border-pink-500/40 bg-pink-500/10 text-pink-400 tracking-wide"
+                >
+                  Subscribed
+                </Link>
+              ) : (
+                <button
+                  onClick={handleSubscribe}
+                  disabled={subLoading}
+                  className="mt-4 w-full py-3 rounded-full text-sm font-semibold disabled:opacity-50 bg-gradient-to-r from-pink-600 to-rose-500"
+                >
+                  {subLoading ? '...' : `Subscribe · £${subPrice}/mo`}
+                </button>
+              )
             )}
           </div>
         </div>
@@ -1067,7 +1068,7 @@ export default function PublicProfilePage() {
                 {subLoading
                   ? 'Please wait'
                   : isSubscribed
-                    ? 'Manage subscription'
+                    ? 'Subscribed'
                     : `Subscribe · £${subPrice}/mo`}
               </button>
               <button type="button" onClick={() => setSubSheet(false)} className="mt-2 w-full h-11 rounded-full text-sm text-zinc-400">
