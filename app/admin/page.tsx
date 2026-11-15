@@ -94,7 +94,7 @@ export default function AdminPage() {
                 {[
                   ['Accounts', data.users.total],
                   ['Creators', data.users.creators],
-                  ['Subscribers', data.users.subscribers],
+                  ['Fans', data.users.subscribers],
                   ['Online now', data.users.online],
                 ].map(([label, value]) => (
                   <div key={String(label)} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
