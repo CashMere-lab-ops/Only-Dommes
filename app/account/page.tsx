@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Edit3, LogOut
+  Edit3, LogOut, Film, Play
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
@@ -19,6 +19,8 @@ export default function MyAccountPage() {
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [postsCount, setPostsCount] = useState(0);
+  const [posts, setPosts] = useState<any[]>([]);
+  const [clips, setClips] = useState<any[]>([]);
   const [liveStream, setLiveStream] = useState<any>(null);
 
   useEffect(() => {
@@ -52,6 +54,25 @@ export default function MyAccountPage() {
         .select('*', { count: 'exact', head: true })
         .eq('creator_id', user.id);
       setPostsCount(pCount || 0);
+
+      const { data: postsData } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('creator_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setPosts(postsData || []);
+
+      if (data?.account_type === 'creator') {
+        const { data: clipData } = await supabase
+          .from('clips')
+          .select('id, title, price_gbp, thumbnail_url, duration_seconds, is_published')
+          .eq('creator_id', user.id)
+          .eq('is_published', true)
+          .order('created_at', { ascending: false })
+          .limit(12);
+        setClips(clipData || []);
+      }
 
       if (data?.account_type === 'creator') {
         const { data: live } = await supabase
@@ -208,6 +229,94 @@ export default function MyAccountPage() {
                 isOwner
               />
             )}
+
+            {profile.account_type === 'creator' && clips.length > 0 && (
+              <div className="mb-10">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <Film size={22} className="text-pink-400" />
+                    Clips
+                  </h2>
+                  <Link href="/clips" className="text-sm text-pink-400">
+                    View all →
+                  </Link>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {clips.map((clip) => {
+                    const dur =
+                      clip.duration_seconds && clip.duration_seconds > 0
+                        ? `${Math.floor(clip.duration_seconds / 60)}:${String(clip.duration_seconds % 60).padStart(2, '0')}`
+                        : null;
+                    return (
+                      <Link
+                        key={clip.id}
+                        href="/clips"
+                        className="bg-zinc-900 border border-zinc-800 hover:border-pink-500/40 rounded-2xl overflow-hidden transition group"
+                      >
+                        <div className="aspect-video bg-zinc-800 relative">
+                          {clip.thumbnail_url ? (
+                            <img src={clip.thumbnail_url} alt={clip.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                              <Film size={28} />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                            <Play size={22} className="text-white" />
+                          </div>
+                          {dur && (
+                            <span className="absolute bottom-1.5 right-1.5 text-[10px] bg-black/75 px-1.5 py-0.5 rounded">
+                              {dur}
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-2.5">
+                          <p className="text-sm font-medium truncate">{clip.title}</p>
+                          <p className="text-pink-400 text-sm font-semibold">
+                            {Number(clip.price_gbp) === 0 ? 'Free' : `£${Number(clip.price_gbp).toFixed(2)}`}
+                          </p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <h2 className="text-xl font-semibold mb-4">Posts</h2>
+              {posts.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                  <p className="text-zinc-400">No posts yet</p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {posts.map((post) => (
+                    <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                      {post.content && (
+                        <div className="px-4 py-3">
+                          <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
+                        </div>
+                      )}
+                      {post.media_type === 'photo' && post.media_url && (
+                        <div className="max-h-[420px] overflow-hidden">
+                          <img src={post.media_url} alt="Post" className="w-full max-h-[420px] object-cover" />
+                        </div>
+                      )}
+                      {post.media_type === 'video' && post.media_url && (
+                        <div className="max-h-[420px] overflow-hidden">
+                          <video src={post.media_url} controls className="w-full max-h-[420px]" />
+                        </div>
+                      )}
+                      <div className="px-4 py-3 flex items-center gap-4 text-sm text-zinc-400">
+                        <span>{post.likes_count || 0} likes</span>
+                        <span>{post.comments_count || 0} comments</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="mt-10">
               <button
