@@ -724,9 +724,9 @@ export default function PublicProfilePage() {
             <div className="mt-3">
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold">{displayName}</h1>
-                {profile.account_type === 'creator' && (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                    Creator
+                {profile.account_type && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
+                    {profile.account_type === 'sub' ? 'Subscriber' : profile.account_type}
                   </span>
                 )}
               </div>
