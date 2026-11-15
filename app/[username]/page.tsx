@@ -763,7 +763,7 @@ export default function PublicProfilePage() {
               isSubscribed ? (
                 <Link
                   href="/subscriptions"
-                  className="mt-4 w-full py-3 rounded-full text-sm font-semibold text-center border border-pink-500/40 bg-pink-500/10 text-pink-400 tracking-wide"
+                  className="mt-4 flex w-full items-center justify-center py-3 rounded-full text-sm font-semibold border border-pink-500/50 bg-pink-500/10 text-pink-400"
                 >
                   Subscribed
                 </Link>
