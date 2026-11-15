@@ -16,10 +16,10 @@ import {
   Trash2,
   Loader2,
 } from 'lucide-react';
-import Sidebar from '../../../components/Sidebar';
-import SiteFooter from '../../../components/SiteFooter';
-import AuthGuard from '../../../components/AuthGuard';
-import { createClient } from '../../../lib/supabase';
+import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
+import AuthGuard from '../../components/AuthGuard';
+import { createClient } from '../../lib/supabase';
 
 type Notif = {
   id: string;
