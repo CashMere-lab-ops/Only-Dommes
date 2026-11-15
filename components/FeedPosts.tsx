@@ -48,11 +48,13 @@ export default function FeedPosts({
   setPosts,
   userId,
   profile,
+  hideHeader = false,
 }: {
   posts: any[];
   setPosts: (fn: any) => void;
   userId: string | null;
   profile: any;
+  hideHeader?: boolean;
 }) {
   const supabase = createClient();
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
@@ -273,6 +275,7 @@ export default function FeedPosts({
               key={post.id}
               className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden relative"
             >
+              {!hideHeader && (
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
                   <Link
@@ -383,6 +386,7 @@ export default function FeedPosts({
                   )}
                 </div>
               </div>
+              )}
 
               {post.content && (
                 <p className="px-4 pb-3 text-sm text-zinc-100 whitespace-pre-wrap">{post.content}</p>
@@ -391,6 +395,10 @@ export default function FeedPosts({
               {post.media_type === 'photo' && post.media_url && (
                 <div
                   className="bg-zinc-800 max-h-[420px] overflow-hidden relative cursor-pointer select-none"
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    handleDoubleTapLike(post.id);
+                  }}
                   onClick={() => {
                     const now = Date.now();
                     const last = lastTap.current[post.id] || 0;
@@ -436,20 +444,22 @@ export default function FeedPosts({
                 </div>
               )}
 
-              <div className="px-4 py-3 flex items-center gap-5">
+              <div className="px-4 py-3 flex items-center gap-6">
                 <button
                   onClick={() => handleLike(post.id)}
-                  className={`flex items-center gap-1.5 ${isLiked ? 'text-pink-500' : 'text-zinc-400 hover:text-pink-400'}`}
+                  className={`flex items-center gap-1.5 transition ${isLiked ? 'text-pink-500' : 'text-zinc-300 hover:text-pink-400'}`}
+                  aria-label="Like"
                 >
-                  <Heart size={22} className={isLiked ? 'fill-pink-500' : ''} />
-                  <span className="text-sm">{post.likes_count || 0}</span>
+                  <Heart size={24} strokeWidth={1.75} className={isLiked ? 'fill-pink-500' : ''} />
+                  <span className="text-sm tabular-nums">{post.likes_count || 0}</span>
                 </button>
                 <button
                   onClick={() => toggleComments(post.id)}
-                  className={`flex items-center gap-1.5 ${isCommentsOpen ? 'text-pink-400' : 'text-zinc-400 hover:text-pink-400'}`}
+                  className={`flex items-center gap-1.5 transition ${isCommentsOpen ? 'text-pink-400' : 'text-zinc-300 hover:text-pink-400'}`}
+                  aria-label="Comment"
                 >
-                  <MessageCircle size={22} />
-                  <span className="text-sm">{post.comments_count || 0}</span>
+                  <MessageCircle size={24} strokeWidth={1.75} />
+                  <span className="text-sm tabular-nums">{post.comments_count || 0}</span>
                 </button>
                 {!isOwnPost && (
                   <button

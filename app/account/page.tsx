@@ -9,6 +9,7 @@ import {
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import { ProfileStoryRing, HighlightRail } from '../../components/StoriesRail';
+import FeedPosts from '../../components/FeedPosts';
 import { createClient } from '../../lib/supabase';
 
 export default function MyAccountPage() {
@@ -290,31 +291,7 @@ export default function MyAccountPage() {
                   <p className="text-zinc-400">No posts yet</p>
                 </div>
               ) : (
-                <div className="space-y-5">
-                  {posts.map((post) => (
-                    <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                      {post.content && (
-                        <div className="px-4 py-3">
-                          <p className="text-sm leading-relaxed text-zinc-100">{post.content}</p>
-                        </div>
-                      )}
-                      {post.media_type === 'photo' && post.media_url && (
-                        <div className="max-h-[420px] overflow-hidden">
-                          <img src={post.media_url} alt="Post" className="w-full max-h-[420px] object-cover" />
-                        </div>
-                      )}
-                      {post.media_type === 'video' && post.media_url && (
-                        <div className="max-h-[420px] overflow-hidden">
-                          <video src={post.media_url} controls className="w-full max-h-[420px]" />
-                        </div>
-                      )}
-                      <div className="px-4 py-3 flex items-center gap-4 text-sm text-zinc-400">
-                        <span>{post.likes_count || 0} likes</span>
-                        <span>{post.comments_count || 0} comments</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <FeedPosts posts={posts} setPosts={setPosts} userId={profile.id} profile={profile} hideHeader />
               )}
             </div>
 
