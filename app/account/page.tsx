@@ -17,7 +17,7 @@ export default function MyAccountPage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [followersCount, setFollowersCount] = useState(0);
-  const [subscribersCount, setSubscribersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [postsCount, setPostsCount] = useState(0);
   const [liveStream, setLiveStream] = useState<any>(null);
 
@@ -41,12 +41,11 @@ export default function MyAccountPage() {
         .eq('following_id', user.id);
       setFollowersCount(fCount || 0);
 
-      const { count: sCount } = await supabase
-        .from('subscriptions')
+      const { count: following } = await supabase
+        .from('follows')
         .select('*', { count: 'exact', head: true })
-        .eq('creator_id', user.id)
-        .eq('status', 'active');
-      setSubscribersCount(sCount || 0);
+        .eq('follower_id', user.id);
+      setFollowingCount(following || 0);
 
       const { count: pCount } = await supabase
         .from('posts')
@@ -185,8 +184,8 @@ export default function MyAccountPage() {
 
               <div className="flex gap-5 mt-4 text-sm">
                 <span><b>{postsCount}</b> <span className="text-zinc-400">posts</span></span>
+                <span><b>{followingCount}</b> <span className="text-zinc-400">following</span></span>
                 <span><b>{followersCount}</b> <span className="text-zinc-400">followers</span></span>
-                <span><b>{subscribersCount}</b> <span className="text-zinc-400">fans</span></span>
               </div>
 
               {profile.bio && (

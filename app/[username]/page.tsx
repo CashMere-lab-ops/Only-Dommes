@@ -31,6 +31,7 @@ export default function PublicProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   const [subscribersCount, setSubscribersCount] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subCancelling, setSubCancelling] = useState(false);
@@ -146,6 +147,12 @@ export default function PublicProfilePage() {
         .eq('following_id', profileData.id);
 
       setFollowersCount(fCount || 0);
+
+      const { count: following } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('follower_id', profileData.id);
+      setFollowingCount(following || 0);
 
       const { count: sCount } = await supabase
         .from('subscriptions')
@@ -746,8 +753,8 @@ export default function PublicProfilePage() {
 
             <div className="flex gap-5 mt-4 text-sm">
               <span><b>{posts.length}</b> <span className="text-zinc-400">posts</span></span>
+              <span><b>{followingCount}</b> <span className="text-zinc-400">following</span></span>
               <span><b>{followersCount}</b> <span className="text-zinc-400">followers</span></span>
-              <span><b>{subscribersCount}</b> <span className="text-zinc-400">fans</span></span>
             </div>
 
             {profile.bio && (
