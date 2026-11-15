@@ -730,7 +730,18 @@ export default function PublicProfilePage() {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-pink-400">@{profile.username}</p>
+              {profile.x_username ? (
+                <a
+                  href={`https://x.com/${profile.x_username}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-pink-400"
+                >
+                  @{profile.x_username}
+                </a>
+              ) : (
+                <p className="text-sm text-pink-400">@{profile.username}</p>
+              )}
             </div>
 
             <div className="flex gap-5 mt-4 text-sm">
@@ -745,19 +756,9 @@ export default function PublicProfilePage() {
               </p>
             )}
 
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              {profile.x_username && (
-                <a
-                  href={`https://x.com/${profile.x_username}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-pink-400"
-                >
-                  @{profile.x_username}
-                </a>
-              )}
-              {joinedDate && <span className="text-xs text-zinc-500">Joined {joinedDate}</span>}
-            </div>
+            {joinedDate && (
+              <p className="mt-3 text-xs text-zinc-500">Joined {joinedDate}</p>
+            )}
 
             {showSubscribe && (
               isSubscribed ? (
