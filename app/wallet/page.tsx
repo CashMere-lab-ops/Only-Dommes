@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Wallet, Plus, Loader2 } from 'lucide-react';
 import Sidebar, { setCachedBalance } from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
@@ -441,6 +442,7 @@ function WalletPageInner() {
               )}
             </div>
           </div>
+                  <SiteFooter />
         </main>
       </div>
     </AuthGuard>

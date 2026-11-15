@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Heart, CreditCard } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import { createClient } from '../../lib/supabase';
 
 export default function SubscriptionsPage() {
@@ -174,7 +175,8 @@ export default function SubscriptionsPage() {
             </div>
           )}
         </div>
-      </main>
+                <SiteFooter />
+        </main>
     </div>
   );
 }

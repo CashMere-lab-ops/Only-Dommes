@@ -8,6 +8,7 @@ import {
   MoreHorizontal, Share2, Ban, Flag, Link as LinkIcon, X
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import { ProfileStoryRing, HighlightRail } from '../../components/StoriesRail';
 import FeedPosts from '../../components/FeedPosts';
 import { createClient } from '../../lib/supabase';
@@ -1099,7 +1100,8 @@ export default function PublicProfilePage() {
             </div>
           </div>
         )}
-      </main>
+                <SiteFooter />
+        </main>
     </div>
   );
 }

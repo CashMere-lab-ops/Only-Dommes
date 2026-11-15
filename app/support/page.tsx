@@ -13,6 +13,7 @@ import {
   Film,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
@@ -271,7 +272,8 @@ export default function SupportPage() {
             Abuse or legal: abuse@worldofdommes.com · privacy@worldofdommes.com
           </p>
         </div>
-      </main>
+                <SiteFooter />
+        </main>
     </div>
     </AuthGuard>
   );

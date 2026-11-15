@@ -7,6 +7,7 @@ import {
   Edit3, LogOut, Film, Play
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { ProfileStoryRing, HighlightRail } from '../../components/StoriesRail';
 import FeedPosts from '../../components/FeedPosts';
@@ -307,6 +308,7 @@ export default function MyAccountPage() {
               </p>
             </div>
           </div>
+                  <SiteFooter />
         </main>
       </div>
     </AuthGuard>

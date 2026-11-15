@@ -9,6 +9,7 @@ import {
   Download, ArrowDownLeft, ArrowUpRight, List, Inbox
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { createNotification } from '../../lib/notifications';
@@ -3825,6 +3826,7 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+                  <SiteFooter />
         </main>
 
         {viewingItem && viewingItem.photos.length > 0 && (

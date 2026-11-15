@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Ban, Search } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
@@ -183,6 +184,7 @@ export default function BlockedPage() {
               )}
             </div>
           </div>
+                  <SiteFooter />
         </main>
       </div>
     </AuthGuard>

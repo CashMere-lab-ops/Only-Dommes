@@ -1,0 +1,103 @@
+import type { Metadata } from 'next';
+import { createClient } from '@supabase/supabase-js';
+
+export const dynamic = 'force-dynamic';
+
+type Props = {
+  params: Promise<{ id: string }> | { id: string };
+  children: React.ReactNode;
+};
+
+async function getPreview(id: string) {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return null;
+    const admin = createClient(url, key);
+    const { data: stream } = await admin
+      .from('live_streams')
+      .select('id, title, status, thumbnail_url, creator_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (!stream) return null;
+    const { data: creator } = await admin
+      .from('profiles')
+      .select('username, display_name, avatar_url')
+      .eq('id', stream.creator_id)
+      .maybeSingle();
+    return { stream, creator };
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const resolved = await Promise.resolve(params);
+  const id = resolved.id;
+  const preview = await getPreview(id);
+
+  const name =
+    preview?.creator?.display_name ||
+    (preview?.creator?.username
+      ? `@${preview.creator.username}`
+      : 'Creator');
+  const titleText = preview?.stream?.title?.trim() || 'Live stream';
+  const status = String(preview?.stream?.status || '');
+  const isLive = status === 'active' || status === 'live';
+
+  // absolute prevents root layout title from winning
+  const title = isLive
+    ? `${name} is LIVE · ${titleText}`
+    : `${name} · ${titleText}`;
+
+  const description = isLive
+    ? `${name} is live on World Of Dommes — ${titleText}. 18+ only. Log in to watch.`
+    : `${name} on World Of Dommes. 18+ platform.`;
+
+  const image =
+    preview?.stream?.thumbnail_url ||
+    preview?.creator?.avatar_url ||
+    'https://www.worldofdommes.com/favicon.ico';
+
+  const pageUrl = `https://www.worldofdommes.com/live/${id}`;
+
+  return {
+    title: {
+      absolute: title,
+    },
+    description,
+    alternates: {
+      canonical: pageUrl,
+    },
+    openGraph: {
+      title,
+      description,
+      url: pageUrl,
+      siteName: 'World Of Dommes',
+      type: 'website',
+      locale: 'en_GB',
+      images: [
+        {
+          url: image,
+          secureUrl: image,
+          width: 1200,
+          height: 630,
+          alt: `${name} on World Of Dommes`,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [image],
+    },
+  };
+}
+
+export default function LiveIdLayout({ children }: Props) {
+  return children;
+}
+

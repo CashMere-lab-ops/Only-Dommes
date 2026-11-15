@@ -1,278 +1,373 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Bell, MessageCircle, Heart, Users, DollarSign,
-  Check, CheckCheck
+  ArrowLeft,
+  Bell,
+  CheckCheck,
+  Heart,
+  MessageCircle,
+  Radio,
+  UserPlus,
+  DollarSign,
+  Unlock,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
-import Sidebar from '../../components/Sidebar';
-import { createClient } from '../../lib/supabase';
+import Sidebar from '../../../components/Sidebar';
+import SiteFooter from '../../../components/SiteFooter';
+import AuthGuard from '../../../components/AuthGuard';
+import { createClient } from '../../../lib/supabase';
+
+type Notif = {
+  id: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  is_read?: boolean;
+  created_at: string;
+  actor_id?: string | null;
+  actor?: {
+    username?: string | null;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
+};
+
+function timeAgo(iso: string) {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 604800) return `${Math.floor(s / 86400)}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function NotifIcon({ type }: { type: string }) {
+  const cls = 'w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0';
+  switch (type) {
+    case 'live':
+      return (
+        <div className={`${cls} bg-red-600/20 text-red-400`}>
+          <Radio size={18} />
+        </div>
+      );
+    case 'tip':
+    case 'gift_received':
+    case 'subscribe':
+      return (
+        <div className={`${cls} bg-pink-600/20 text-pink-400`}>
+          <DollarSign size={18} />
+        </div>
+      );
+    case 'follow':
+      return (
+        <div className={`${cls} bg-blue-600/20 text-blue-400`}>
+          <UserPlus size={18} />
+        </div>
+      );
+    case 'like':
+      return (
+        <div className={`${cls} bg-rose-600/20 text-rose-400`}>
+          <Heart size={18} />
+        </div>
+      );
+    case 'comment':
+    case 'message':
+      return (
+        <div className={`${cls} bg-zinc-700 text-zinc-200`}>
+          <MessageCircle size={18} />
+        </div>
+      );
+    case 'unlock':
+      return (
+        <div className={`${cls} bg-amber-600/20 text-amber-400`}>
+          <Unlock size={18} />
+        </div>
+      );
+    default:
+      return (
+        <div className={`${cls} bg-zinc-800 text-zinc-300`}>
+          <Bell size={18} />
+        </div>
+      );
+  }
+}
 
 export default function NotificationsPage() {
   const router = useRouter();
   const supabase = createClient();
-
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [items, setItems] = useState<Notif[]>([]);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [marking, setMarking] = useState(false);
 
-  const loadNotifications = useCallback(async (uid: string) => {
+  const load = useCallback(async (uid: string) => {
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', uid)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(80);
 
     if (error) {
-      console.error(error);
-      setNotifications([]);
-    } else {
-      // Enrich with actor profile
-      const enriched = await Promise.all(
-        (data || []).map(async (n) => {
-          if (!n.actor_id) return { ...n, actor: null };
-          const { data: actor } = await supabase
-            .from('profiles')
-            .select('username, display_name, avatar_url')
-            .eq('id', n.actor_id)
-            .single();
-          return { ...n, actor };
-        })
-      );
-      setNotifications(enriched);
+      setItems([]);
+      setLoading(false);
+      return;
     }
+
+    const rows = data || [];
+    const actorIds = [
+      ...new Set(
+        rows.map((n: any) => n.actor_id).filter((id: string | null) => !!id)
+      ),
+    ] as string[];
+
+    let actors: Record<string, any> = {};
+    if (actorIds.length) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url')
+        .in('id', actorIds);
+      for (const p of profiles || []) {
+        actors[p.id] = p;
+      }
+    }
+
+    setItems(
+      rows.map((n: any) => ({
+        ...n,
+        actor: n.actor_id ? actors[n.actor_id] || null : null,
+      }))
+    );
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
       }
       setUserId(user.id);
-      await loadNotifications(user.id);
-    };
-    init();
-  }, [loadNotifications, router]);
+      await load(user.id);
 
-  // Realtime new notifications
-  useEffect(() => {
-    if (!userId) return;
+      const channel = supabase
+        .channel(`notif-page-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            load(user.id);
+          }
+        )
+        .subscribe();
 
-    const channel = supabase
-      .channel(`notifications-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => loadNotifications(userId)
-      )
-      .subscribe();
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    })();
+  }, []);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId, loadNotifications]);
-
-  const markAsRead = async (id: string) => {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id);
-
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
-    );
-  };
-
-  const markAllAsRead = async () => {
-    if (!userId) return;
+  const markAllRead = async () => {
+    if (!userId || marking) return;
+    setMarking(true);
     await supabase
       .from('notifications')
       .update({ is_read: true })
       .eq('user_id', userId)
       .eq('is_read', false);
+    setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setMarking(false);
+  };
 
-    setNotifications((prev) =>
-      prev.map((n) => ({ ...n, is_read: true }))
+  const markOneRead = async (id: string) => {
+    if (!userId) return;
+    setItems((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
     );
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', id)
+      .eq('user_id', userId);
   };
 
-  const getIcon = (type: string) => {
-    switch (type) {
-      case 'message':
-        return <MessageCircle size={18} className="text-blue-400" />;
-      case 'tip':
-        return <DollarSign size={18} className="text-green-400" />;
-      case 'follow':
-        return <Users size={18} className="text-pink-400" />;
-      case 'subscribe':
-        return <Heart size={18} className="text-rose-400" />;
-      default:
-        return <Bell size={18} className="text-zinc-400" />;
-    }
+  const clearAll = async () => {
+    if (!userId) return;
+    if (!confirm('Clear all notifications?')) return;
+    await supabase.from('notifications').delete().eq('user_id', userId);
+    setItems([]);
   };
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (diff < 60) return 'Just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-  };
-
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const unread = items.filter((n) => !n.is_read).length;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-        {/* Mobile top bar */}
-        <div className="lg:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="text-zinc-400">
-              <ArrowLeft size={22} />
-            </Link>
-            <h1 className="text-xl font-semibold">Notifications</h1>
-          </div>
-          {unreadCount > 0 && (
+    <AuthGuard>
+      <div className="min-h-screen bg-zinc-950 text-white flex">
+        <Sidebar />
+        <main className="flex-1 overflow-y-auto pb-24 lg:pb-10">
+          <div className="lg:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
             <button
-              onClick={markAllAsRead}
-              className="text-pink-400 text-sm font-medium"
+              type="button"
+              onClick={() => router.back()}
+              className="text-zinc-400 hover:text-white"
             >
-              Mark all read
+              <ArrowLeft size={22} />
             </button>
-          )}
-        </div>
-
-        <div className="max-w-2xl mx-auto px-4 py-6">
-          {/* Desktop header */}
-          <div className="hidden lg:flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Bell className="text-pink-500" size={30} />
-              Notifications
-            </h1>
-            {unreadCount > 0 && (
+            <h1 className="text-lg font-semibold flex-1">Notifications</h1>
+            {unread > 0 && (
               <button
-                onClick={markAllAsRead}
-                className="flex items-center gap-2 text-sm text-pink-400 hover:text-pink-300 font-medium"
+                type="button"
+                onClick={() => void markAllRead()}
+                className="text-xs text-pink-400 font-medium"
               >
-                <CheckCheck size={16} />
-                Mark all as read
+                Mark all read
               </button>
             )}
           </div>
 
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-4 p-4 bg-zinc-900 rounded-2xl animate-pulse"
-                >
-                  <div className="w-12 h-12 rounded-full bg-zinc-800" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-zinc-800 rounded w-2/3" />
-                    <div className="h-3 bg-zinc-800 rounded w-1/3" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : notifications.length === 0 ? (
-            <div className="text-center py-24">
-              <div className="w-20 h-20 rounded-full bg-zinc-900 flex items-center justify-center mx-auto mb-5">
-                <Bell size={36} className="text-zinc-600" />
+          <div className="max-w-2xl mx-auto px-4 lg:px-8 py-6 lg:py-10">
+            <div className="hidden lg:flex items-center justify-between mb-8">
+              <div>
+                <h1 className="text-3xl font-bold flex items-center gap-3">
+                  <Bell className="text-pink-500" size={28} />
+                  Notifications
+                </h1>
+                <p className="text-zinc-500 text-sm mt-1">
+                  {unread > 0
+                    ? `${unread} unread`
+                    : 'You are all caught up'}
+                </p>
               </div>
-              <p className="text-zinc-300 text-lg font-medium">No notifications yet</p>
-              <p className="text-zinc-500 text-sm mt-2 max-w-xs mx-auto">
-                When someone messages you, tips you, or follows you, it will show up here
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {notifications.map((n) => {
-                const actorName =
-                  n.actor?.display_name || n.actor?.username || 'Someone';
-                const initial = actorName.charAt(0).toUpperCase();
-
-                return (
-                  <div
-                    key={n.id}
-                    className={`flex items-start gap-3.5 p-4 rounded-2xl transition ${
-                      n.is_read
-                        ? 'hover:bg-zinc-900/50'
-                        : 'bg-pink-500/5 hover:bg-pink-500/10'
-                    }`}
+              <div className="flex items-center gap-2">
+                {unread > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void markAllRead()}
+                    disabled={marking}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-200 hover:border-pink-500/40 transition"
                   >
-                    {/* Avatar */}
-                    <div className="relative flex-shrink-0">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
-                        {n.actor?.avatar_url ? (
-                          <img
-                            src={n.actor.avatar_url}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          initial
-                        )}
-                      </div>
-                      <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-zinc-900 flex items-center justify-center border-2 border-zinc-950">
-                        {getIcon(n.type)}
-                      </div>
-                    </div>
+                    <CheckCheck size={16} className="text-pink-400" />
+                    Mark all read
+                  </button>
+                )}
+                {items.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void clearAll()}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-400 hover:text-red-300 hover:border-red-500/30 transition"
+                  >
+                    <Trash2 size={16} />
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <Link
-                        href={n.link || '#'}
-                        onClick={() => {
-                          if (!n.is_read) markAsRead(n.id);
-                        }}
-                        className="block"
-                      >
-                        <p className={`text-sm leading-snug ${n.is_read ? 'text-zinc-300' : 'text-white font-medium'}`}>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <Loader2 className="animate-spin text-pink-500" size={28} />
+              </div>
+            ) : items.length === 0 ? (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center">
+                <Bell className="mx-auto text-zinc-600 mb-3" size={36} />
+                <p className="text-zinc-200 font-medium text-lg">No notifications yet</p>
+                <p className="text-sm text-zinc-500 mt-2">
+                  Tips, follows, lives and messages will show up here
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {items.map((n) => {
+                  const name =
+                    n.actor?.display_name ||
+                    (n.actor?.username ? `@${n.actor.username}` : null);
+                  const href = n.link || '#';
+                  const inner = (
+                    <div
+                      className={`flex items-start gap-3 rounded-2xl border px-3.5 py-3.5 transition ${
+                        n.is_read
+                          ? 'bg-zinc-900/60 border-zinc-800/80'
+                          : 'bg-zinc-900 border-pink-500/25'
+                      }`}
+                    >
+                      {n.actor?.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={n.actor.avatar_url}
+                          alt=""
+                          className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <NotifIcon type={n.type} />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={`text-sm leading-snug ${
+                            n.is_read ? 'text-zinc-300' : 'text-white font-medium'
+                          }`}
+                        >
                           {n.title}
                         </p>
                         {n.body && (
-                          <p className="text-sm text-zinc-500 mt-0.5 truncate">
+                          <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">
                             {n.body}
                           </p>
                         )}
-                        <p className="text-xs text-zinc-600 mt-1">
-                          {formatTime(n.created_at)}
+                        <p className="text-[11px] text-zinc-600 mt-1">
+                          {name ? `${name} · ` : ''}
+                          {timeAgo(n.created_at)}
                         </p>
-                      </Link>
+                      </div>
+                      {!n.is_read && (
+                        <span className="w-2 h-2 rounded-full bg-pink-500 flex-shrink-0 mt-2" />
+                      )}
                     </div>
+                  );
 
-                    {/* Unread dot + mark read */}
-                    {!n.is_read && (
-                      <button
-                        onClick={() => markAsRead(n.id)}
-                        className="flex-shrink-0 mt-1.5 w-2.5 h-2.5 rounded-full bg-pink-500"
-                        title="Mark as read"
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
+                  if (href && href !== '#') {
+                    return (
+                      <Link
+                        key={n.id}
+                        href={href}
+                        onClick={() => void markOneRead(n.id)}
+                        className="block"
+                      >
+                        {inner}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <button
+                      key={n.id}
+                      type="button"
+                      className="w-full text-left"
+                      onClick={() => void markOneRead(n.id)}
+                    >
+                      {inner}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+                  <SiteFooter />
+        </main>
+      </div>
+    </AuthGuard>
   );
 }

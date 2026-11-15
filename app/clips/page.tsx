@@ -14,6 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 import { notifyBalanceUpdated } from '../../lib/wallet';
@@ -677,6 +678,7 @@ export default function ClipsPage() {
               </div>
             )}
           </div>
+                  <SiteFooter />
         </main>
 
         {viewer && (

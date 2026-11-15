@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
@@ -473,6 +474,7 @@ export default function LibraryPage() {
               </>
             )}
           </div>
+                  <SiteFooter />
         </main>
 
         {viewer && (
@@ -545,5 +547,3 @@ export default function LibraryPage() {
     </AuthGuard>
   );
 }
-
-

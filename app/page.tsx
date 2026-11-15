@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Radio, Users, Loader2, Video, Search, Heart } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
+import SiteFooter from '../components/SiteFooter';
 import Landing from '../components/Landing';
 import FeedPosts from '../components/FeedPosts';
 import StoriesRail from '../components/StoriesRail';
@@ -366,7 +367,8 @@ export default function Home() {
             </>
           )}
         </div>
-      </main>
+                <SiteFooter />
+        </main>
     </div>
   );
 }

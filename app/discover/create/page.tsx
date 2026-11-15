@@ -5,9 +5,14 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Image as ImageIcon, Video, X, UploadCloud } from 'lucide-react';
 import Sidebar from '../../../components/Sidebar';
+import SiteFooter from '../../../components/SiteFooter';
 import AuthGuard from '../../../components/AuthGuard';
 import { createClient } from '../../../lib/supabase';
 import { createImageThumbnail } from '../../../lib/createThumbnail';
+import { compressVideoTo720p } from '../../../lib/compressVideo';
+
+const MAX_DISCOVER_VIDEO_SECONDS = 15;
+const MAX_DISCOVER_VIDEO_BYTES = 50 * 1024 * 1024; // 50MB after compress
 
 export default function CreatePostPage() {
   const router = useRouter();
@@ -17,12 +22,15 @@ export default function CreatePostPage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
+  const [compressing, setCompressing] = useState(false);
+  const [compressPct, setCompressPct] = useState(0);
 
   const [caption, setCaption] = useState('');
   const [mediaType, setMediaType] = useState<'none' | 'photo' | 'video'>('none');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [videoHint, setVideoHint] = useState('');
 
   const maxCaptionLength = 500;
 
@@ -54,48 +62,122 @@ export default function CreatePostPage() {
     loadProfile();
   }, []);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setError('');
+    setVideoHint('');
 
     if (file.type.startsWith('image/')) {
       setMediaType('photo');
       setMediaFile(file);
       setMediaPreview(URL.createObjectURL(file));
-    } else if (file.type.startsWith('video/')) {
+      return;
+    }
+
+    if (!file.type.startsWith('video/')) {
+      setError('Please select a photo or video');
+      return;
+    }
+
+    // Duration check first
+    const durationOk = await new Promise<boolean>((resolve) => {
       const video = document.createElement('video');
       video.preload = 'metadata';
       video.onloadedmetadata = () => {
         window.URL.revokeObjectURL(video.src);
-        if (video.duration > 15) {
+        if (video.duration > MAX_DISCOVER_VIDEO_SECONDS) {
           setError('Videos must be 15 seconds or less');
           setMediaFile(null);
           setMediaPreview(null);
           setMediaType('none');
+          resolve(false);
           return;
         }
-        setMediaType('video');
-        setMediaFile(file);
-        setMediaPreview(URL.createObjectURL(file));
+        resolve(true);
+      };
+      video.onerror = () => {
+        setError('Could not read this video');
+        resolve(false);
       };
       video.src = URL.createObjectURL(file);
-    } else {
-      setError('Please select a photo or video');
+    });
+
+    if (!durationOk) return;
+
+    // Auto-compress to 720p (browser-side)
+    setCompressing(true);
+    setCompressPct(0);
+    setMediaType('video');
+    setMediaPreview(URL.createObjectURL(file));
+
+    try {
+      const result = await compressVideoTo720p(file, {
+        maxSeconds: MAX_DISCOVER_VIDEO_SECONDS,
+        onProgress: (p) => setCompressPct(p),
+      });
+
+      let finalFile = result.file;
+
+      if (finalFile.size > MAX_DISCOVER_VIDEO_BYTES) {
+        setError(
+          `Video is still over 50MB after compress (${(finalFile.size / (1024 * 1024)).toFixed(1)}MB). Try a shorter or lower-quality clip.`
+        );
+        setMediaFile(null);
+        setMediaPreview(null);
+        setMediaType('none');
+        setCompressing(false);
+        return;
+      }
+
+      setMediaFile(finalFile);
+      if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+      setMediaPreview(URL.createObjectURL(finalFile));
+
+      if (result.compressed) {
+        setVideoHint(
+          `Compressed to 720p · ${(finalFile.size / (1024 * 1024)).toFixed(1)}MB`
+        );
+      } else {
+        setVideoHint(
+          `Ready · ${(finalFile.size / (1024 * 1024)).toFixed(1)}MB (already optimised)`
+        );
+      }
+    } catch {
+      // fallback: use original if under limit
+      if (file.size > MAX_DISCOVER_VIDEO_BYTES) {
+        setError('Video must be under 50MB for Discover');
+        setMediaFile(null);
+        setMediaPreview(null);
+        setMediaType('none');
+      } else {
+        setMediaFile(file);
+        setVideoHint(`Ready · ${(file.size / (1024 * 1024)).toFixed(1)}MB`);
+      }
+    } finally {
+      setCompressing(false);
+      setCompressPct(0);
     }
   };
 
   const removeMedia = () => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
     setMediaFile(null);
     setMediaPreview(null);
     setMediaType('none');
+    setVideoHint('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handlePost = async () => {
     if (!caption.trim() && !mediaFile) {
       setError('Please add a caption or media');
+      return;
+    }
+
+    if (compressing) {
+      setError('Please wait for video to finish compressing');
       return;
     }
 
@@ -113,6 +195,10 @@ export default function CreatePostPage() {
       let finalMediaType: string = 'text';
 
       if (mediaFile) {
+        if (mediaType === 'video' && mediaFile.size > MAX_DISCOVER_VIDEO_BYTES) {
+          throw new Error('Video must be under 50MB for Discover');
+        }
+
         const stamp = Date.now();
         const fileExt = mediaFile.name.split('.').pop() || 'bin';
         const fileName = `${user.id}-${stamp}.${fileExt}`;
@@ -120,7 +206,10 @@ export default function CreatePostPage() {
 
         const { error: uploadError } = await supabase.storage
           .from('posts')
-          .upload(filePath, mediaFile);
+          .upload(filePath, mediaFile, {
+            contentType: mediaFile.type || undefined,
+            upsert: false,
+          });
 
         if (uploadError) throw uploadError;
 
@@ -131,7 +220,6 @@ export default function CreatePostPage() {
         mediaUrl = publicUrl;
         finalMediaType = mediaType;
 
-        // Photos: also upload a small thumbnail for the feed
         if (mediaType === 'photo') {
           try {
             const thumbFile = await createImageThumbnail(mediaFile, 800, 0.72);
@@ -205,10 +293,10 @@ export default function CreatePostPage() {
 
               <button
                 onClick={handlePost}
-                disabled={posting || (!caption.trim() && !mediaFile)}
+                disabled={posting || compressing || (!caption.trim() && !mediaFile)}
                 className="text-sm font-semibold text-pink-400 hover:text-pink-300 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
-                {posting ? 'Posting...' : 'Post'}
+                {posting ? 'Posting...' : compressing ? 'Compressing...' : 'Post'}
               </button>
             </div>
           </div>
@@ -271,13 +359,31 @@ export default function CreatePostPage() {
                 {mediaType === 'video' && (
                   <video src={mediaPreview} controls className="w-full max-h-[480px]" />
                 )}
-                <button
-                  onClick={removeMedia}
-                  className="absolute top-3 right-3 bg-black/70 hover:bg-black text-white p-2 rounded-full transition"
-                >
-                  <X size={18} />
-                </button>
+                {compressing && (
+                  <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-2">
+                    <p className="text-sm font-medium">Compressing to 720p…</p>
+                    <div className="w-40 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-pink-500 transition-all"
+                        style={{ width: `${compressPct}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-zinc-400">{compressPct}%</p>
+                  </div>
+                )}
+                {!compressing && (
+                  <button
+                    onClick={removeMedia}
+                    className="absolute top-3 right-3 bg-black/70 hover:bg-black text-white p-2 rounded-full transition"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
               </div>
+            )}
+
+            {videoHint && !compressing && (
+              <p className="text-xs text-pink-400/90 mb-4 -mt-2">{videoHint}</p>
             )}
 
             {!mediaPreview && (
@@ -288,7 +394,9 @@ export default function CreatePostPage() {
                 >
                   <UploadCloud size={40} className="text-zinc-500 mb-3" />
                   <p className="font-medium text-sm mb-1">Add Photo or Video</p>
-                  <p className="text-xs text-zinc-500">Videos must be 15 seconds or less</p>
+                  <p className="text-xs text-zinc-500">
+                    Videos: max 15s · auto 720p · under 50MB
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mt-4">
@@ -328,9 +436,10 @@ export default function CreatePostPage() {
             />
 
             <div className="text-xs text-zinc-500 text-center">
-              Posts on Discover are free for everyone to see
+              Posts on Discover are free for everyone · videos auto-compress to 720p
             </div>
           </div>
+                  <SiteFooter />
         </main>
       </div>
     </AuthGuard>

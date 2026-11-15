@@ -12,6 +12,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import { createClient } from '../../lib/supabase';
 
 type Period = '24h' | '7d' | '30d';
@@ -498,7 +499,8 @@ export default function LeaderboardPage() {
             </>
           )}
         </div>
-      </main>
+                <SiteFooter />
+        </main>
     </div>
   );
 }

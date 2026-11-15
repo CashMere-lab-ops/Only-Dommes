@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import { createClient } from '../../lib/supabase';
 
 type Money = { gross: number; fee: number; net: number; count: number };
@@ -237,7 +238,8 @@ export default function AdminPage() {
             </>
           )}
         </div>
-      </main>
+                <SiteFooter />
+        </main>
     </div>
   );
 }

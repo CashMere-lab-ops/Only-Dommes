@@ -8,6 +8,7 @@ import {
   Link2, Unlink, Heart, MessageCircle, Bot, DollarSign, Unlock, Phone, Video, Radio, Ban
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import SiteFooter from '../../components/SiteFooter';
 import AuthGuard from '../../components/AuthGuard';
 import { createClient } from '../../lib/supabase';
 
@@ -1273,6 +1274,7 @@ export default function SettingsPage() {
               {saving ? 'Saving...' : 'Save changes'}
             </button>
           </div>
+                  <SiteFooter />
         </main>
       </div>
     </AuthGuard>
