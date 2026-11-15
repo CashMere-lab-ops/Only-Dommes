@@ -15,6 +15,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState<any>(null);
   const [userEmail, setUserEmail] = useState('');
@@ -67,6 +68,7 @@ export default function SettingsPage() {
   const [emailMessages, setEmailMessages] = useState(true);
   const [emailLives, setEmailLives] = useState(true);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropKind, setCropKind] = useState<'avatar' | 'banner'>('avatar');
   const [cropZoom, setCropZoom] = useState(1);
   const [cropPos, setCropPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
@@ -154,6 +156,31 @@ export default function SettingsPage() {
     setMessage('');
     const reader = new FileReader();
     reader.onload = () => {
+      setCropKind('avatar');
+      setCropZoom(1);
+      setCropPos({ x: 0, y: 0 });
+      setCropSrc(String(reader.result || ''));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !profile) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Max 8MB for banner');
+      return;
+    }
+    setError('');
+    setMessage('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropKind('banner');
       setCropZoom(1);
       setCropPos({ x: 0, y: 0 });
       setCropSrc(String(reader.result || ''));
@@ -172,45 +199,51 @@ export default function SettingsPage() {
         el.onerror = () => reject(new Error('Could not read that photo'));
         el.src = cropSrc;
       });
-      const size = 512;
+      const isBanner = cropKind === 'banner';
+      const sizeW = isBanner ? 1200 : 512;
+      const sizeH = isBanner ? 480 : 512;
+      const frameW = isBanner ? 320 : 280;
+      const frameH = isBanner ? 128 : 280;
       const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
+      canvas.width = sizeW;
+      canvas.height = sizeH;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Could not crop');
-      const frame = 280;
-      const scale = (frame / Math.min(img.width, img.height)) * cropZoom;
+      const scale = (frameW / img.width) * cropZoom;
       const drawW = img.width * scale;
       const drawH = img.height * scale;
-      const outScale = size / frame;
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-      ctx.clip();
+      const outScale = sizeW / frameW;
+      if (!isBanner) {
+        ctx.beginPath();
+        ctx.arc(sizeW / 2, sizeH / 2, sizeW / 2, 0, Math.PI * 2);
+        ctx.clip();
+      }
       ctx.drawImage(
         img,
-        size / 2 - drawW / 2 * outScale + cropPos.x * outScale,
-        size / 2 - drawH / 2 * outScale + cropPos.y * outScale,
+        sizeW / 2 - drawW / 2 * outScale + cropPos.x * outScale,
+        sizeH / 2 - drawH / 2 * outScale + cropPos.y * outScale,
         drawW * outScale,
         drawH * outScale
       );
       const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not crop'))), 'image/jpeg', 0.92);
       });
-      const path = `${profile.id}/avatar.jpg`;
+      const path = `${profile.id}/${isBanner ? 'banner' : 'avatar'}.jpg`;
       const { error: upError } = await supabase.storage
         .from('avatars')
         .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
       if (upError) throw upError;
       const { data } = supabase.storage.from('avatars').getPublicUrl(path);
       const url = `${data.publicUrl}?t=${Date.now()}`;
+      const field = isBanner ? 'banner_url' : 'avatar_url';
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ avatar_url: url })
+        .update({ [field]: url })
         .eq('id', profile.id);
       if (updateError) throw updateError;
-      setProfile({ ...profile, avatar_url: url });
+      setProfile({ ...profile, [field]: url });
       setCropSrc(null);
-      setMessage('Photo updated');
+      setMessage(isBanner ? 'Banner updated' : 'Photo updated');
     } catch (err: any) {
       setError(err.message || 'Upload failed');
     } finally {
@@ -380,47 +413,79 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Avatar */}
+            {/* Photos */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <Camera size={18} className="text-pink-500" /> Profile photo
+                <Camera size={18} className="text-pink-500" /> Profile photos
               </h2>
-              <div className="flex items-center gap-5">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-2xl font-bold">
-                  {profile?.avatar_url ? (
-                    <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    initial
-                  )}
+              <div className="grid sm:grid-cols-2 gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 overflow-hidden flex items-center justify-center text-2xl font-bold flex-shrink-0">
+                    {profile?.avatar_url ? (
+                      <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      initial
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium mb-2">Profile photo</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleAvatar}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50"
+                    >
+                      Change photo
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handleAvatar}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50"
-                  >
-                    {uploading ? 'Uploading...' : 'Change photo'}
-                  </button>
-                  <p className="text-xs text-zinc-500 mt-2">JPG, PNG or WebP · Max 5MB</p>
+                <div className="flex items-center gap-4">
+                  <div className="w-28 h-16 rounded-xl bg-zinc-800 overflow-hidden flex-shrink-0">
+                    {profile?.banner_url ? (
+                      <img src={profile.banner_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-pink-600/40 to-purple-900/40" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium mb-2">Banner</p>
+                    <input
+                      ref={bannerInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleBanner}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => bannerInputRef.current?.click()}
+                      disabled={uploading}
+                      className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-4 py-2 rounded-xl text-sm font-medium transition disabled:opacity-50"
+                    >
+                      Change banner
+                    </button>
+                  </div>
                 </div>
               </div>
+              <p className="text-xs text-zinc-500 mt-4">JPG, PNG or WebP · photo 5MB · banner 8MB</p>
             </div>
 
             {cropSrc && (
               <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
                 <div className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-5">
-                  <p className="text-center font-semibold mb-1">Adjust photo</p>
+                  <p className="text-center font-semibold mb-1">{cropKind === 'banner' ? 'Adjust banner' : 'Adjust photo'}</p>
                   <p className="text-center text-xs text-zinc-500 mb-4">Drag to move. Pinch or use the slider to zoom.</p>
                   <div
-                    className="mx-auto w-[280px] h-[280px] rounded-full overflow-hidden relative bg-zinc-900 touch-none"
+                    className={`mx-auto overflow-hidden relative bg-zinc-900 touch-none ${
+                      cropKind === 'banner' ? 'w-[320px] h-[128px] rounded-xl' : 'w-[280px] h-[280px] rounded-full'
+                    }`}
                     onPointerDown={(e) => {
                       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
                       pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -467,8 +532,8 @@ export default function SettingsPage() {
                       draggable={false}
                       className="absolute left-1/2 top-1/2 max-w-none select-none"
                       style={{
-                        width: `${280 * cropZoom}px`,
-                        height: `${280 * cropZoom}px`,
+                        width: `${(cropKind === 'banner' ? 320 : 280) * cropZoom}px`,
+                        height: `${(cropKind === 'banner' ? 320 : 280) * cropZoom}px`,
                         transform: `translate(calc(-50% + ${cropPos.x}px), calc(-50% + ${cropPos.y}px))`,
                         objectFit: 'cover',
                       }}

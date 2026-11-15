@@ -618,11 +618,11 @@ export default function PublicProfilePage() {
       <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
         <div className="max-w-3xl mx-auto">
           <div className="relative h-40 sm:h-52 bg-zinc-900">
-            {profile.avatar_url ? (
+            {profile.banner_url || profile.avatar_url ? (
               <img
-                src={profile.avatar_url}
+                src={profile.banner_url || profile.avatar_url}
                 alt=""
-                className="w-full h-full object-cover blur-sm scale-110 opacity-70"
+                className={`w-full h-full object-cover ${profile.banner_url ? '' : 'blur-sm scale-110 opacity-70'}`}
               />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-pink-600/40 via-zinc-900 to-purple-900/40" />
