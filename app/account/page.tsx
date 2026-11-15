@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Edit3, Users, Heart,
+  Edit3, Users, Heart,
   LogOut
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
@@ -85,22 +85,6 @@ export default function MyAccountPage() {
       <div className="min-h-screen bg-zinc-950 text-white flex">
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-24 lg:pb-0">
-          <div className="lg:hidden sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link href="/" className="text-zinc-400 hover:text-white">
-                <ArrowLeft size={22} />
-              </Link>
-              <h1 className="text-xl font-semibold">My Account</h1>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-sm font-bold overflow-hidden">
-              {profile?.avatar_url ? (
-                <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                initial
-              )}
-            </div>
-          </div>
-
           <div className="max-w-5xl mx-auto px-4 lg:px-8 py-8">
             <div className="flex flex-col sm:flex-row gap-6 mb-6">
               <div className="flex flex-col items-center gap-3 flex-shrink-0">

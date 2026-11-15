@@ -439,7 +439,7 @@ export default function Sidebar() {
       {/* ── Mobile top bar: logo + balance + avatar ── */}
       {loggedIn && (
         <>
-        <div className="lg:hidden fixed top-0 inset-x-0 z-50 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
+        <div className="lg:hidden fixed top-0 inset-x-0 z-[70] bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-4 h-14 flex items-center justify-between">
           <div className="flex items-center min-w-0">
             <Link href="/" className="flex items-center">
               <img
