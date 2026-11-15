@@ -484,7 +484,7 @@ export default function SettingsPage() {
                   <p className="text-center text-xs text-zinc-500 mb-4">Drag to move. Pinch or use the slider to zoom.</p>
                   <div
                     className={`mx-auto overflow-hidden relative bg-zinc-900 touch-none ${
-                      cropKind === 'banner' ? 'w-[320px] h-[128px] rounded-xl' : 'w-[280px] h-[280px] rounded-full'
+                      cropKind === 'banner' ? 'w-[300px] h-[100px] rounded-xl' : 'w-[280px] h-[280px] rounded-full'
                     }`}
                     onPointerDown={(e) => {
                       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
