@@ -520,10 +520,10 @@ export default function FeedPosts({
         const postComments = comments[openComments] || [];
         if (!post) return null;
         return (
-          <div className="fixed inset-0 z-[80] flex items-end lg:items-center justify-center" onClick={() => setOpenComments(null)}>
+          <div className="fixed inset-0 lg:left-72 z-[80] flex items-end lg:items-center justify-center" onClick={() => setOpenComments(null)}>
             <div className="absolute inset-0 bg-black/70" />
             <div
-              className="relative w-full lg:max-w-md bg-zinc-950 border border-zinc-800 rounded-t-3xl lg:rounded-3xl max-h-[75vh] lg:max-h-[70vh] flex flex-col"
+              className="relative w-full lg:w-[640px] bg-zinc-950 border border-zinc-800 rounded-t-3xl lg:rounded-3xl h-[75vh] lg:h-[78vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
