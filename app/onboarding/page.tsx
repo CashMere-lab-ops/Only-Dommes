@@ -57,7 +57,7 @@ export default function OnboardingPage() {
               <Heart className="w-7 h-7 text-pink-500" />
             </div>
             <div>
-              <h3 className="text-xl font-semibold mb-1">I'm a Subscriber</h3>
+              <h3 className="text-xl font-semibold mb-1">I'm a Fan</h3>
               <p className="text-zinc-400 text-sm mb-3">
                 Watch live streams, buy exclusive clips, tip your favourite creators,
                 and message them privately.

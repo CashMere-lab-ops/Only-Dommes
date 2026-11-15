@@ -726,7 +726,7 @@ export default function PublicProfilePage() {
                 <h1 className="text-xl font-bold">{displayName}</h1>
                 {profile.account_type && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20 capitalize">
-                    {profile.account_type === 'sub' ? 'Subscriber' : profile.account_type}
+                    {profile.account_type === 'sub' ? 'Fan' : profile.account_type}
                   </span>
                 )}
               </div>
@@ -747,7 +747,7 @@ export default function PublicProfilePage() {
             <div className="flex gap-5 mt-4 text-sm">
               <span><b>{posts.length}</b> <span className="text-zinc-400">posts</span></span>
               <span><b>{followersCount}</b> <span className="text-zinc-400">followers</span></span>
-              <span><b>{subscribersCount}</b> <span className="text-zinc-400">subscribers</span></span>
+              <span><b>{subscribersCount}</b> <span className="text-zinc-400">fans</span></span>
             </div>
 
             {profile.bio && (

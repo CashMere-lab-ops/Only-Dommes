@@ -76,7 +76,7 @@ function SetupForm() {
       <div className="w-full max-w-md">
         <h1 className="text-3xl font-bold text-center mb-2">Choose your username</h1>
         <p className="text-zinc-400 text-center mb-8">
-          {type === 'creator' ? 'Creator account' : 'Subscriber account'}
+          {type === 'creator' ? 'Creator account' : 'Fan account'}
         </p>
         <div className="bg-zinc-900 p-8 rounded-3xl space-y-5">
           <div>

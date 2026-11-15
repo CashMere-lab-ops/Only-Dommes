@@ -384,7 +384,7 @@ export default function Sidebar() {
   const quickItems = [
     { href: '/settings', label: 'Edit profile', icon: Edit3 },
     isCreator
-      ? { href: '/dashboard', label: 'Subscribers', icon: Users }
+      ? { href: '/dashboard', label: 'Fans', icon: Users }
       : { href: '/subscriptions', label: 'My subscriptions', icon: Heart },
   ];
 

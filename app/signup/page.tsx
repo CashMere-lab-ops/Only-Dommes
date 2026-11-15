@@ -107,7 +107,7 @@ function SignupForm() {
           World of <span className="text-pink-500">Dommes</span>
         </h1>
         <p className="text-zinc-400 text-center mb-8">
-          {type === 'creator' ? 'Create your creator account' : 'Create your subscriber account'}
+          {type === 'creator' ? 'Create your creator account' : 'Create your fan account'}
         </p>
         <div className="bg-zinc-900 p-8 rounded-3xl space-y-5">
           <div>
