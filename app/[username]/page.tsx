@@ -822,7 +822,7 @@ export default function PublicProfilePage() {
               isSubscribed ? (
                 <Link
                   href="/subscriptions"
-                  className="mt-4 flex w-full items-center justify-center py-3 rounded-full text-sm font-semibold border border-pink-500/50 bg-pink-500/10 text-pink-400"
+                  className="mt-5 inline-flex items-center justify-center px-6 py-2 rounded-full text-sm font-medium border border-pink-500/30 bg-pink-500/5 text-pink-300 hover:bg-pink-500/10 transition"
                 >
                   Subscribed
                 </Link>
@@ -830,7 +830,7 @@ export default function PublicProfilePage() {
                 <button
                   onClick={handleSubscribe}
                   disabled={subLoading}
-                  className="mt-4 w-full py-3 rounded-full text-sm font-semibold disabled:opacity-50 bg-gradient-to-r from-pink-600 to-rose-500"
+                  className="mt-5 inline-flex items-center justify-center px-6 py-2 rounded-full text-sm font-medium disabled:opacity-50 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-500 hover:to-rose-400 transition shadow-lg shadow-pink-900/20"
                 >
                   {subLoading ? '...' : `Subscribe · £${subPrice}/mo`}
                 </button>
