@@ -286,6 +286,8 @@ export default function PublicProfilePage() {
     setPeople(profiles || []);
     setPeopleLoading(false);
   };
+
+  const handleFollow = async () => {
     if (!currentUser) {
       router.push('/login');
       return;
