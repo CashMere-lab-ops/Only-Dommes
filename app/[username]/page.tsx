@@ -52,6 +52,7 @@ export default function PublicProfilePage() {
   const [peopleOpen, setPeopleOpen] = useState<null | 'following' | 'followers'>(null);
   const [people, setPeople] = useState<any[]>([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
+  const [peopleQuery, setPeopleQuery] = useState('');
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -308,9 +309,19 @@ export default function PublicProfilePage() {
     }
   };
 
+  useEffect(() => {
+    if (!peopleOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [peopleOpen]);
+
   const openPeople = async (kind: 'following' | 'followers') => {
     if (!profile?.id) return;
     setPeopleOpen(kind);
+    setPeopleQuery('');
     setPeopleLoading(true);
     setPeople([]);
     const column = kind === 'followers' ? 'following_id' : 'follower_id';
@@ -1141,23 +1152,38 @@ export default function PublicProfilePage() {
           </div>
         )}
 
-        {peopleOpen && (
-          <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center" onClick={() => setPeopleOpen(null)}>
-            <div className="absolute inset-0 bg-black/70" />
-            <div className="relative w-full sm:max-w-md bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-3xl max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+        {peopleOpen && (() => {
+          const q = peopleQuery.trim().toLowerCase();
+          const shown = people.filter((p) =>
+            !q ||
+            (p.display_name || '').toLowerCase().includes(q) ||
+            (p.username || '').toLowerCase().includes(q)
+          );
+          return (
+          <div className="fixed inset-0 z-[80] flex items-end lg:items-center justify-center" onClick={() => setPeopleOpen(null)}>
+            <div className="absolute inset-0 bg-black/75" />
+            <div className="relative w-full lg:w-[440px] bg-zinc-950 border border-zinc-800 rounded-t-3xl lg:rounded-3xl h-[78vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 pt-4 pb-3">
                 <p className="font-semibold capitalize">{peopleOpen}</p>
-                <button type="button" onClick={() => setPeopleOpen(null)} className="text-zinc-400">Close</button>
+                <button type="button" onClick={() => setPeopleOpen(null)} className="w-8 h-8 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Close">×</button>
               </div>
-              <div className="overflow-y-auto px-5 py-3">
+              <div className="px-5 pb-3">
+                <input
+                  value={peopleQuery}
+                  onChange={(e) => setPeopleQuery(e.target.value)}
+                  placeholder="Search"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2.5 text-sm outline-none focus:border-pink-500"
+                />
+              </div>
+              <div className="flex-1 overflow-y-auto overscroll-contain px-2">
                 {peopleLoading ? (
-                  <p className="text-sm text-zinc-500 py-6 text-center">Loading...</p>
-                ) : people.length === 0 ? (
-                  <p className="text-sm text-zinc-500 py-6 text-center">No one yet</p>
+                  <p className="text-sm text-zinc-500 py-8 text-center">Loading</p>
+                ) : shown.length === 0 ? (
+                  <p className="text-sm text-zinc-500 py-8 text-center">{q ? 'No matches' : 'No one yet'}</p>
                 ) : (
-                  people.map((p) => (
-                    <Link key={p.id} href={p.username ? `/${p.username}` : '/'} onClick={() => setPeopleOpen(null)} className="flex items-center gap-3 py-2.5">
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-semibold">
+                  shown.map((p) => (
+                    <Link key={p.id} href={p.username ? `/${p.username}` : '/'} onClick={() => setPeopleOpen(null)} className="flex items-center gap-3 px-3 py-3 border-b border-zinc-800/70 hover:bg-zinc-900">
+                      <div className="w-11 h-11 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-semibold flex-shrink-0">
                         {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" /> : (p.display_name || p.username || 'U')[0]}
                       </div>
                       <div className="min-w-0">
@@ -1170,7 +1196,8 @@ export default function PublicProfilePage() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
                 <SiteFooter />
         </main>
