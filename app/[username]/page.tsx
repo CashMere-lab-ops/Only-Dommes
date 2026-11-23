@@ -797,7 +797,7 @@ export default function PublicProfilePage() {
             <div className="flex gap-5 mt-4 text-sm">
               <span><b>{posts.length}</b> <span className="text-zinc-400">posts</span></span>
               <button type="button" onClick={() => openPeople('following')} className="group cursor-pointer">
-                <b className="group-hover:text-pink-400">{followingCount}</b> <span className="text-zinc-400 group-hover:text-pink-400 underline-offset-2 group-hover:underline">following</span>
+                <b className="group-hover:text-pink-400">{followingCount}</b> <span className="text-zinc-400 group-hover:text-pink-400">following</span>
               </button>
               <button type="button" onClick={() => openPeople('followers')} className="group cursor-pointer">
                 <b className="group-hover:text-pink-400">{followersCount}</b> <span className="text-zinc-400 group-hover:text-pink-400">followers</span>
