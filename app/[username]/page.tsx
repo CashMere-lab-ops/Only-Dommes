@@ -340,38 +340,6 @@ export default function PublicProfilePage() {
     }
   };
 
-  const openPeople = async (kind: 'followers' | 'following') => {
-    if (!profile) return;
-    setPeopleOpen(kind);
-    setPeopleQuery('');
-    setPeopleLoading(true);
-    setPeople([]);
-
-    const col = kind === 'followers' ? 'follower_id' : 'following_id';
-    const other = kind === 'followers' ? 'following_id' : 'follower_id';
-
-    const { data: rows } = await supabase
-      .from('follows')
-      .select(col)
-      .eq(other, profile.id)
-      .limit(200);
-
-    const ids = (rows || []).map((r: any) => r[col]).filter(Boolean);
-    if (ids.length === 0) {
-      setPeople([]);
-      setPeopleLoading(false);
-      return;
-    }
-
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, username, display_name, avatar_url, account_type')
-      .in('id', ids);
-
-    setPeople(profiles || []);
-    setPeopleLoading(false);
-  };
-
   const handleSubscribe = async () => {
     if (!currentUser) {
       router.push('/login');
