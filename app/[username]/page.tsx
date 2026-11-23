@@ -745,10 +745,10 @@ export default function PublicProfilePage() {
                     <button
                       onClick={handleFollow}
                       disabled={followLoading || blockedPair}
-                      className={`px-4 py-2 rounded-full text-sm font-medium disabled:opacity-50 ${
+                      className={`px-4 py-2 rounded-full text-sm font-medium disabled:opacity-50 transition ${
                         isFollowing
-                          ? 'bg-zinc-800 border border-zinc-700'
-                          : 'bg-white text-black'
+                          ? 'bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 hover:border-pink-500/40 hover:text-pink-400'
+                          : 'bg-white text-black hover:bg-pink-500 hover:text-white'
                       }`}
                     >
                       {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
