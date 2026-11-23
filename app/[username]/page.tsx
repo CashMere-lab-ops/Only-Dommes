@@ -263,63 +263,51 @@ export default function PublicProfilePage() {
             <div><span className="font-semibold">{followingCount}</span> <span className="text-zinc-400">following</span></div>
           </div>
 
-          {/* Timeline */}
+          {/* Posts */}
           <div className="mt-10">
-            <h2 className="text-xl font-semibold mb-5">Timeline</h2>
+            <h2 className="text-xl font-semibold mb-4">Posts</h2>
             {posts.length === 0 ? (
-              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-12 text-center">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
                 <p className="text-zinc-400">No posts yet</p>
               </div>
             ) : (
-              <div className="space-y-6 max-w-2xl">
-                {posts.map((post) => {
-                  const locked = post.is_locked && !isSubscribed && !isOwn;
-                  return (
-                    <div
-                      key={post.id}
-                      className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden"
-                    >
-                      {post.content && (
-                        <div className="px-4 pt-4 pb-2">
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
-                        </div>
-                      )}
-                      {post.media_url && (
-                        <div className="relative">
-                          {post.media_type === 'video' ? (
-                            <video
-                              src={post.media_url}
-                              controls={!locked}
-                              className="w-full max-h-[480px] object-cover"
-                            />
-                          ) : (
-                            <img
-                              src={post.media_url}
-                              alt=""
-                              className="w-full max-h-[480px] object-cover"
-                            />
-                          )}
-                          {locked && (
-                            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
-                              <Lock size={28} className="text-white" />
-                              <p className="text-sm font-medium">Subscribe to unlock</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <div className="px-4 py-3 flex items-center gap-5 text-sm text-zinc-400">
-                        <span className="flex items-center gap-1.5">
-                          <Heart size={16} />
-                          {post.likes_count || 0}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <MessageCircle size={16} />
-                          {post.comments_count || 0}
-                        </span>
+              <div className="space-y-5 max-w-2xl">
+                {posts.map((post) => (
+                  <div
+                    key={post.id}
+                    className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden"
+                  >
+                    {post.content && (
+                      <div className="px-4 py-3">
+                        <p className="text-sm leading-relaxed text-zinc-100">
+                          {post.content}
+                        </p>
                       </div>
+                    )}
+                    {post.media_type === 'photo' && post.media_url && (
+                      <div className="max-h-[420px] overflow-hidden">
+                        <img
+                          src={post.media_url}
+                          alt="Post"
+                          className="w-full max-h-[420px] object-cover"
+                        />
+                      </div>
+                    )}
+                    {post.media_type === 'video' && post.media_url && (
+                      <div className="max-h-[420px] overflow-hidden">
+                        <video
+                          src={post.media_url}
+                          controls
+                          className="w-full max-h-[420px]"
+                        />
+                      </div>
+                    )}
+                    <div className="px-4 py-3 flex items-center gap-4 text-sm text-zinc-400">
+                      <span>{post.likes_count || 0} likes</span>
+                      <span>{post.comments_count || 0} comments</span>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
