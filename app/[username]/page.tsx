@@ -46,7 +46,10 @@ export default function PublicProfilePage() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reporting, setReporting] = useState(false);
-  const [subSheet, setSubSheet] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState<null | 'followers' | 'following'>(null);
+  const [people, setPeople] = useState<any[]>([]);
+  const [peopleQuery, setPeopleQuery] = useState('');
+  const [peopleLoading, setPeopleLoading] = useState(false);
   const [offlineSheet, setOfflineSheet] = useState(false);
   const [tab, setTab] = useState<'posts' | 'clips' | 'shop'>('posts');
 
@@ -252,7 +255,37 @@ export default function PublicProfilePage() {
   const actorName = () =>
     myProfile?.display_name || myProfile?.username || 'Someone';
 
-  const handleFollow = async () => {
+  const openPeople = async (kind: 'followers' | 'following') => {
+    if (!profile) return;
+    setPeopleOpen(kind);
+    setPeopleQuery('');
+    setPeopleLoading(true);
+    setPeople([]);
+
+    const col = kind === 'followers' ? 'follower_id' : 'following_id';
+    const other = kind === 'followers' ? 'following_id' : 'follower_id';
+
+    const { data: rows } = await supabase
+      .from('follows')
+      .select(col)
+      .eq(other, profile.id)
+      .limit(200);
+
+    const ids = (rows || []).map((r: any) => r[col]).filter(Boolean);
+    if (ids.length === 0) {
+      setPeople([]);
+      setPeopleLoading(false);
+      return;
+    }
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url, account_type')
+      .in('id', ids);
+
+    setPeople(profiles || []);
+    setPeopleLoading(false);
+  };
     if (!currentUser) {
       router.push('/login');
       return;
@@ -303,6 +336,38 @@ export default function PublicProfilePage() {
     } finally {
       setFollowLoading(false);
     }
+  };
+
+  const openPeople = async (kind: 'followers' | 'following') => {
+    if (!profile) return;
+    setPeopleOpen(kind);
+    setPeopleQuery('');
+    setPeopleLoading(true);
+    setPeople([]);
+
+    const col = kind === 'followers' ? 'follower_id' : 'following_id';
+    const other = kind === 'followers' ? 'following_id' : 'follower_id';
+
+    const { data: rows } = await supabase
+      .from('follows')
+      .select(col)
+      .eq(other, profile.id)
+      .limit(200);
+
+    const ids = (rows || []).map((r: any) => r[col]).filter(Boolean);
+    if (ids.length === 0) {
+      setPeople([]);
+      setPeopleLoading(false);
+      return;
+    }
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url, account_type')
+      .in('id', ids);
+
+    setPeople(profiles || []);
+    setPeopleLoading(false);
   };
 
   const handleSubscribe = async () => {
@@ -756,8 +821,20 @@ export default function PublicProfilePage() {
 
             <div className="flex gap-5 mt-4 text-sm">
               <span><b>{posts.length}</b> <span className="text-zinc-400">posts</span></span>
-              <span><b>{followingCount}</b> <span className="text-zinc-400">following</span></span>
-              <span><b>{followersCount}</b> <span className="text-zinc-400">followers</span></span>
+              <button
+                type="button"
+                onClick={() => openPeople('following')}
+                className="hover:text-pink-400 transition"
+              >
+                <b>{followingCount}</b> <span className="text-zinc-400">following</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openPeople('followers')}
+                className="hover:text-pink-400 transition"
+              >
+                <b>{followersCount}</b> <span className="text-zinc-400">followers</span>
+              </button>
             </div>
 
             {profile.bio && (
@@ -1036,6 +1113,70 @@ export default function PublicProfilePage() {
             </div>
           </div>
         )}
+
+        {peopleOpen && (() => {
+          const q = peopleQuery.trim().toLowerCase();
+          const shown = people.filter((p) =>
+            !q ||
+            (p.display_name || '').toLowerCase().includes(q) ||
+            (p.username || '').toLowerCase().includes(q)
+          );
+          return (
+            <div className="fixed inset-0 z-[80] flex items-end lg:items-center justify-center" onClick={() => setPeopleOpen(null)}>
+              <div className="absolute inset-0 bg-black/75" />
+              <div
+                className="relative w-full lg:w-[440px] bg-zinc-950 border border-zinc-800 rounded-t-3xl lg:rounded-3xl h-[78vh] flex flex-col sheet-up"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                  <h3 className="text-lg font-semibold capitalize">{peopleOpen}</h3>
+                  <button type="button" onClick={() => setPeopleOpen(null)} className="text-zinc-400 hover:text-white">
+                    <X size={22} />
+                  </button>
+                </div>
+                <div className="px-4 py-3">
+                  <input
+                    type="text"
+                    value={peopleQuery}
+                    onChange={(e) => setPeopleQuery(e.target.value)}
+                    placeholder="Search"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-pink-500"
+                  />
+                </div>
+                <div className="flex-1 overflow-y-auto px-2">
+                  {peopleLoading ? (
+                    <p className="text-center text-zinc-500 py-10 text-sm">Loading…</p>
+                  ) : shown.length === 0 ? (
+                    <p className="text-center text-zinc-500 py-10 text-sm">No results</p>
+                  ) : (
+                    shown.map((p) => (
+                      <Link
+                        key={p.id}
+                        href={`/${p.username}`}
+                        onClick={() => setPeopleOpen(null)}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 transition"
+                      >
+                        <div className="w-11 h-11 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0">
+                          {p.avatar_url ? (
+                            <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-sm font-bold">
+                              {(p.display_name || p.username || '?').charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{p.display_name || p.username}</p>
+                          <p className="text-xs text-pink-400 truncate">@{p.username}</p>
+                        </div>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {subSheet && (
           <div className="fixed inset-0 z-[90] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setSubSheet(false)}>
