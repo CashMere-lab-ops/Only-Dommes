@@ -25,6 +25,9 @@ export default function MyAccountPage() {
   const [clips, setClips] = useState<any[]>([]);
   const [shopItems, setShopItems] = useState<any[]>([]);
   const [tab, setTab] = useState<'posts' | 'clips' | 'shop'>('posts');
+  const [peopleOpen, setPeopleOpen] = useState<null | 'following' | 'followers'>(null);
+  const [people, setPeople] = useState<any[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
   const [liveStream, setLiveStream] = useState<any>(null);
 
   useEffect(() => {
@@ -111,6 +114,32 @@ export default function MyAccountPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/';
+  };
+
+  const openPeople = async (kind: 'following' | 'followers') => {
+    if (!profile?.id) return;
+    setPeopleOpen(kind);
+    setPeopleLoading(true);
+    setPeople([]);
+    const column = kind === 'followers' ? 'following_id' : 'follower_id';
+    const other = kind === 'followers' ? 'follower_id' : 'following_id';
+    const { data: rows } = await supabase
+      .from('follows')
+      .select(other)
+      .eq(column, profile.id)
+      .limit(100);
+    const ids = (rows || []).map((r: any) => r[other]).filter(Boolean);
+    if (!ids.length) {
+      setPeople([]);
+      setPeopleLoading(false);
+      return;
+    }
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .in('id', ids);
+    setPeople(profiles || []);
+    setPeopleLoading(false);
   };
 
   if (loading) {
@@ -221,8 +250,12 @@ export default function MyAccountPage() {
 
               <div className="flex gap-5 mt-4 text-sm">
                 <span><b>{postsCount}</b> <span className="text-zinc-400">posts</span></span>
-                <span><b>{followingCount}</b> <span className="text-zinc-400">following</span></span>
-                <span><b>{followersCount}</b> <span className="text-zinc-400">followers</span></span>
+                <button type="button" onClick={() => openPeople('following')}>
+                  <b>{followingCount}</b> <span className="text-zinc-400">following</span>
+                </button>
+                <button type="button" onClick={() => openPeople('followers')}>
+                  <b>{followersCount}</b> <span className="text-zinc-400">followers</span>
+                </button>
               </div>
 
               {profile.bio && (
@@ -369,6 +402,36 @@ export default function MyAccountPage() {
           </div>
                   <SiteFooter />
         </main>
+        {peopleOpen && (
+          <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center" onClick={() => setPeopleOpen(null)}>
+            <div className="absolute inset-0 bg-black/70" />
+            <div className="relative w-full sm:max-w-md bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-3xl max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                <p className="font-semibold capitalize">{peopleOpen}</p>
+                <button type="button" onClick={() => setPeopleOpen(null)} className="text-zinc-400">Close</button>
+              </div>
+              <div className="overflow-y-auto px-5 py-3">
+                {peopleLoading ? (
+                  <p className="text-sm text-zinc-500 py-6 text-center">Loading...</p>
+                ) : people.length === 0 ? (
+                  <p className="text-sm text-zinc-500 py-6 text-center">No one yet</p>
+                ) : (
+                  people.map((p) => (
+                    <Link key={p.id} href={p.username ? `/${p.username}` : '/'} onClick={() => setPeopleOpen(null)} className="flex items-center gap-3 py-2.5">
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-semibold">
+                        {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" /> : (p.display_name || p.username || 'U')[0]}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{p.display_name || p.username}</p>
+                        {p.username && <p className="text-xs text-zinc-500 truncate">@{p.username}</p>}
+                      </div>
+                    </Link>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AuthGuard>
   );
