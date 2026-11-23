@@ -50,6 +50,7 @@ export default function PublicProfilePage() {
   const [people, setPeople] = useState<any[]>([]);
   const [peopleQuery, setPeopleQuery] = useState('');
   const [peopleLoading, setPeopleLoading] = useState(false);
+  const [subSheet, setSubSheet] = useState(false);
   const [offlineSheet, setOfflineSheet] = useState(false);
   const [tab, setTab] = useState<'posts' | 'clips' | 'shop'>('posts');
 
