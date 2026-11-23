@@ -6,8 +6,8 @@ import Link from 'next/link';
 import {
   ArrowLeft, MessageCircle, Heart, Lock, Play, Radio
 } from 'lucide-react';
-import Sidebar from '../../../components/Sidebar';
-import { createClient } from '../../../lib/supabase';
+import Sidebar from '../../components/Sidebar';
+import { createClient } from '../../lib/supabase';
 
 export default function PublicProfilePage() {
   const params = useParams();
