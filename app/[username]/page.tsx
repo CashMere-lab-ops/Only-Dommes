@@ -795,16 +795,16 @@ export default function PublicProfilePage() {
               <button
                 type="button"
                 onClick={() => openPeople('following')}
-                className="hover:text-pink-400 transition"
+                className="group cursor-pointer"
               >
-                <b>{followingCount}</b> <span className="text-zinc-400">following</span>
+                <b className="group-hover:text-pink-400">{followingCount}</b> <span className="text-zinc-400 group-hover:text-pink-400">following</span>
               </button>
               <button
                 type="button"
                 onClick={() => openPeople('followers')}
-                className="hover:text-pink-400 transition"
+                className="group cursor-pointer"
               >
-                <b>{followersCount}</b> <span className="text-zinc-400">followers</span>
+                <b className="group-hover:text-pink-400">{followersCount}</b> <span className="text-zinc-400 group-hover:text-pink-400">followers</span>
               </button>
             </div>
 
@@ -1125,20 +1125,18 @@ export default function PublicProfilePage() {
                         key={p.id}
                         href={`/${p.username}`}
                         onClick={() => setPeopleOpen(null)}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 transition"
+                        className="group flex items-center gap-3 px-3 py-3 border-b border-zinc-800/70 hover:bg-zinc-900"
                       >
-                        <div className="w-11 h-11 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0">
+                        <div className="w-11 h-11 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0 flex items-center justify-center text-sm font-semibold">
                           {p.avatar_url ? (
                             <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-sm font-bold">
-                              {(p.display_name || p.username || '?').charAt(0).toUpperCase()}
-                            </div>
+                            (p.display_name || p.username || 'U')[0]
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{p.display_name || p.username}</p>
-                          <p className="text-xs text-pink-400 truncate">@{p.username}</p>
+                          <p className="text-sm font-medium truncate group-hover:text-pink-400">{p.display_name || p.username}</p>
+                          {p.username && <p className="text-xs text-zinc-500 truncate">@{p.username}</p>}
                         </div>
                       </Link>
                     ))
