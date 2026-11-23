@@ -1162,7 +1162,7 @@ export default function PublicProfilePage() {
           return (
           <div className="fixed inset-0 z-[80] flex items-end lg:items-center justify-center" onClick={() => setPeopleOpen(null)}>
             <div className="absolute inset-0 bg-black/75" />
-            <div className="relative w-full lg:w-[440px] bg-zinc-950 border border-zinc-800 rounded-t-3xl lg:rounded-3xl h-[78vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="relative w-full lg:w-[440px] bg-zinc-950 border border-zinc-800 rounded-t-3xl lg:rounded-3xl h-[78vh] flex flex-col sheet-up" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between px-5 pt-4 pb-3">
                 <p className="font-semibold capitalize">{peopleOpen}</p>
                 <button type="button" onClick={() => setPeopleOpen(null)} className="w-8 h-8 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800" aria-label="Close">×</button>
@@ -1182,12 +1182,12 @@ export default function PublicProfilePage() {
                   <p className="text-sm text-zinc-500 py-8 text-center">{q ? 'No matches' : 'No one yet'}</p>
                 ) : (
                   shown.map((p) => (
-                    <Link key={p.id} href={p.username ? `/${p.username}` : '/'} onClick={() => setPeopleOpen(null)} className="flex items-center gap-3 px-3 py-3 border-b border-zinc-800/70 hover:bg-zinc-900">
+                    <Link key={p.id} href={p.username ? `/${p.username}` : '/'} onClick={() => setPeopleOpen(null)} className="group flex items-center gap-3 px-3 py-3 border-b border-zinc-800/70 hover:bg-zinc-900">
                       <div className="w-11 h-11 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-semibold flex-shrink-0">
                         {p.avatar_url ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" /> : (p.display_name || p.username || 'U')[0]}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{p.display_name || p.username}</p>
+                        <p className="text-sm font-medium truncate group-hover:text-pink-400">{p.display_name || p.username}</p>
                         {p.username && <p className="text-xs text-zinc-500 truncate">@{p.username}</p>}
                       </div>
                     </Link>
