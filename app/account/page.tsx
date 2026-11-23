@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Edit3, LogOut, Film, Play
+  Edit3, LogOut, Film, Play, ShoppingBag, Package
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import SiteFooter from '../../components/SiteFooter';
@@ -23,6 +23,8 @@ export default function MyAccountPage() {
   const [postsCount, setPostsCount] = useState(0);
   const [posts, setPosts] = useState<any[]>([]);
   const [clips, setClips] = useState<any[]>([]);
+  const [shopItems, setShopItems] = useState<any[]>([]);
+  const [tab, setTab] = useState<'posts' | 'clips' | 'shop'>('posts');
   const [liveStream, setLiveStream] = useState<any>(null);
 
   useEffect(() => {
@@ -74,6 +76,18 @@ export default function MyAccountPage() {
           .order('created_at', { ascending: false })
           .limit(12);
         setClips(clipData || []);
+        const { data: shopData } = await supabase
+          .from('shop_items')
+          .select('*')
+          .eq('creator_id', user.id)
+          .in('status', ['available', 'reserved'])
+          .order('created_at', { ascending: false });
+        setShopItems(
+          (shopData || []).map((row: any) => ({
+            ...row,
+            photos: Array.isArray(row.photos) ? row.photos : [],
+          }))
+        );
       }
 
       if (data?.account_type === 'creator') {
@@ -232,17 +246,42 @@ export default function MyAccountPage() {
               />
             )}
 
-            {profile.account_type === 'creator' && clips.length > 0 && (
-              <div className="mb-10">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <Film size={22} className="text-pink-400" />
-                    Clips
-                  </h2>
-                  <Link href="/clips" className="text-sm text-pink-400">
-                    View all →
-                  </Link>
+            {profile.account_type === 'creator' && (
+              <div className="flex border-b border-zinc-800 mb-6">
+                {(['posts', 'clips', 'shop'] as const).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setTab(key)}
+                    className={`flex-1 py-3 text-sm font-medium capitalize border-b-2 ${
+                      tab === key ? 'border-pink-500 text-white' : 'border-transparent text-zinc-500'
+                    }`}
+                  >
+                    {key}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {(profile.account_type !== 'creator' || tab === 'posts') && (
+            <div>
+              {posts.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                  <p className="text-zinc-400">No posts yet</p>
                 </div>
+              ) : (
+                <FeedPosts posts={posts} setPosts={setPosts} userId={profile.id} profile={profile} hideHeader />
+              )}
+            </div>
+            )}
+
+            {profile.account_type === 'creator' && tab === 'clips' && (
+              <div>
+                {clips.length === 0 ? (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                    <p className="text-zinc-400">No clips yet</p>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {clips.map((clip) => {
                     const dur =
@@ -282,19 +321,39 @@ export default function MyAccountPage() {
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Posts</h2>
-              {posts.length === 0 ? (
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
-                  <p className="text-zinc-400">No posts yet</p>
-                </div>
-              ) : (
-                <FeedPosts posts={posts} setPosts={setPosts} userId={profile.id} profile={profile} hideHeader />
-              )}
-            </div>
+            {profile.account_type === 'creator' && tab === 'shop' && (
+              <div>
+                {shopItems.length === 0 ? (
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                    <p className="text-zinc-400">No shop items yet</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {shopItems.map((item) => (
+                      <Link key={item.id} href="/shop" className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                        <div className="aspect-square bg-zinc-800 relative">
+                          {item.photos?.[0] ? (
+                            <img src={item.photos[0]} alt={item.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                              <Package size={28} />
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-2.5">
+                          <p className="text-sm font-medium truncate">{item.title}</p>
+                          <p className="text-pink-400 text-sm font-semibold">£{Number(item.price).toFixed(2)}</p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-10">
               <button

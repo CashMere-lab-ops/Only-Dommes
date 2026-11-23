@@ -48,6 +48,7 @@ export default function PublicProfilePage() {
   const [reporting, setReporting] = useState(false);
   const [subSheet, setSubSheet] = useState(false);
   const [offlineSheet, setOfflineSheet] = useState(false);
+  const [tab, setTab] = useState<'posts' | 'clips' | 'shop'>('posts');
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -844,20 +845,48 @@ export default function PublicProfilePage() {
             />
           )}
 
-          {profile?.account_type === 'creator' && clips.length > 0 && (
-            <div className="mb-10">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <Film size={22} className="text-pink-400" />
-                  Clips
-                </h2>
-                <Link
-                  href="/clips"
-                  className="text-sm text-pink-400 hover:text-pink-300"
+          {profile.account_type === 'creator' && (
+            <div className="flex border-b border-zinc-800 mb-6">
+              {(['posts', 'clips', 'shop'] as const).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTab(key)}
+                  className={`flex-1 py-3 text-sm font-medium capitalize border-b-2 ${
+                    tab === key ? 'border-pink-500 text-white' : 'border-transparent text-zinc-500'
+                  }`}
                 >
-                  View all →
-                </Link>
+                  {key}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {(profile.account_type !== 'creator' || tab === 'posts') && (
+          <div>
+            {posts.length === 0 ? (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                <p className="text-zinc-400">No posts yet</p>
               </div>
+            ) : (
+              <FeedPosts
+                posts={posts}
+                setPosts={setPosts}
+                userId={currentUser?.id || null}
+                profile={myProfile || profile}
+                hideHeader
+              />
+            )}
+          </div>
+          )}
+
+          {profile?.account_type === 'creator' && tab === 'clips' && (
+            <div>
+              {clips.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                  <p className="text-zinc-400">No clips yet</p>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {clips.map((clip) => {
                   const owns =
@@ -919,23 +948,17 @@ export default function PublicProfilePage() {
                   );
                 })}
               </div>
+              )}
             </div>
           )}
 
-          {profile?.account_type === 'creator' && shopItems.length > 0 && (
-            <div className="mb-10">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <ShoppingBag size={22} className="text-pink-400" />
-                  Shop
-                </h2>
-                <Link
-                  href="/shop"
-                  className="text-sm text-pink-400 hover:text-pink-300"
-                >
-                  View all →
-                </Link>
-              </div>
+          {profile?.account_type === 'creator' && tab === 'shop' && (
+            <div>
+              {shopItems.length === 0 ? (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
+                  <p className="text-zinc-400">No shop items yet</p>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {shopItems.map((item) => (
                   <Link
@@ -974,25 +997,9 @@ export default function PublicProfilePage() {
                   </Link>
                 ))}
               </div>
+              )}
             </div>
           )}
-
-          <div>
-            <h2 className="text-xl font-semibold mb-4">Posts</h2>
-            {posts.length === 0 ? (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-10 text-center">
-                <p className="text-zinc-400">No posts yet</p>
-              </div>
-            ) : (
-              <FeedPosts
-                posts={posts}
-                setPosts={setPosts}
-                userId={currentUser?.id || null}
-                profile={myProfile || profile}
-                hideHeader
-              />
-            )}
-          </div>
         </div>
 
         {showMore && !isOwnProfile && (
