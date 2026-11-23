@@ -95,7 +95,12 @@ body {
   animation: sheet-up 0.22s ease-out;
 }
 
-/* Clear fixed mobile top bar (balance header) so page titles aren't hidden */
+/* Text that acts like a button turns pink on hover */
+a:not([class*="bg-pink"]):not([class*="bg-red"]):not([class*="bg-white"]):not([class*="bg-emerald"]):hover,
+button:not([class*="bg-pink"]):not([class*="bg-red"]):not([class*="bg-white"]):not([class*="bg-emerald"]):hover {
+  color: #f472b6;
+  cursor: pointer;
+}
 @media (max-width: 1023px) {
   main {
     padding-top: var(--mobile-top-offset, 0px);

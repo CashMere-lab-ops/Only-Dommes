@@ -405,7 +405,7 @@ export default function Sidebar() {
     `flex items-center gap-3 px-3.5 py-3 rounded-xl transition text-[15px] ${
       isActive(path)
         ? 'bg-pink-600/20 text-pink-400 font-semibold'
-        : 'text-zinc-200 hover:bg-zinc-800'
+        : 'text-zinc-200 hover:bg-zinc-800 hover:text-pink-400'
     }`;
 
   // Hide chrome on pure auth pages
