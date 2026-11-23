@@ -800,7 +800,7 @@ export default function PublicProfilePage() {
                 <b className="group-hover:text-pink-400">{followingCount}</b> <span className="text-zinc-400 group-hover:text-pink-400 underline-offset-2 group-hover:underline">following</span>
               </button>
               <button type="button" onClick={() => openPeople('followers')} className="group cursor-pointer">
-                <b className="group-hover:text-pink-400">{followersCount}</b> <span className="text-zinc-400 group-hover:text-pink-400 underline-offset-2 group-hover:underline">followers</span>
+                <b className="group-hover:text-pink-400">{followersCount}</b> <span className="text-zinc-400 group-hover:text-pink-400">followers</span>
               </button>
             </div>
 
