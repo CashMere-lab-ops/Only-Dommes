@@ -64,19 +64,21 @@ export default function OnboardingPage() {
                   <Heart className="w-5 h-5 text-pink-400" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold text-pink-400 uppercase tracking-[0.12em]">For fans</p>
-                  <h3 className="text-lg font-semibold leading-tight">Fan account</h3>
+                  <p className="text-sm font-semibold text-white">For fans</p>
+                  <h3 className="text-sm font-semibold text-white leading-tight">Fan account</h3>
                 </div>
               </div>
-              <ul className="text-sm text-zinc-300 space-y-2 mb-4">
+              <ul className="text-sm text-zinc-300 space-y-2">
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Discover and follow creators</li>
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Subscribe to creators</li>
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Purchase content and send tips</li>
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Message creators</li>
               </ul>
-              <p className="text-sm text-zinc-400 italic mt-auto pt-3 border-t border-zinc-800">
-                “I want to follow and support creators.”
-              </p>
+              <div className="mt-4 pt-3 border-t border-zinc-800">
+                <p className="text-sm text-zinc-400 italic">
+                  “I want to follow and support creators.”
+                </p>
+              </div>
             </button>
 
             {/* Creator card */}
@@ -94,19 +96,21 @@ export default function OnboardingPage() {
                   <Star className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold text-pink-400 uppercase tracking-[0.12em]">For creators</p>
-                  <h3 className="text-lg font-semibold leading-tight">Creator account</h3>
+                  <p className="text-sm font-semibold text-white">For creators</p>
+                  <h3 className="text-sm font-semibold text-white leading-tight">Creator account</h3>
                 </div>
               </div>
-              <ul className="text-sm text-zinc-300 space-y-2 mb-4">
+              <ul className="text-sm text-zinc-300 space-y-2">
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Publish and sell your content</li>
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Build a subscriber audience</li>
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Earn money from your content</li>
                 <li className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-pink-500 flex-shrink-0" />Manage your creator profile</li>
               </ul>
-              <p className="text-sm text-zinc-400 italic pt-3 border-t border-zinc-800">
-                “I intend to become a creator and monetise my content.”
-              </p>
+              <div className="mt-4 pt-3 border-t border-zinc-800">
+                <p className="text-sm text-zinc-400 italic">
+                  “I intend to become a creator and monetise my content.”
+                </p>
+              </div>
               <p className="text-[11px] text-pink-300/90 bg-pink-500/10 border border-pink-500/20 rounded-xl px-3 py-2 mt-3 leading-relaxed">
                 Creator accounts are subject to identity verification and platform approval before publishing.
               </p>
