@@ -64,8 +64,8 @@ export default function OnboardingPage() {
                   <Heart className="w-5 h-5 text-pink-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-white">For fans</p>
-                  <h3 className="text-sm font-semibold text-white leading-tight">Fan account</h3>
+                  <p className="text-base font-semibold text-pink-400">For fans</p>
+                  <h3 className="text-xl font-semibold text-pink-400 leading-tight">Fan account</h3>
                 </div>
               </div>
               <ul className="text-sm text-zinc-300 space-y-2">
