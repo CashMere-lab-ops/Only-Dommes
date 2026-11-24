@@ -15,8 +15,27 @@ export default function SubscriptionsPage() {
   const [savingCard, setSavingCard] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [resuming, setResuming] = useState<string | null>(null);
+
+  const cooldownKey = (creatorId: string) => `sub-cancel-cooldown-${creatorId}`;
+
+  const canCancel = (creatorId: string) => {
+    if (typeof window === 'undefined') return true;
+    const until = localStorage.getItem(cooldownKey(creatorId));
+    if (!until) return true;
+    return Date.now() >= Number(until);
+  };
+
+  const setCooldown = (creatorId: string) => {
+    const until = Date.now() + 24 * 60 * 60 * 1000;
+    localStorage.setItem(cooldownKey(creatorId), String(until));
+  };
 
   const cancelSubscription = async (creatorId: string) => {
+    if (!canCancel(creatorId)) {
+      alert('You need to wait 24 hours after resuming before you can cancel again.');
+      return;
+    }
     setCancelling(creatorId);
     setMenuOpen(null);
     try {
@@ -46,6 +65,38 @@ export default function SubscriptionsPage() {
       alert(err.message || 'Something went wrong');
     } finally {
       setCancelling(null);
+    }
+  };
+
+  const resumeSubscription = async (creatorId: string) => {
+    setResuming(creatorId);
+    setMenuOpen(null);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/subscriptions/subscribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ creator_id: creatorId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not resume');
+      setCooldown(creatorId);
+      setRows((prev) =>
+        prev.map((r) =>
+          r.creator_id === creatorId ? { ...r, cancel_at_period_end: false } : r
+        )
+      );
+    } catch (err: any) {
+      alert(err.message || 'Something went wrong');
+    } finally {
+      setResuming(null);
     }
   };
 
@@ -200,7 +251,9 @@ export default function SubscriptionsPage() {
                       </div>
                     </Link>
                     <span
-                      className={`text-xs px-2.5 py-1 rounded-full mr-1 ${
+                      className={`text-xs px-2.5 py-1 rounded-full ${
+                        r.cancel_at_period_end ? 'mr-3' : 'mr-1'
+                      } ${
                         isActive
                           ? 'bg-pink-500/15 text-pink-400'
                           : 'bg-zinc-800 text-zinc-400'
@@ -208,7 +261,7 @@ export default function SubscriptionsPage() {
                     >
                       {r.cancel_at_period_end ? 'Ending' : r.status}
                     </span>
-                    {isActive && (
+                    {(isActive || r.cancel_at_period_end) && (
                       <div className="relative">
                         <button
                           type="button"
@@ -220,14 +273,29 @@ export default function SubscriptionsPage() {
                         </button>
                         {menuOpen === r.id && (
                           <div className="absolute right-0 top-full mt-1 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-10 py-1">
-                            <button
-                              type="button"
-                              disabled={cancelling === r.creator_id}
-                              onClick={() => cancelSubscription(r.creator_id)}
-                              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-zinc-800 disabled:opacity-50"
-                            >
-                              {cancelling === r.creator_id ? 'Cancelling…' : 'Cancel subscription'}
-                            </button>
+                            {r.cancel_at_period_end ? (
+                              <button
+                                type="button"
+                                disabled={resuming === r.creator_id}
+                                onClick={() => resumeSubscription(r.creator_id)}
+                                className="w-full text-left px-4 py-2.5 text-sm text-pink-400 hover:bg-zinc-800 disabled:opacity-50"
+                              >
+                                {resuming === r.creator_id ? 'Resuming…' : 'Subscribe again'}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={cancelling === r.creator_id || !canCancel(r.creator_id)}
+                                onClick={() => cancelSubscription(r.creator_id)}
+                                className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-zinc-800 disabled:opacity-50"
+                              >
+                                {cancelling === r.creator_id
+                                  ? 'Cancelling…'
+                                  : !canCancel(r.creator_id)
+                                  ? 'Cancel (24h cooldown)'
+                                  : 'Cancel subscription'}
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
