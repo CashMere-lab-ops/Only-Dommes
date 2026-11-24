@@ -695,16 +695,23 @@ export default function DashboardPage() {
           .from('subscriptions')
           .select('*')
           .eq('creator_id', user.id)
-          .eq('status', 'active')
+          .in('status', ['active', 'ending'])
           .order('started_at', { ascending: false });
-        if (subs && subs.length > 0) {
-          const ids = subs.map((s) => s.subscriber_id);
+        const now = new Date();
+        const activeSubs = (subs || []).filter((s: any) => {
+          if (!s.current_period_end) return s.status === 'active';
+          const ends = new Date(s.current_period_end);
+          if (ends > now) return true;
+          return s.status === 'active' && !s.cancel_at_period_end;
+        });
+        if (activeSubs.length > 0) {
+          const ids = activeSubs.map((s) => s.subscriber_id);
           const { data: profiles } = await supabase
             .from('profiles')
             .select('id, username, display_name, avatar_url')
             .in('id', ids);
           const map = new Map((profiles || []).map((p) => [p.id, p]));
-          const enriched = subs.map((s) => ({
+          const enriched = activeSubs.map((s) => ({
             ...s,
             subscriber: map.get(s.subscriber_id) || null,
           }));
@@ -1049,17 +1056,26 @@ export default function DashboardPage() {
         .in('status', ['active', 'ending'])
         .order('started_at', { ascending: false });
 
-      if (!subs || subs.length === 0) {
+      const now = new Date();
+      const activeSubs = (subs || []).filter((s: any) => {
+        if (!s.current_period_end) return s.status === 'active';
+        const ends = new Date(s.current_period_end);
+        // Still active if period hasn't ended, or if not cancelling
+        if (ends > now) return true;
+        return s.status === 'active' && !s.cancel_at_period_end;
+      });
+
+      if (!activeSubs || activeSubs.length === 0) {
         setSubscribers([]);
         setSubCount(0);
       } else {
-        const ids = subs.map((s: any) => s.subscriber_id);
+        const ids = activeSubs.map((s: any) => s.subscriber_id);
         const { data: people } = await supabase
           .from('profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', ids);
         const map = new Map((people || []).map((p: any) => [p.id, p]));
-        const enriched = subs.map((s: any) => ({
+        const enriched = activeSubs.map((s: any) => ({
           ...s,
           subscriber: map.get(s.subscriber_id) || null,
         }));
