@@ -2363,24 +2363,33 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
+              <Link
+                href="/earnings"
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 hover:border-pink-500/50 hover:text-pink-400 transition cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1 group-hover:text-pink-400">
                   <DollarSign size={16} /> Today
                 </div>
-                <p className="text-2xl font-bold">{money(earnToday)}</p>
-              </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
+                <p className="text-2xl font-bold group-hover:text-pink-400">{money(earnToday)}</p>
+              </Link>
+              <Link
+                href="/earnings"
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 hover:border-pink-500/50 transition cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1 group-hover:text-pink-400">
                   <TrendingUp size={16} /> This Week
                 </div>
-                <p className="text-2xl font-bold">{money(earnWeek)}</p>
-              </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1">
+                <p className="text-2xl font-bold group-hover:text-pink-400">{money(earnWeek)}</p>
+              </Link>
+              <Link
+                href="/earnings"
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 hover:border-pink-500/50 transition cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-zinc-400 text-sm mb-1 group-hover:text-pink-400">
                   <Wallet size={16} /> This Month
                 </div>
-                <p className="text-2xl font-bold">{money(earnMonth)}</p>
-              </div>
+                <p className="text-2xl font-bold group-hover:text-pink-400">{money(earnMonth)}</p>
+              </Link>
               <div className="bg-gradient-to-br from-pink-600/20 to-rose-600/20 border border-pink-500/30 rounded-2xl p-5">
                 <div className="flex items-center gap-2 text-zinc-300 text-sm mb-1">
                   <Heart size={16} /> Subscribers
