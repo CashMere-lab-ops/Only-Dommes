@@ -41,76 +41,78 @@ export default function OnboardingPage() {
           <p className="text-zinc-400 text-lg">Choose your account type to get started</p>
         </div>
 
-        <div className="w-full max-w-lg space-y-4">
-          {/* Fan card */}
-          <button
-            type="button"
-            onClick={() => {
-              setSelected('sub');
-              setCreatorConfirmed(false);
-            }}
-            className={`w-full text-left bg-zinc-900 border rounded-2xl p-6 transition ${
-              selected === 'sub'
-                ? 'border-pink-500 shadow-[0_0_28px_rgba(236,72,153,0.18)]'
-                : 'border-zinc-800 hover:border-zinc-600'
-            }`}
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                <Heart className="w-7 h-7 text-pink-500" />
+        <div className="w-full max-w-5xl">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Fan card */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelected('sub');
+                setCreatorConfirmed(false);
+              }}
+              className={`w-full text-left bg-zinc-900 border rounded-2xl p-6 transition ${
+                selected === 'sub'
+                  ? 'border-pink-500 shadow-[0_0_28px_rgba(236,72,153,0.18)]'
+                  : 'border-zinc-800 hover:border-zinc-600'
+              }`}
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center flex-shrink-0">
+                  <Heart className="w-7 h-7 text-pink-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-pink-400 uppercase tracking-wide mb-1">For fans</p>
+                  <h3 className="text-xl font-semibold mb-2">Fan account</h3>
+                  <ul className="text-sm text-zinc-400 space-y-1 mb-3">
+                    <li>Discover and follow creators.</li>
+                    <li>Subscribe to creators.</li>
+                    <li>Purchase content and send tips.</li>
+                    <li>Message creators.</li>
+                  </ul>
+                  <p className="text-sm text-zinc-300 italic">
+                    “I want to follow and support creators.”
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium text-pink-400 uppercase tracking-wide mb-1">For fans</p>
-                <h3 className="text-xl font-semibold mb-2">Fan account</h3>
-                <ul className="text-sm text-zinc-400 space-y-1 mb-3">
-                  <li>Discover and follow creators.</li>
-                  <li>Subscribe to creators.</li>
-                  <li>Purchase content and send tips.</li>
-                  <li>Message creators.</li>
-                </ul>
-                <p className="text-sm text-zinc-300 italic">
-                  “I want to follow and support creators.”
-                </p>
-              </div>
-            </div>
-          </button>
+            </button>
 
-          {/* Creator card */}
-          <button
-            type="button"
-            onClick={() => setSelected('creator')}
-            className={`w-full text-left bg-zinc-900 border rounded-2xl p-6 transition ${
-              selected === 'creator'
-                ? 'border-pink-500 shadow-[0_0_28px_rgba(236,72,153,0.18)]'
-                : 'border-zinc-800 hover:border-zinc-600'
-            }`}
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-                <Star className="w-7 h-7 text-white" />
+            {/* Creator card */}
+            <button
+              type="button"
+              onClick={() => setSelected('creator')}
+              className={`w-full text-left bg-zinc-900 border rounded-2xl p-6 transition ${
+                selected === 'creator'
+                  ? 'border-pink-500 shadow-[0_0_28px_rgba(236,72,153,0.18)]'
+                  : 'border-zinc-800 hover:border-zinc-600'
+              }`}
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                  <Star className="w-7 h-7 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-pink-400 uppercase tracking-wide mb-1">For creators</p>
+                  <h3 className="text-xl font-semibold mb-2">Creator account</h3>
+                  <ul className="text-sm text-zinc-400 space-y-1 mb-3">
+                    <li>Publish and sell your own content.</li>
+                    <li>Build a subscriber audience.</li>
+                    <li>Earn money from your content.</li>
+                    <li>Manage your creator profile.</li>
+                  </ul>
+                  <p className="text-sm text-zinc-300 italic mb-3">
+                    “I intend to become a creator and monetise my own content.”
+                  </p>
+                  <p className="text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                    Creator accounts are subject to identity verification and platform approval before publishing.
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium text-pink-400 uppercase tracking-wide mb-1">For creators</p>
-                <h3 className="text-xl font-semibold mb-2">Creator account</h3>
-                <ul className="text-sm text-zinc-400 space-y-1 mb-3">
-                  <li>Publish and sell your own content.</li>
-                  <li>Build a subscriber audience.</li>
-                  <li>Earn money from your content.</li>
-                  <li>Manage your creator profile.</li>
-                </ul>
-                <p className="text-sm text-zinc-300 italic mb-3">
-                  “I intend to become a creator and monetise my own content.”
-                </p>
-                <p className="text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-                  Creator accounts are subject to identity verification and platform approval before publishing.
-                </p>
-              </div>
-            </div>
-          </button>
+            </button>
+          </div>
 
           {/* Creator confirmation checkbox */}
           {selected === 'creator' && (
-            <label className="flex items-start gap-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 cursor-pointer">
+            <label className="mt-6 flex items-start gap-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 cursor-pointer max-w-2xl mx-auto">
               <input
                 type="checkbox"
                 checked={creatorConfirmed}
@@ -123,14 +125,16 @@ export default function OnboardingPage() {
             </label>
           )}
 
-          <button
-            type="button"
-            onClick={continueTo}
-            disabled={!canContinue}
-            className="w-full py-4 rounded-2xl text-lg font-semibold bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed transition"
-          >
-            Continue
-          </button>
+          <div className="mt-6 max-w-md mx-auto">
+            <button
+              type="button"
+              onClick={continueTo}
+              disabled={!canContinue}
+              className="w-full py-4 rounded-2xl text-lg font-semibold bg-pink-500 hover:bg-pink-600 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed transition"
+            >
+              Continue
+            </button>
+          </div>
         </div>
 
         <p className="mt-8 text-zinc-400">
