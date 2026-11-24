@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Heart, CreditCard } from 'lucide-react';
+import { ArrowLeft, Heart, CreditCard, MoreHorizontal } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import SiteFooter from '../../components/SiteFooter';
 import { createClient } from '../../lib/supabase';
@@ -13,6 +13,41 @@ export default function SubscriptionsPage() {
   const [loading, setLoading] = useState(true);
   const [card, setCard] = useState<{ saved?: boolean; brand?: string | null; last4?: string | null } | null>(null);
   const [savingCard, setSavingCard] = useState(false);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+
+  const cancelSubscription = async (creatorId: string) => {
+    setCancelling(creatorId);
+    setMenuOpen(null);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/subscriptions/cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ creator_id: creatorId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not cancel');
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          r.creator_id === creatorId ? { ...r, cancel_at_period_end: true } : r
+        )
+      );
+    } catch (err: any) {
+      alert(err.message || 'Something went wrong');
+    } finally {
+      setCancelling(null);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -135,41 +170,69 @@ export default function SubscriptionsPage() {
                 const ends = r.current_period_end
                   ? new Date(r.current_period_end).toLocaleDateString('en-GB')
                   : null;
+                const isActive = r.status === 'active' && !r.cancel_at_period_end;
                 return (
-                  <Link
+                  <div
                     key={r.id}
-                    href={r.creator?.username ? `/${r.creator.username}` : '/discover'}
-                    className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:border-zinc-700"
+                    className="relative flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
                   >
-                    {r.creator?.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={r.creator.avatar_url}
-                        alt=""
-                        className="w-12 h-12 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-pink-600 flex items-center justify-center font-bold">
-                        {name.charAt(0)}
+                    <Link
+                      href={r.creator?.username ? `/${r.creator.username}` : '/discover'}
+                      className="flex items-center gap-3 flex-1 min-w-0"
+                    >
+                      {r.creator?.avatar_url ? (
+                        <img
+                          src={r.creator.avatar_url}
+                          alt=""
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-pink-600 flex items-center justify-center font-bold">
+                          {name.charAt(0)}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate">{name}</p>
+                        <p className="text-sm text-zinc-500">
+                          £{Number(r.price || 0).toFixed(2)}/mo
+                          {ends ? ` · ${r.cancel_at_period_end ? 'Ends' : 'Renews'} ${ends}` : ''}
+                        </p>
                       </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold truncate">{name}</p>
-                      <p className="text-sm text-zinc-500">
-                        £{Number(r.price || 0).toFixed(2)}/mo
-                        {ends ? ` · ${r.cancel_at_period_end ? 'Ends' : 'Renews'} ${ends}` : ''}
-                      </p>
-                    </div>
+                    </Link>
                     <span
-                      className={`text-xs px-2.5 py-1 rounded-full ${
-                        r.status === 'active'
+                      className={`text-xs px-2.5 py-1 rounded-full mr-1 ${
+                        isActive
                           ? 'bg-pink-500/15 text-pink-400'
                           : 'bg-zinc-800 text-zinc-400'
                       }`}
                     >
                       {r.cancel_at_period_end ? 'Ending' : r.status}
                     </span>
-                  </Link>
+                    {isActive && (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setMenuOpen(menuOpen === r.id ? null : r.id)}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800"
+                          aria-label="More"
+                        >
+                          <MoreHorizontal size={18} />
+                        </button>
+                        {menuOpen === r.id && (
+                          <div className="absolute right-0 top-full mt-1 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-10 py-1">
+                            <button
+                              type="button"
+                              disabled={cancelling === r.creator_id}
+                              onClick={() => cancelSubscription(r.creator_id)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-zinc-800 disabled:opacity-50"
+                            >
+                              {cancelling === r.creator_id ? 'Cancelling…' : 'Cancel subscription'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
