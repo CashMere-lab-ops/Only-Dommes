@@ -33,23 +33,16 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
       <BackHome />
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-12">
-        <div className="text-center mb-12">
-          <img
-            src="/logo-horizontal.jpg"
-            alt="World of Dommes"
-            className="h-16 sm:h-20 w-auto mx-auto mb-8 object-contain"
-          />
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-2">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-20 pb-10">
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-bold mb-2">
             Enter Your <span className="text-pink-500">World</span>
           </h1>
-          <p className="text-zinc-400 text-base sm:text-lg">
-            Choose your account type to get started
-          </p>
+          <p className="text-zinc-400 text-lg">Choose your account type to get started</p>
         </div>
 
         <div className="w-full max-w-5xl">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Fan card */}
             <button
               type="button"
