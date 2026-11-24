@@ -273,7 +273,7 @@ export default function SubscriptionsPage() {
                         </button>
                         {menuOpen === r.id && (
                           <div className="absolute right-0 top-full mt-1 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-10 py-1">
-                            {r.cancel_at_period_end ? (
+                            {isEnding ? (
                               <button
                                 type="button"
                                 disabled={resuming === r.creator_id}
