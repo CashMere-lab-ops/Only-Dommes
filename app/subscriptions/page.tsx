@@ -16,14 +16,26 @@ export default function SubscriptionsPage() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [resuming, setResuming] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   const cooldownKey = (creatorId: string) => `sub-cancel-cooldown-${creatorId}`;
 
-  const canCancel = (creatorId: string) => {
-    if (typeof window === 'undefined') return true;
+  const getCooldownRemaining = (creatorId: string) => {
+    if (typeof window === 'undefined') return 0;
     const until = localStorage.getItem(cooldownKey(creatorId));
-    if (!until) return true;
-    return Date.now() >= Number(until);
+    if (!until) return 0;
+    return Math.max(0, Number(until) - now);
+  };
+
+  const canCancel = (creatorId: string) => getCooldownRemaining(creatorId) <= 0;
+
+  const formatCooldown = (ms: number) => {
+    if (ms <= 0) return '';
+    const totalMinutes = Math.ceil(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
   };
 
   const setCooldown = (creatorId: string) => {
@@ -147,6 +159,11 @@ export default function SubscriptionsPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex">
       <Sidebar />
@@ -221,7 +238,10 @@ export default function SubscriptionsPage() {
                 const ends = r.current_period_end
                   ? new Date(r.current_period_end).toLocaleDateString('en-GB')
                   : null;
-                const isActive = r.status === 'active' && !r.cancel_at_period_end;
+                const periodStillActive =
+                  r.current_period_end && new Date(r.current_period_end) > new Date();
+                const isEnding = r.cancel_at_period_end || (r.status === 'cancelled' && periodStillActive);
+                const isActive = r.status === 'active' && !isEnding;
                 return (
                   <div
                     key={r.id}
@@ -246,22 +266,22 @@ export default function SubscriptionsPage() {
                         <p className="font-semibold truncate">{name}</p>
                         <p className="text-sm text-zinc-500">
                           £{Number(r.price || 0).toFixed(2)}/mo
-                          {ends ? ` · ${r.cancel_at_period_end ? 'Ends' : 'Renews'} ${ends}` : ''}
+                          {ends ? ` · ${isEnding ? 'Ends' : 'Renews'} ${ends}` : ''}
                         </p>
                       </div>
                     </Link>
                     <span
                       className={`text-xs px-2.5 py-1 rounded-full ${
-                        r.cancel_at_period_end ? 'mr-3' : 'mr-1'
+                        isEnding ? 'mr-3' : 'mr-1'
                       } ${
                         isActive
                           ? 'bg-pink-500/15 text-pink-400'
                           : 'bg-zinc-800 text-zinc-400'
                       }`}
                     >
-                      {r.cancel_at_period_end ? 'Ending' : r.status}
+                      {isEnding ? 'Ending' : r.status}
                     </span>
-                    {(isActive || r.cancel_at_period_end) && (
+                    {(isActive || isEnding) && (
                       <div className="relative">
                         <button
                           type="button"
@@ -292,7 +312,7 @@ export default function SubscriptionsPage() {
                                 {cancelling === r.creator_id
                                   ? 'Cancelling…'
                                   : !canCancel(r.creator_id)
-                                  ? 'Cancel (24h cooldown)'
+                                  ? `Cancel in ${formatCooldown(getCooldownRemaining(r.creator_id))}`
                                   : 'Cancel subscription'}
                               </button>
                             )}
