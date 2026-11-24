@@ -36,11 +36,6 @@ export default function OnboardingPage() {
       <BackHome />
       <div className="relative flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-16">
         <div className="text-center mb-14">
-          <img
-            src="/logo-horizontal.jpg"
-            alt="World of Dommes"
-            className="h-14 sm:h-16 w-auto mx-auto mb-10 object-contain drop-shadow-[0_0_24px_rgba(236,72,153,0.25)]"
-          />
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight mb-3">
             Enter Your <span className="text-pink-400">World</span>
           </h1>
@@ -50,7 +45,7 @@ export default function OnboardingPage() {
         </div>
 
         <div className="w-full max-w-5xl">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6 items-stretch">
             {/* Fan card */}
             <button
               type="button"
@@ -58,7 +53,7 @@ export default function OnboardingPage() {
                 setSelected('sub');
                 setCreatorConfirmed(false);
               }}
-              className={`group w-full text-left rounded-3xl p-7 transition-all duration-200 ${
+              className={`group w-full text-left rounded-3xl p-7 transition-all duration-200 h-full ${
                 selected === 'sub'
                   ? 'bg-zinc-900/80 border border-pink-500/60 shadow-[0_0_40px_rgba(236,72,153,0.15)]'
                   : 'bg-zinc-900/50 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/70'
@@ -68,14 +63,14 @@ export default function OnboardingPage() {
                 <div className="w-12 h-12 rounded-2xl bg-zinc-800/80 border border-zinc-700/50 flex items-center justify-center flex-shrink-0">
                   <Heart className="w-6 h-6 text-pink-400" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <p className="text-[11px] font-semibold text-pink-400/90 uppercase tracking-[0.15em] mb-1.5">For fans</p>
                   <h3 className="text-lg font-semibold mb-3">Fan account</h3>
                   <ul className="text-[13px] text-zinc-400 space-y-1.5 mb-4 leading-relaxed">
-                    <li>Discover and follow creators.</li>
-                    <li>Subscribe to creators.</li>
-                    <li>Purchase content and send tips.</li>
-                    <li>Message creators.</li>
+                    <li>Discover and follow creators</li>
+                    <li>Subscribe to creators</li>
+                    <li>Purchase content and send tips</li>
+                    <li>Message creators</li>
                   </ul>
                   <p className="text-[13px] text-zinc-300 italic border-t border-zinc-800/60 pt-3">
                     “I want to follow and support creators.”
@@ -88,7 +83,7 @@ export default function OnboardingPage() {
             <button
               type="button"
               onClick={() => setSelected('creator')}
-              className={`group w-full text-left rounded-3xl p-7 transition-all duration-200 ${
+              className={`group w-full text-left rounded-3xl p-7 transition-all duration-200 h-full ${
                 selected === 'creator'
                   ? 'bg-zinc-900/80 border border-pink-500/60 shadow-[0_0_40px_rgba(236,72,153,0.15)]'
                   : 'bg-zinc-900/50 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/70'
@@ -98,17 +93,17 @@ export default function OnboardingPage() {
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-900/30">
                   <Star className="w-6 h-6 text-white" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <p className="text-[11px] font-semibold text-pink-400/90 uppercase tracking-[0.15em] mb-1.5">For creators</p>
                   <h3 className="text-lg font-semibold mb-3">Creator account</h3>
                   <ul className="text-[13px] text-zinc-400 space-y-1.5 mb-4 leading-relaxed">
-                    <li>Publish and sell your own content.</li>
-                    <li>Build a subscriber audience.</li>
-                    <li>Earn money from your content.</li>
-                    <li>Manage your creator profile.</li>
+                    <li>Publish and sell your content</li>
+                    <li>Build a subscriber audience</li>
+                    <li>Earn money from your content</li>
+                    <li>Manage your creator profile</li>
                   </ul>
-                  <p className="text-[13px] text-zinc-300 italic border-t border-zinc-800/60 pt-3 mb-4">
-                    “I intend to become a creator and monetise my own content.”
+                  <p className="text-[13px] text-zinc-300 italic border-t border-zinc-800/60 pt-3 mb-3">
+                    “I intend to become a creator and monetise my content.”
                   </p>
                   <p className="text-[11px] text-amber-300/80 bg-amber-500/5 border border-amber-500/15 rounded-xl px-3 py-2.5 leading-relaxed">
                     Creator accounts are subject to identity verification and platform approval before publishing.
