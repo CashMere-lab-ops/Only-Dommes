@@ -15,6 +15,7 @@ function cleanUsername(value: string) {
 function SignupForm() {
   const params = useSearchParams();
   const type = params.get('type') === 'creator' ? 'creator' : 'sub';
+  const confirmed = params.get('confirmed') === '1';
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,6 +41,10 @@ function SignupForm() {
     }
     if (!age || !terms) {
       setMessage('Tick both boxes to continue.');
+      return;
+    }
+    if (type === 'creator' && !confirmed) {
+      setMessage('Creator confirmation is required.');
       return;
     }
 
@@ -86,6 +91,9 @@ function SignupForm() {
         account_type: type,
         age_confirmed_at: now,
         terms_accepted_at: now,
+        ...(type === 'creator' && confirmed
+          ? { creator_confirmed_at: now }
+          : {}),
       });
       window.location.href = '/';
       return;

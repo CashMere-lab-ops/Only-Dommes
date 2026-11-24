@@ -14,6 +14,7 @@ function SetupForm() {
   const router = useRouter();
   const params = useSearchParams();
   const type = params.get('type') === 'creator' ? 'creator' : 'sub';
+  const confirmed = params.get('confirmed') === '1';
   const [username, setUsername] = useState('');
   const [age, setAge] = useState(false);
   const [terms, setTerms] = useState(false);
@@ -28,6 +29,10 @@ function SetupForm() {
     }
     if (!age || !terms) {
       setMessage('Tick both boxes to continue.');
+      return;
+    }
+    if (type === 'creator' && !confirmed) {
+      setMessage('Creator confirmation is required.');
       return;
     }
 
@@ -60,6 +65,9 @@ function SetupForm() {
       account_type: type,
       age_confirmed_at: now,
       terms_accepted_at: now,
+      ...(type === 'creator' && confirmed
+        ? { creator_confirmed_at: now }
+        : {}),
     });
     if (error) {
       setMessage(error.message);
