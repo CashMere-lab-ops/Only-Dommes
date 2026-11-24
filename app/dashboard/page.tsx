@@ -881,7 +881,18 @@ export default function DashboardPage() {
         setClipsOwned((v) => v + 1);
       }
 
-      // Creator tips still feed recent tips + earnings
+      // Creator earnings (tips, unlocks, calls, shop)
+      if (
+        amt > 0 &&
+        ['tip_received', 'unlock_received', 'call_received', 'shop_received'].includes(row.type)
+      ) {
+        setEarnToday((v) => Math.round((v + amt) * 100) / 100);
+        setEarnWeek((v) => Math.round((v + amt) * 100) / 100);
+        setEarnMonth((v) => Math.round((v + amt) * 100) / 100);
+        setEarnAllTime((v) => Math.round((v + amt) * 100) / 100);
+      }
+
+      // Creator tips still feed recent tips
       if (row.type === 'tip_received') {
         let from_name = 'Subscriber';
         let from_username: string | null = null;
@@ -913,13 +924,6 @@ export default function DashboardPage() {
           if (prev.some((t) => t.id === tip.id)) return prev;
           return [tip, ...prev].slice(0, 20);
         });
-
-        if (amt > 0) {
-          setEarnToday((v) => Math.round((v + amt) * 100) / 100);
-          setEarnWeek((v) => Math.round((v + amt) * 100) / 100);
-          setEarnMonth((v) => Math.round((v + amt) * 100) / 100);
-          setEarnAllTime((v) => Math.round((v + amt) * 100) / 100);
-        }
       }
 
       if (typeof row.balance_after === 'number') {
@@ -1098,6 +1102,48 @@ export default function DashboardPage() {
       clearInterval(poll);
     };
   }, [profile?.id, profile?.account_type]);
+
+  // Fan: live updates when they subscribe, cancel, or resume
+  useEffect(() => {
+    if (!profile?.id) return;
+    const channel = supabase
+      .channel(`dash-my-subs-${profile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'subscriptions',
+          filter: `subscriber_id=eq.${profile.id}`,
+        },
+        () => {
+          // Re-fetch spent + any sub-related dashboard bits
+          (async () => {
+            const { data: recentLedger } = await supabase
+              .from('wallet_transactions')
+              .select('amount_gbp, created_at, type')
+              .eq('user_id', profile.id)
+              .order('created_at', { ascending: false })
+              .limit(300);
+            if (recentLedger) {
+              const now = new Date();
+              const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+              let spent = 0;
+              for (const row of recentLedger) {
+                if (new Date(row.created_at) < monthStart) continue;
+                const a = Number(row.amount_gbp || 0);
+                if (a < 0) spent += Math.abs(a);
+              }
+              setSpentThisMonth(Math.round(spent * 100) / 100);
+            }
+          })();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id]);
 
   const displayName = profile?.display_name || profile?.username || 'User';
   const isCreator = profile?.account_type === 'creator';
