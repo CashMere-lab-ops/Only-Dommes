@@ -27,7 +27,8 @@ type LivePaymentResult = {
 
 export async function POST(request: Request) {
   try {
-    const token = (request.headers.get('authorization') || '').replace(/^Bearer\\s+/i, '');
+    const authHeader = request.headers.get('authorization') || '';
+    const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
     if (!token) {
       return NextResponse.json({ error: 'Login required' }, { status: 401 });
     }
@@ -51,10 +52,10 @@ export async function POST(request: Request) {
     const amount = Number(body?.amount);
 
     let tipNote = String(body?.message || body?.note || '')
-      .replace(/\\s+/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 50);
-    if (/https?:\\/\\/|www\\.|\\.[a-z]{2,}\\//i.test(tipNote)) {
+    if (/https?:|www[.]|[.][a-z]{2,}/i.test(tipNote)) {
       tipNote = '';
     }
     tipNote = tipNote.replace(/[\\u0000-\\u001F\\u007F]/g, '');
