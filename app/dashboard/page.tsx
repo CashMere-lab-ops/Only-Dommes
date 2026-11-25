@@ -131,7 +131,7 @@ export default function DashboardPage() {
     setReserveSearching(true);
     const t = window.setTimeout(async () => {
       const { data } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('id, username, display_name, avatar_url')
         .ilike('username', `${q}%`)
         .limit(8);
@@ -643,7 +643,7 @@ export default function DashboardPage() {
           let tipperMap = new Map<string, any>();
           if (tipperIds.length > 0) {
             const { data: tippers } = await supabase
-              .from('profiles')
+              .from('public_profiles')
               .select('id, username, display_name, avatar_url')
               .in('id', tipperIds);
             tipperMap = new Map(
@@ -707,7 +707,7 @@ export default function DashboardPage() {
         if (activeSubs.length > 0) {
           const ids = activeSubs.map((s) => s.subscriber_id);
           const { data: profiles } = await supabase
-            .from('profiles')
+            .from('public_profiles')
             .select('id, username, display_name, avatar_url')
             .in('id', ids);
           const map = new Map((profiles || []).map((p) => [p.id, p]));
@@ -731,7 +731,7 @@ export default function DashboardPage() {
         if (subs && subs.length > 0) {
           const ids = subs.map((s) => s.creator_id);
           const { data: profiles } = await supabase
-            .from('profiles')
+            .from('public_profiles')
             .select('id, username, display_name, avatar_url')
             .in('id', ids);
           const map = new Map((profiles || []).map((p) => [p.id, p]));
@@ -839,7 +839,7 @@ export default function DashboardPage() {
           ),
         ];
         const { data: callProfiles } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', otherIds);
         const cmap = new Map((callProfiles || []).map((p: any) => [p.id, p]));
@@ -906,7 +906,7 @@ export default function DashboardPage() {
         let from_avatar: string | null = null;
         if (row.counterparty_id) {
           const { data: p } = await supabase
-            .from('profiles')
+            .from('public_profiles')
             .select('username, display_name, avatar_url')
             .eq('id', row.counterparty_id)
             .maybeSingle();
@@ -960,7 +960,7 @@ export default function DashboardPage() {
       let tipperMap = new Map<string, any>();
       if (tipperIds.length > 0) {
         const { data: tippers } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', tipperIds);
         tipperMap = new Map((tippers || []).map((p: any) => [p.id, p]));
@@ -1071,7 +1071,7 @@ export default function DashboardPage() {
       } else {
         const ids = activeSubs.map((s: any) => s.subscriber_id);
         const { data: people } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', ids);
         const map = new Map((people || []).map((p: any) => [p.id, p]));
@@ -1561,7 +1561,7 @@ export default function DashboardPage() {
           return;
         }
         const { data, error: pErr } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username')
           .eq('username', uname)
           .maybeSingle();
