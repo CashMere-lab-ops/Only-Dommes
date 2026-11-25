@@ -208,15 +208,10 @@ AS $function$
 DECLARE
   v_meta jsonb := COALESCE(NEW.raw_user_meta_data, '{}'::jsonb);
   v_username text;
-  v_account_type text;
-  v_now timestamptz := pg_catalog.now();
-  v_date_of_birth date;
 BEGIN
-  v_account_type := CASE
-    WHEN v_meta ->> 'account_type' = 'creator' THEN 'creator'
-    ELSE 'sub'
-  END;
-
+  -- New accounts always begin as Fans with no confirmations recorded.
+  -- The signed-in user makes their one-time account choice through
+  -- complete_profile_setup(), which records confirmations using database time.
   v_username := lower(COALESCE(
     NULLIF(btrim(v_meta ->> 'username'), ''),
     NULLIF(split_part(COALESCE(NEW.email, ''), '@', 1), ''),
@@ -227,49 +222,15 @@ BEGIN
     v_username := 'user_' || substr(NEW.id::text, 1, 8);
   END IF;
 
-  IF COALESCE(v_meta ->> 'date_of_birth', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
-    BEGIN
-      v_date_of_birth := (v_meta ->> 'date_of_birth')::date;
-    EXCEPTION WHEN OTHERS THEN
-      v_date_of_birth := NULL;
-    END;
-  END IF;
-
   INSERT INTO public.profiles (
-    id, username, display_name, account_type, date_of_birth,
-    age_confirmed_at, terms_accepted_at, creator_confirmed_at,
-    account_type_selected_at
+    id, username, display_name, account_type, account_type_selected_at
   )
   VALUES (
     NEW.id,
     v_username,
     COALESCE(NULLIF(btrim(v_meta ->> 'display_name'), ''), v_username),
-    v_account_type,
-    v_date_of_birth,
-    CASE
-      WHEN v_meta ->> 'age_confirmed' = 'true'
-        OR NULLIF(v_meta ->> 'age_confirmed_at', '') IS NOT NULL
-      THEN v_now ELSE NULL
-    END,
-    CASE
-      WHEN v_meta ->> 'terms_accepted' = 'true'
-        OR NULLIF(v_meta ->> 'terms_accepted_at', '') IS NOT NULL
-      THEN v_now ELSE NULL
-    END,
-    CASE
-      WHEN v_account_type = 'creator'
-        AND (v_meta ->> 'creator_confirmed' = 'true'
-          OR NULLIF(v_meta ->> 'creator_confirmed_at', '') IS NOT NULL)
-      THEN v_now ELSE NULL
-    END,
-    CASE
-      WHEN v_meta ->> 'account_type' = 'sub' THEN v_now
-      WHEN v_account_type = 'creator'
-        AND (v_meta ->> 'creator_confirmed' = 'true'
-          OR NULLIF(v_meta ->> 'creator_confirmed_at', '') IS NOT NULL)
-      THEN v_now
-      ELSE NULL
-    END
+    'sub',
+    NULL
   );
 
   RETURN NEW;
