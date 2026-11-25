@@ -135,15 +135,27 @@ export default function Home() {
         .select(
           `
           id, creator_id, content, media_type, media_url, thumbnail_url,
-          likes_count, comments_count, created_at,
-          profiles:public_profiles!posts_creator_public_profile_fkey ( username, display_name, avatar_url )
+          likes_count, comments_count, created_at
         `
         )
         .in('creator_id', feedIds)
         .order('created_at', { ascending: false })
         .limit(20);
 
-      setPosts((postRows as any) || []);
+      const postCreatorIds = [...new Set((postRows || []).map((p: any) => p.creator_id).filter(Boolean))];
+      const { data: postCreators } = postCreatorIds.length
+        ? await supabase
+            .from('public_profiles')
+            .select('id, username, display_name, avatar_url')
+            .in('id', postCreatorIds)
+        : { data: [] };
+      const postCreatorMap = new Map((postCreators || []).map((p: any) => [p.id, p]));
+      setPosts(
+        (postRows || []).map((p: any) => ({
+          ...p,
+          profiles: postCreatorMap.get(p.creator_id) || null,
+        }))
+      );
       setReady(true);
       setLoading(false);
     };
