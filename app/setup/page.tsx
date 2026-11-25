@@ -23,8 +23,8 @@ function SetupForm() {
 
   const save = async () => {
     const name = cleanUsername(username);
-    if (name.length < 3) {
-      setMessage('Username must be at least 3 characters.');
+    if (name.length < 3 || name.length > 24) {
+      setMessage('Username must be between 3 and 24 characters.');
       return;
     }
     if (!age || !terms) {
