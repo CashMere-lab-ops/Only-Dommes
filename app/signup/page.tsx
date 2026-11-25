@@ -64,10 +64,14 @@ function SignupForm() {
     }
 
     const now = new Date().toISOString();
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        emailRedirectTo: origin
+          ? `${origin}/auth/callback?next=/onboarding`
+          : undefined,
         data: {
           username: name,
           account_type: type,
@@ -99,7 +103,7 @@ function SignupForm() {
       return;
     }
 
-    setMessage('Account created. Check your email to confirm it.');
+    setMessage('Account created. Check your email — the link will bring you back to continue.');
     setLoading(false);
   };
 

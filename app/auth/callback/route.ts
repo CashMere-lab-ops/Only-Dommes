@@ -41,11 +41,26 @@ export async function GET(request: Request) {
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_type, account_type_selected_at')
+      .select('account_type, username')
       .eq('id', user.id)
       .maybeSingle();
 
-    if (!profile?.account_type_selected_at) {
+    const meta = user.user_metadata || {};
+    const metaType = meta.account_type === 'creator' || meta.account_type === 'sub'
+      ? meta.account_type
+      : null;
+    const metaName = typeof meta.username === 'string' ? meta.username : null;
+
+    if (!profile?.account_type && metaType && metaName) {
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        username: metaName,
+        display_name: metaName,
+        account_type: metaType,
+        age_confirmed_at: meta.age_confirmed_at || new Date().toISOString(),
+        terms_accepted_at: meta.terms_accepted_at || new Date().toISOString(),
+      });
+    } else if (!profile?.account_type) {
       return NextResponse.redirect(`${origin}/onboarding`);
     }
   }

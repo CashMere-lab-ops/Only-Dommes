@@ -9,8 +9,10 @@ type Props = {
   from?: 'dashboard' | 'account' | 'sidebar';
   /** Compact chip for mobile header */
   compact?: boolean;
-  /** Sub accounts can show a soft top-up hint when low */
+  /** Sub accounts can show a soft top-up hint when low. Creators never see it. */
   showTopUpHint?: boolean;
+  /** When 'creator', never show Top up */
+  accountType?: string;
   className?: string;
 };
 
@@ -30,6 +32,7 @@ export default function WalletBalance({
   from = 'sidebar',
   compact = false,
   showTopUpHint = false,
+  accountType,
   className = '',
 }: Props) {
   const href =
@@ -49,7 +52,7 @@ export default function WalletBalance({
     );
   }
 
-  const low = showTopUpHint && balance < 10;
+  const low = showTopUpHint && accountType !== 'creator' && balance < 10;
 
   if (compact) {
     return (

@@ -114,7 +114,7 @@ export default function Sidebar() {
       setSearching(true);
       const safe = q.replace(/[%_,]/g, '');
       const { data } = await supabase
-        .from('public_profiles')
+        .from('profiles')
         .select('id, username, display_name, avatar_url')
         .eq('account_type', 'creator')
         .or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%`)
@@ -375,7 +375,11 @@ export default function Sidebar() {
   ];
 
   const billingItems = [
-    { href: '/wallet?from=account', label: 'Wallet & top up', icon: Wallet },
+    {
+      href: '/wallet?from=account',
+      label: isCreator ? 'Wallet' : 'Wallet & top up',
+      icon: Wallet,
+    },
     { href: '/calls', label: 'Call history', icon: Phone },
     { href: '/earnings', label: 'Payout history', icon: DollarSign },
     { href: '/support', label: 'Support', icon: HelpCircle },
@@ -509,6 +513,7 @@ export default function Sidebar() {
               balance={profileLoaded ? balance : null}
               compact
               showTopUpHint={isSub}
+              accountType={profile?.account_type}
               from="account"
               className="h-9"
             />
@@ -641,6 +646,7 @@ export default function Sidebar() {
             balance={profileLoaded ? balance : null}
             compact
             showTopUpHint={isSub}
+            accountType={profile?.account_type}
             from="account"
             className="h-10"
           />
@@ -912,6 +918,7 @@ export default function Sidebar() {
             <WalletBalance
               balance={profileLoaded ? balance : null}
               showTopUpHint={isSub}
+              accountType={profile?.account_type}
               from="account"
             />
           )}
@@ -1018,6 +1025,7 @@ export default function Sidebar() {
                 <WalletBalance
                   balance={profileLoaded ? balance : null}
                   showTopUpHint={isSub}
+                  accountType={profile?.account_type}
                   from="account"
                 />
               </div>
