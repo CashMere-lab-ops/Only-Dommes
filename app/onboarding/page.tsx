@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Star, Heart } from 'lucide-react';
+import { Heart } from 'lucide-react';
 import BackHome from '../../components/BackHome';
 import SiteFooter from '../../components/SiteFooter';
 import { createClient } from '../../lib/supabase';
@@ -91,8 +91,8 @@ export default function OnboardingPage() {
               }`}
             >
               <div className="flex items-center gap-4 mb-5">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center flex-shrink-0">
-                  <Star className="w-5 h-5 text-white" />
+                <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 border border-pink-500/30">
+                  <img src="/creator-icon.jpg" alt="" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <h3 className="text-xl font-semibold text-pink-400 leading-tight">Creator account</h3>
