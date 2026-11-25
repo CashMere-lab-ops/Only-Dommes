@@ -72,7 +72,7 @@ export async function GET(request: Request) {
   const { data: due, error: dueError } = await admin
     .from('subscriptions')
     .select('id')
-    .eq('status', 'active')
+    .in('status', ['active', 'past_due'])
     .lte('current_period_end', nowIso)
     .order('current_period_end', { ascending: true })
     .limit(80);
