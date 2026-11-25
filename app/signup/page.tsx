@@ -122,6 +122,8 @@ function SignupForm() {
               value={username}
               onChange={(e) => setUsername(cleanUsername(e.target.value))}
               placeholder="yourname"
+              autoComplete="off"
+              name="new-username"
               className="w-full p-4 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
             />
           </div>
@@ -132,6 +134,8 @@ function SignupForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
+              autoComplete="off"
+              name="new-email"
               className="w-full p-4 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
             />
           </div>
@@ -142,6 +146,8 @@ function SignupForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              autoComplete="new-password"
+              name="new-password"
               className="w-full p-4 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
             />
           </div>
@@ -152,6 +158,8 @@ function SignupForm() {
               value={repeat}
               onChange={(e) => setRepeat(e.target.value)}
               placeholder="••••••••"
+              autoComplete="new-password"
+              name="new-password-repeat"
               className="w-full p-4 bg-zinc-800 rounded-2xl text-white placeholder-zinc-500 border border-transparent focus:border-pink-500 focus:outline-none"
             />
           </div>
