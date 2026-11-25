@@ -1735,7 +1735,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
           if (!row) return;
           if (row.status === 'pending' && isOwner) {
             const { data: profile } = await supabase
-              .from('profiles')
+              .from('public_profiles')
               .select('username, display_name, avatar_url')
               .eq('id', row.requester_id)
               .single();
