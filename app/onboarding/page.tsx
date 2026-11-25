@@ -91,7 +91,7 @@ export default function OnboardingPage() {
             >
               <div className="flex items-center gap-4 mb-5">
                 <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-black ring-1 ring-pink-500/20">
-                  <img src="/creator-icon.jpg" alt="" className="w-full h-full object-cover scale-125" />
+                  <img src="/creator-icon.jpg?v=2" alt="" className="w-full h-full object-cover scale-125" />
                 </div>
                 <div>
                   <h3 className="text-xl font-semibold text-pink-400 leading-tight">Creator account</h3>
