@@ -1,3 +1,43 @@
+-- Replace the Auth trigger so new accounts always begin as an incomplete
+-- Fan profile. The app then calls complete_profile_setup() after authentication.
+-- raw_user_meta_data is user-editable and is used only for display inputs.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $function$
+DECLARE
+  v_meta jsonb := COALESCE(NEW.raw_user_meta_data, '{}'::jsonb);
+  v_username text;
+BEGIN
+  v_username := lower(COALESCE(
+    NULLIF(btrim(v_meta ->> 'username'), ''),
+    NULLIF(split_part(COALESCE(NEW.email, ''), '@', 1), ''),
+    'user_' || substr(NEW.id::text, 1, 8)
+  ));
+  v_username := regexp_replace(v_username, '[^a-z0-9_]', '', 'g');
+  IF length(v_username) < 3 THEN
+    v_username := 'user_' || substr(NEW.id::text, 1, 8);
+  END IF;
+
+  INSERT INTO public.profiles (
+    id, username, display_name, account_type, account_type_selected_at
+  )
+  VALUES (
+    NEW.id,
+    v_username,
+    COALESCE(NULLIF(btrim(v_meta ->> 'display_name'), ''), v_username),
+    'sub',
+    NULL
+  );
+
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+
 -- Batch 1B: close direct access to protected profile records.
 -- Apply only after the application has moved public lookups to public_profiles
 -- and signup/setup no longer performs direct profile upserts.
