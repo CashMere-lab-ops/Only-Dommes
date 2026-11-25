@@ -116,7 +116,7 @@ export default function Home() {
       let people: Record<string, any> = {};
       if (liveCreatorIds.length) {
         const { data: profiles } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', liveCreatorIds);
         (profiles || []).forEach((p: any) => {
@@ -136,7 +136,7 @@ export default function Home() {
           `
           id, creator_id, content, media_type, media_url, thumbnail_url,
           likes_count, comments_count, created_at,
-          profiles:creator_id ( username, display_name, avatar_url )
+          profiles:public_profiles!posts_creator_public_profile_fkey ( username, display_name, avatar_url )
         `
         )
         .in('creator_id', feedIds)
