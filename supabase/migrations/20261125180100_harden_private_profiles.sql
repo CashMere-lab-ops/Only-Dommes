@@ -1,3 +1,68 @@
+-- Re-declare the setup routine with schema-qualified auth.uid().
+CREATE OR REPLACE FUNCTION public.complete_profile_setup(
+  p_username text,
+  p_account_type text,
+  p_age_confirmed boolean,
+  p_terms_accepted boolean,
+  p_creator_confirmed boolean DEFAULT false
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $function$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_username text;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Authentication required' USING ERRCODE = '42501';
+  END IF;
+
+  IF p_age_confirmed IS NOT TRUE OR p_terms_accepted IS NOT TRUE THEN
+    RAISE EXCEPTION 'Age and terms confirmation are required' USING ERRCODE = '22023';
+  END IF;
+
+  IF p_account_type IS NULL OR p_account_type NOT IN ('sub', 'creator') THEN
+    RAISE EXCEPTION 'Invalid account type' USING ERRCODE = '22023';
+  END IF;
+
+  IF p_account_type = 'creator' AND p_creator_confirmed IS NOT TRUE THEN
+    RAISE EXCEPTION 'Creator confirmation is required' USING ERRCODE = '22023';
+  END IF;
+
+  v_username := lower(regexp_replace(btrim(COALESCE(p_username, '')), '[^a-z0-9_]', '', 'g'));
+  IF length(v_username) < 3 OR length(v_username) > 24 THEN
+    RAISE EXCEPTION 'Username must be between 3 and 24 characters' USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE public.profiles
+  SET
+    username = v_username,
+    display_name = v_username,
+    account_type = p_account_type,
+    age_confirmed_at = pg_catalog.now(),
+    terms_accepted_at = pg_catalog.now(),
+    creator_confirmed_at = CASE
+      WHEN p_account_type = 'creator' AND p_creator_confirmed IS TRUE
+        THEN pg_catalog.now()
+      ELSE NULL
+    END,
+    account_type_selected_at = pg_catalog.now()
+  WHERE id = v_user_id
+    AND account_type_selected_at IS NULL;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Profile setup is already complete' USING ERRCODE = '42501';
+  END IF;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.complete_profile_setup(text, text, boolean, boolean, boolean)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.complete_profile_setup(text, text, boolean, boolean, boolean)
+  TO authenticated;
+
 -- Replace the Auth trigger so new accounts always begin as an incomplete
 -- Fan profile. The app then calls complete_profile_setup() after authentication.
 -- raw_user_meta_data is user-editable and is used only for display inputs.
