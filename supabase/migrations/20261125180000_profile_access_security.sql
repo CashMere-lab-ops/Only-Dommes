@@ -66,10 +66,10 @@ REVOKE ALL PRIVILEGES ON TABLE public.public_profiles FROM PUBLIC, anon, authent
 GRANT SELECT ON TABLE public.public_profiles TO anon, authenticated;
 
 -- Synchronise the public-safe copy whenever a private profile is created or changed.
-CREATE SCHEMA IF NOT EXISTS private;
-REVOKE ALL ON SCHEMA private FROM PUBLIC, anon, authenticated;
+CREATE SCHEMA IF NOT EXISTS wod_private;
+REVOKE ALL ON SCHEMA wod_private FROM PUBLIC, anon, authenticated;
 
-CREATE OR REPLACE FUNCTION private.sync_public_profile()
+CREATE OR REPLACE FUNCTION wod_private.sync_public_profile()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -132,13 +132,13 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION private.sync_public_profile() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION wod_private.sync_public_profile() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS profiles_sync_public_profile ON public.profiles;
 CREATE TRIGGER profiles_sync_public_profile
-  AFTER INSERT OR UPDATE ON public.profiles
+  AFTER INSERT OR UPDATE OF username, display_name, bio, avatar_url, banner_url, account_type, is_live, x_username, message_privacy, subscription_price, subscriptions_enabled, message_price, last_seen_at, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away, video_calls_enabled, video_rate_per_minute, video_min_minutes, live_private_enabled, live_private_rate_per_minute, live_private_min_minutes, min_tip_gbp, live_gifts_enabled, live_gifts ON public.profiles
   FOR EACH ROW
-  EXECUTE FUNCTION private.sync_public_profile();
+  EXECUTE FUNCTION wod_private.sync_public_profile();
 
 -- Backfill the public-safe profile surface.
 INSERT INTO public.public_profiles (
@@ -209,9 +209,10 @@ DECLARE
   v_meta jsonb := COALESCE(NEW.raw_user_meta_data, '{}'::jsonb);
   v_username text;
 BEGIN
-  -- New accounts always begin as Fans with no confirmations recorded.
-  -- The signed-in user makes their one-time account choice through
+  -- New accounts always begin as an incomplete Fan profile.
+  -- The user makes a one-time account choice after authenticating, through
   -- complete_profile_setup(), which records confirmations using database time.
+  -- Auth user_metadata is used only for display inputs, never authorization.
   v_username := lower(COALESCE(
     NULLIF(btrim(v_meta ->> 'username'), ''),
     NULLIF(split_part(COALESCE(NEW.email, ''), '@', 1), ''),
