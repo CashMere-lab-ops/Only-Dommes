@@ -17,6 +17,7 @@ declare
   v_purchase_id uuid;
   v_transfer jsonb;
   v_price_pence integer;
+  v_amount_gbp numeric(12,2);
 begin
   if p_buyer_id is null or p_clip_id is null then
     raise exception 'Buyer and clip are required';
@@ -55,6 +56,7 @@ begin
     if v_price_pence <= 0 then
       raise exception 'Invalid clip price';
     end if;
+    v_amount_gbp := v_price_pence::numeric / 100;
 
     v_transfer := public.post_creator_wallet_transfer(
       p_buyer_id,
@@ -68,6 +70,7 @@ begin
       'Clip: ' || v_clip.title
     );
   else
+    v_amount_gbp := 0;
     if not exists (
       select 1 from public.profiles
       where id = p_buyer_id
@@ -84,7 +87,7 @@ begin
   end if;
 
   insert into public.clip_purchases (clip_id, buyer_id, creator_id, amount_gbp)
-  values (p_clip_id, p_buyer_id, v_clip.creator_id, v_clip.price_gbp)
+  values (p_clip_id, p_buyer_id, v_clip.creator_id, v_amount_gbp)
   returning id into v_purchase_id;
 
   update public.clips
@@ -94,7 +97,7 @@ begin
 
   return coalesce(v_transfer, '{}'::jsonb) ||
     jsonb_build_object('ok', true, 'already', false, 'purchase_id', v_purchase_id,
-      'free', v_clip.price_gbp = 0, 'amount_gbp', v_clip.price_gbp);
+      'free', v_amount_gbp = 0, 'amount_gbp', v_amount_gbp);
 end;
 $function$;
 
