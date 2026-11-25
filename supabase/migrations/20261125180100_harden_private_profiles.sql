@@ -128,6 +128,29 @@ CREATE POLICY profiles_update_own
 
 REVOKE ALL PRIVILEGES ON TABLE public.profiles FROM PUBLIC, anon, authenticated;
 
+-- The old setup also granted individual column privileges. A table-level
+-- REVOKE does not necessarily clear those, so explicitly remove every
+-- existing column grant before adding back only the intended owner privileges.
+DO $revoke_profile_column_grants$
+DECLARE
+  v_columns text;
+BEGIN
+  SELECT string_agg(format('%I', attname), ', ' ORDER BY attnum)
+  INTO v_columns
+  FROM pg_attribute
+  WHERE attrelid = 'public.profiles'::regclass
+    AND attnum > 0
+    AND NOT attisdropped;
+
+  IF v_columns IS NOT NULL THEN
+    EXECUTE format(
+      'REVOKE SELECT (%1$s), INSERT (%1$s), UPDATE (%1$s), REFERENCES (%1$s) ON TABLE public.profiles FROM PUBLIC, anon, authenticated',
+      v_columns
+    );
+  END IF;
+END;
+$revoke_profile_column_grants$;
+
 -- Self-service pages can read their own full row; other users can only read
 -- the allowlisted public_profiles surface.
 GRANT SELECT ON TABLE public.profiles TO authenticated;
