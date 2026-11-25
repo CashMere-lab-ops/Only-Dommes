@@ -91,7 +91,7 @@ export default function DiscoverPage() {
       .from('posts')
       .select(`
         *,
-        profiles:creator_id (
+        profiles:public_profiles!posts_creator_public_profile_fkey (
           username,
           display_name,
           avatar_url
