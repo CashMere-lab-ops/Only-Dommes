@@ -1,15 +1,16 @@
--- Batch 1: protect private profiles and expose a safe public profile copy.
--- This migration is intentionally additive: public profile reads move to
--- public_profiles while private profile reads remain available to the owner.
+-- Batch 1A: introduce an allowlisted public profile surface and safe onboarding.
+-- This migration is additive so the app can be deployed before private-profile
+-- grants are tightened by the follow-up migration.
 
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS account_type_selected_at timestamptz;
 
--- Existing accounts already have an account type recorded. Mark those as
--- completed so the new first-time setup flow does not interrupt existing users.
+-- Existing accounts keep their current type; only new/OAuth-incomplete profiles
+-- are left eligible for the one-time setup function.
 UPDATE public.profiles
 SET account_type_selected_at = COALESCE(account_type_selected_at, created_at, now())
-WHERE account_type_selected_at IS NULL;
+WHERE account_type_selected_at IS NULL
+  AND account_type IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.public_profiles (
   id uuid PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS public.public_profiles (
 );
 
 COMMENT ON TABLE public.public_profiles IS
-  'Public-facing profile fields only. Private profile, identity, payment, admin and wallet fields remain in public.profiles.';
+  'Public-facing profile fields only. Excludes identity, admin, payment, notification and wallet data.';
 
 CREATE UNIQUE INDEX IF NOT EXISTS public_profiles_username_key
   ON public.public_profiles (username);
@@ -64,7 +65,7 @@ CREATE POLICY public_profiles_public_read
 REVOKE ALL PRIVILEGES ON TABLE public.public_profiles FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON TABLE public.public_profiles TO anon, authenticated;
 
--- Keep the public copy synchronised without allowing browser clients to write to it.
+-- Synchronise the public-safe copy whenever a private profile is created or changed.
 CREATE SCHEMA IF NOT EXISTS private;
 REVOKE ALL ON SCHEMA private FROM PUBLIC, anon, authenticated;
 
@@ -76,72 +77,24 @@ SET search_path = pg_catalog
 AS $function$
 BEGIN
   INSERT INTO public.public_profiles (
-    id,
-    username,
-    display_name,
-    bio,
-    avatar_url,
-    banner_url,
-    account_type,
-    is_live,
-    created_at,
-    x_username,
-    message_privacy,
-    subscription_price,
-    subscriptions_enabled,
-    message_price,
-    last_seen_at,
-    voice_calls_enabled,
-    voice_rate_per_minute,
-    voice_min_minutes,
-    voice_dnd_enabled,
-    voice_dnd_start,
-    voice_dnd_end,
-    voice_max_minutes,
-    voice_away,
-    video_calls_enabled,
-    video_rate_per_minute,
-    video_min_minutes,
-    live_private_enabled,
-    live_private_rate_per_minute,
-    live_private_min_minutes,
-    min_tip_gbp,
-    live_gifts_enabled,
-    live_gifts
+    id, username, display_name, bio, avatar_url, banner_url, account_type,
+    is_live, created_at, x_username, message_privacy, subscription_price,
+    subscriptions_enabled, message_price, last_seen_at, voice_calls_enabled,
+    voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start,
+    voice_dnd_end, voice_max_minutes, voice_away, video_calls_enabled,
+    video_rate_per_minute, video_min_minutes, live_private_enabled,
+    live_private_rate_per_minute, live_private_min_minutes, min_tip_gbp,
+    live_gifts_enabled, live_gifts
   )
   VALUES (
-    NEW.id,
-    NEW.username,
-    NEW.display_name,
-    NEW.bio,
-    NEW.avatar_url,
-    NEW.banner_url,
-    NEW.account_type,
-    NEW.is_live,
-    NEW.created_at,
-    NEW.x_username,
-    NEW.message_privacy,
-    NEW.subscription_price,
-    NEW.subscriptions_enabled,
-    NEW.message_price,
-    NEW.last_seen_at,
-    NEW.voice_calls_enabled,
-    NEW.voice_rate_per_minute,
-    NEW.voice_min_minutes,
-    NEW.voice_dnd_enabled,
-    NEW.voice_dnd_start,
-    NEW.voice_dnd_end,
-    NEW.voice_max_minutes,
-    NEW.voice_away,
-    NEW.video_calls_enabled,
-    NEW.video_rate_per_minute,
-    NEW.video_min_minutes,
-    NEW.live_private_enabled,
-    NEW.live_private_rate_per_minute,
-    NEW.live_private_min_minutes,
-    NEW.min_tip_gbp,
-    NEW.live_gifts_enabled,
-    NEW.live_gifts
+    NEW.id, NEW.username, NEW.display_name, NEW.bio, NEW.avatar_url, NEW.banner_url,
+    NEW.account_type, NEW.is_live, NEW.created_at, NEW.x_username, NEW.message_privacy,
+    NEW.subscription_price, NEW.subscriptions_enabled, NEW.message_price, NEW.last_seen_at,
+    NEW.voice_calls_enabled, NEW.voice_rate_per_minute, NEW.voice_min_minutes,
+    NEW.voice_dnd_enabled, NEW.voice_dnd_start, NEW.voice_dnd_end, NEW.voice_max_minutes,
+    NEW.voice_away, NEW.video_calls_enabled, NEW.video_rate_per_minute, NEW.video_min_minutes,
+    NEW.live_private_enabled, NEW.live_private_rate_per_minute, NEW.live_private_min_minutes,
+    NEW.min_tip_gbp, NEW.live_gifts_enabled, NEW.live_gifts
   )
   ON CONFLICT (id) DO UPDATE SET
     username = EXCLUDED.username,
@@ -175,7 +128,6 @@ BEGIN
     min_tip_gbp = EXCLUDED.min_tip_gbp,
     live_gifts_enabled = EXCLUDED.live_gifts_enabled,
     live_gifts = EXCLUDED.live_gifts;
-
   RETURN NEW;
 END;
 $function$;
@@ -188,7 +140,7 @@ CREATE TRIGGER profiles_sync_public_profile
   FOR EACH ROW
   EXECUTE FUNCTION private.sync_public_profile();
 
--- Backfill existing public profile cards.
+-- Backfill the public-safe profile surface.
 INSERT INTO public.public_profiles (
   id, username, display_name, bio, avatar_url, banner_url, account_type,
   is_live, created_at, x_username, message_privacy, subscription_price,
@@ -242,8 +194,9 @@ ON CONFLICT (id) DO UPDATE SET
   live_gifts_enabled = EXCLUDED.live_gifts_enabled,
   live_gifts = EXCLUDED.live_gifts;
 
--- Preserve PostgREST embeds for feed posts and comments, but point them at
--- the public-only table instead of the private profiles table.
+-- Dedicated relationships allow PostgREST to embed only the public profile
+-- copy for creator feed posts and comment authors. Existing private-profile
+-- foreign keys remain for internal integrity.
 ALTER TABLE public.posts
   ADD CONSTRAINT posts_creator_public_profile_fkey
   FOREIGN KEY (creator_id) REFERENCES public.public_profiles(id)
@@ -258,73 +211,8 @@ ALTER TABLE public.post_comments
 ALTER TABLE public.post_comments
   VALIDATE CONSTRAINT post_comments_user_public_profile_fkey;
 
--- The client may read its own full profile, but anonymous visitors may not
--- query the private table at all.
-DROP POLICY IF EXISTS "Anyone can view profiles" ON public.profiles;
-DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
-
-CREATE POLICY profiles_select_own
-  ON public.profiles
-  FOR SELECT
-  TO authenticated
-  USING ((SELECT auth.uid()) = id);
-
-CREATE POLICY profiles_update_own
-  ON public.profiles
-  FOR UPDATE
-  TO authenticated
-  USING ((SELECT auth.uid()) = id)
-  WITH CHECK ((SELECT auth.uid()) = id);
-
-REVOKE ALL PRIVILEGES ON TABLE public.profiles FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON TABLE public.profiles TO authenticated;
-
--- Users may edit profile settings, but not account type, identity assertions,
--- admin flags, wallet balances, payment identifiers or system timestamps.
-GRANT UPDATE (
-  display_name,
-  bio,
-  avatar_url,
-  banner_url,
-  x_username,
-  is_live,
-  subscription_price,
-  subscriptions_enabled,
-  message_privacy,
-  notification_prefs,
-  last_seen_at,
-  message_price,
-  auto_reply_enabled,
-  auto_reply_message,
-  auto_reply_tip_enabled,
-  auto_reply_tip_message,
-  auto_reply_unlock_enabled,
-  auto_reply_unlock_message,
-  voice_calls_enabled,
-  voice_rate_per_minute,
-  voice_min_minutes,
-  voice_dnd_enabled,
-  voice_dnd_start,
-  voice_dnd_end,
-  voice_max_minutes,
-  voice_away,
-  currency_display,
-  earnings_goal_gbp,
-  live_private_enabled,
-  live_private_rate_per_minute,
-  live_private_min_minutes,
-  min_tip_gbp,
-  live_gifts_enabled,
-  live_gifts,
-  video_calls_enabled,
-  video_rate_per_minute,
-  video_min_minutes
-) ON TABLE public.profiles TO authenticated;
-
--- Auth-created profile records are created by the trigger, not direct browser upserts.
+-- New Auth accounts default to Fan unless they explicitly chose a Creator
+-- account. Confirmation timestamps are generated by the database, not browser time.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -353,7 +241,7 @@ BEGIN
     v_username := 'user_' || substr(NEW.id::text, 1, 8);
   END IF;
 
-  IF COALESCE(v_meta ->> 'date_of_birth', '') ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN
+  IF COALESCE(v_meta ->> 'date_of_birth', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
     BEGIN
       v_date_of_birth := (v_meta ->> 'date_of_birth')::date;
     EXCEPTION WHEN OTHERS THEN
@@ -372,14 +260,26 @@ BEGIN
     COALESCE(NULLIF(btrim(v_meta ->> 'display_name'), ''), v_username),
     v_account_type,
     v_date_of_birth,
-    CASE WHEN v_meta ->> 'age_confirmed' = 'true' THEN v_now ELSE NULL END,
-    CASE WHEN v_meta ->> 'terms_accepted' = 'true' THEN v_now ELSE NULL END,
     CASE
-      WHEN v_account_type = 'creator' AND v_meta ->> 'creator_confirmed' = 'true'
-        THEN v_now
-      ELSE NULL
+      WHEN v_meta ->> 'age_confirmed' = 'true'
+        OR NULLIF(v_meta ->> 'age_confirmed_at', '') IS NOT NULL
+      THEN v_now ELSE NULL
     END,
-    CASE WHEN v_meta ->> 'account_type' IN ('sub', 'creator') THEN v_now ELSE NULL END
+    CASE
+      WHEN v_meta ->> 'terms_accepted' = 'true'
+        OR NULLIF(v_meta ->> 'terms_accepted_at', '') IS NOT NULL
+      THEN v_now ELSE NULL
+    END,
+    CASE
+      WHEN v_account_type = 'creator'
+        AND (v_meta ->> 'creator_confirmed' = 'true'
+          OR NULLIF(v_meta ->> 'creator_confirmed_at', '') IS NOT NULL)
+      THEN v_now ELSE NULL
+    END,
+    CASE
+      WHEN v_meta ->> 'account_type' IN ('sub', 'creator') THEN v_now
+      ELSE NULL
+    END
   );
 
   RETURN NEW;
@@ -388,9 +288,7 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 
--- One-time first-profile setup for OAuth accounts that do not yet have a
--- selected account type. The function only updates the authenticated user's
--- own incomplete profile and cannot be used to change an established type.
+-- OAuth accounts without an initial type can complete setup once.
 CREATE OR REPLACE FUNCTION public.complete_profile_setup(
   p_username text,
   p_account_type text,
@@ -454,3 +352,5 @@ REVOKE ALL ON FUNCTION public.complete_profile_setup(text, text, boolean, boolea
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.complete_profile_setup(text, text, boolean, boolean, boolean)
   TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
