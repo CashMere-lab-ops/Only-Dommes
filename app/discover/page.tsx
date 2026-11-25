@@ -89,14 +89,7 @@ export default function DiscoverPage() {
 
     let query = supabase
       .from('posts')
-      .select(`
-        *,
-        profiles:public_profiles!posts_creator_public_profile_fkey (
-          username,
-          display_name,
-          avatar_url
-        )
-      `)
+      .select('*')
       .order('created_at', { ascending: false })
       .range(from, to);
 
@@ -113,8 +106,20 @@ export default function DiscoverPage() {
     const { data: postsData, error } = await query;
 
     if (!error && postsData) {
-      if (reset) setPosts(postsData);
-      else setPosts((prev) => [...prev, ...postsData]);
+      const creatorIds = [...new Set(postsData.map((p: any) => p.creator_id).filter(Boolean))];
+      const { data: creators } = creatorIds.length
+        ? await supabase
+            .from('public_profiles')
+            .select('id, username, display_name, avatar_url')
+            .in('id', creatorIds)
+        : { data: [] };
+      const creatorMap = new Map((creators || []).map((p: any) => [p.id, p]));
+      const enrichedPosts = postsData.map((p: any) => ({
+        ...p,
+        profiles: creatorMap.get(p.creator_id) || null,
+      }));
+      if (reset) setPosts(enrichedPosts);
+      else setPosts((prev) => [...prev, ...enrichedPosts]);
       if (postsData.length < POSTS_PER_PAGE) setHasMore(false);
       else setHasMore(true);
     }
