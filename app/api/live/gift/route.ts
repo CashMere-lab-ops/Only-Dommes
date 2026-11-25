@@ -78,7 +78,8 @@ type LivePaymentResult = {
  */
 export async function POST(request: Request) {
   try {
-    const token = (request.headers.get('authorization') || '').replace(/^Bearer\\s+/i, '');
+    const authHeader = request.headers.get('authorization') || '';
+    const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
     if (!token) {
       return NextResponse.json({ error: 'Login required' }, { status: 401 });
     }
