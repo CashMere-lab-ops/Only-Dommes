@@ -74,14 +74,14 @@ export default function WalletBalance({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 transition hover:border-pink-500/40 hover:bg-zinc-900 ${className}`}
+      className={`flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950/80 px-3.5 py-2.5 transition hover:border-pink-500/40 hover:bg-zinc-900 ${className}`}
       title="Open wallet"
     >
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-500/15 text-pink-400">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-pink-500/15 text-pink-400 flex-shrink-0">
         <Wallet size={16} />
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[10px] uppercase tracking-wide text-zinc-500 leading-none mb-0.5">
+      <div className="min-w-0 flex-1 flex flex-col justify-center gap-1">
+        <p className="text-[10px] uppercase tracking-wider text-zinc-500 leading-none">
           Balance
         </p>
         <p className="text-sm font-semibold text-pink-400 tabular-nums leading-none">
