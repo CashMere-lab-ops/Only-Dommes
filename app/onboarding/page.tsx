@@ -54,7 +54,7 @@ export default function OnboardingPage() {
               }}
               className={`group w-full text-left rounded-3xl p-6 transition-all duration-200 flex flex-col ${
                 selected === 'sub'
-                  ? 'bg-zinc-900 border-2 border-pink-500 shadow-[0_0_32px_rgba(236,72,153,0.2)]'
+                  ? 'bg-zinc-900 border-2 border-pink-500 shadow-[0_0_40px_rgba(236,72,153,0.45)]'
                   : 'bg-zinc-900/70 border border-zinc-800 hover:border-pink-500/40'
               }`}
             >
@@ -85,7 +85,7 @@ export default function OnboardingPage() {
               onClick={() => setSelected('creator')}
               className={`group w-full text-left rounded-3xl p-6 transition-all duration-200 flex flex-col ${
                 selected === 'creator'
-                  ? 'bg-zinc-900 border-2 border-pink-500 shadow-[0_0_32px_rgba(236,72,153,0.2)]'
+                  ? 'bg-zinc-900 border-2 border-pink-500 shadow-[0_0_40px_rgba(236,72,153,0.45)]'
                   : 'bg-zinc-900/70 border border-zinc-800 hover:border-pink-500/40'
               }`}
             >
