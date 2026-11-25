@@ -139,7 +139,7 @@ export default function LeaderboardPage() {
         }
 
         const { data: profiles } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url, account_type')
           .in('id', sortedIds);
 
