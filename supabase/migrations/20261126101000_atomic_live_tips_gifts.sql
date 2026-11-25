@@ -31,7 +31,7 @@ declare
   v_sender_balance numeric(12,2);
   v_already boolean := false;
 begin
-  if p_sender_id is null or p_stream_id is null or p_sender_id = (select creator_id from public.live_streams where id = p_stream_id) then
+  if p_sender_id is null or p_stream_id is null then
     raise exception 'Invalid sender or stream';
   end if;
   if p_gross_pence is null or p_gross_pence <= 0 or p_gross_pence > 500000 then
@@ -47,6 +47,7 @@ begin
     raise exception 'A valid idempotency key is required';
   end if;
 
+  -- Lock the stream so concurrent tips update raised totals/leaderboard safely.
   select * into v_stream
   from public.live_streams
   where id = p_stream_id
@@ -93,7 +94,7 @@ begin
     from public.profiles
     where id = p_sender_id;
 
-    select coalesce(total_gbp, 0) into v_user_total
+    select total_gbp into v_user_total
     from public.live_stream_tips
     where stream_id = p_stream_id and user_id = p_sender_id;
     v_user_total := coalesce(v_user_total, 0);
@@ -135,162 +136,31 @@ begin
 
   if jsonb_typeof(coalesce(v_stream.tip_goals, '[]'::jsonb)) = 'array' then
     if jsonb_array_length(coalesce(v_stream.tip_goals, '[]'::jsonb)) > 0 then
-      select min(case
-        when (goal->>'amount') ~ '^[0-9]+([.][0-9]+)?
-
-  v_showcase_user_id := v_stream.showcase_user_id;
-  v_showcase_amount := coalesce(v_stream.showcase_amount_gbp, 0);
-  v_showcase_name := v_stream.showcase_name;
-  v_showcase_avatar := v_stream.showcase_avatar_url;
-
-  if v_user_total >= v_showcase_amount then
-    v_showcase_user_id := p_sender_id;
-    v_showcase_amount := v_user_total;
-    v_showcase_name := v_sender_name;
-    v_showcase_avatar := v_sender_avatar;
-  end if;
-
-  update public.live_streams
-  set tip_raised_gbp = v_new_raised,
-      tip_goal_gbp = v_next_goal,
-      showcase_user_id = v_showcase_user_id,
-      showcase_amount_gbp = v_showcase_amount,
-      showcase_name = v_showcase_name,
-      showcase_avatar_url = v_showcase_avatar,
-      updated_at = pg_catalog.now()
-  where id = p_stream_id;
-
-  return v_transfer || jsonb_build_object(
-    'ok', true,
-    'already', false,
-    'tip_raised_gbp', v_new_raised,
-    'tip_goal_gbp', v_next_goal,
-    'tip_goals', coalesce(v_stream.tip_goals, '[]'::jsonb),
-    'from_name', v_sender_name,
-    'user_total', v_user_total,
-    'is_showcase', v_showcase_user_id = p_sender_id,
-    'showcase', jsonb_build_object(
-      'user_id', v_showcase_user_id,
-      'amount_gbp', v_showcase_amount,
-      'name', v_showcase_name,
-      'avatar_url', v_showcase_avatar
-    )
-  );
-end;
-$function$;
-
-revoke all on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) from public;
-revoke all on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) from anon, authenticated;
-grant execute on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) to service_role;
- then (goal->>'amount')::numeric
-        else null
-      end)
-        into v_next_goal
-      from jsonb_array_elements(v_stream.tip_goals) as goal
+      select min(
+        case
+          when (g.item->>'amount') ~ '^[0-9]+([.][0-9]+)?$'
+            then (g.item->>'amount')::numeric
+          else null
+        end
+      )
+      into v_next_goal
+      from jsonb_array_elements(v_stream.tip_goals) as g(item)
       where case
-        when (goal->>'amount') ~ '^[0-9]+([.][0-9]+)?
-
-  v_showcase_user_id := v_stream.showcase_user_id;
-  v_showcase_amount := coalesce(v_stream.showcase_amount_gbp, 0);
-  v_showcase_name := v_stream.showcase_name;
-  v_showcase_avatar := v_stream.showcase_avatar_url;
-
-  if v_user_total >= v_showcase_amount then
-    v_showcase_user_id := p_sender_id;
-    v_showcase_amount := v_user_total;
-    v_showcase_name := v_sender_name;
-    v_showcase_avatar := v_sender_avatar;
-  end if;
-
-  update public.live_streams
-  set tip_raised_gbp = v_new_raised,
-      tip_goal_gbp = v_next_goal,
-      showcase_user_id = v_showcase_user_id,
-      showcase_amount_gbp = v_showcase_amount,
-      showcase_name = v_showcase_name,
-      showcase_avatar_url = v_showcase_avatar,
-      updated_at = pg_catalog.now()
-  where id = p_stream_id;
-
-  return v_transfer || jsonb_build_object(
-    'ok', true,
-    'already', false,
-    'tip_raised_gbp', v_new_raised,
-    'tip_goal_gbp', v_next_goal,
-    'tip_goals', coalesce(v_stream.tip_goals, '[]'::jsonb),
-    'from_name', v_sender_name,
-    'user_total', v_user_total,
-    'is_showcase', v_showcase_user_id = p_sender_id,
-    'showcase', jsonb_build_object(
-      'user_id', v_showcase_user_id,
-      'amount_gbp', v_showcase_amount,
-      'name', v_showcase_name,
-      'avatar_url', v_showcase_avatar
-    )
-  );
-end;
-$function$;
-
-revoke all on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) from public;
-revoke all on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) from anon, authenticated;
-grant execute on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) to service_role;
- then (goal->>'amount')::numeric > v_new_raised
+        when (g.item->>'amount') ~ '^[0-9]+([.][0-9]+)?$'
+          then (g.item->>'amount')::numeric > v_new_raised
         else false
       end;
 
       if v_next_goal is null then
-        select max(case
-          when (goal->>'amount') ~ '^[0-9]+([.][0-9]+)?
-
-  v_showcase_user_id := v_stream.showcase_user_id;
-  v_showcase_amount := coalesce(v_stream.showcase_amount_gbp, 0);
-  v_showcase_name := v_stream.showcase_name;
-  v_showcase_avatar := v_stream.showcase_avatar_url;
-
-  if v_user_total >= v_showcase_amount then
-    v_showcase_user_id := p_sender_id;
-    v_showcase_amount := v_user_total;
-    v_showcase_name := v_sender_name;
-    v_showcase_avatar := v_sender_avatar;
-  end if;
-
-  update public.live_streams
-  set tip_raised_gbp = v_new_raised,
-      tip_goal_gbp = v_next_goal,
-      showcase_user_id = v_showcase_user_id,
-      showcase_amount_gbp = v_showcase_amount,
-      showcase_name = v_showcase_name,
-      showcase_avatar_url = v_showcase_avatar,
-      updated_at = pg_catalog.now()
-  where id = p_stream_id;
-
-  return v_transfer || jsonb_build_object(
-    'ok', true,
-    'already', false,
-    'tip_raised_gbp', v_new_raised,
-    'tip_goal_gbp', v_next_goal,
-    'tip_goals', coalesce(v_stream.tip_goals, '[]'::jsonb),
-    'from_name', v_sender_name,
-    'user_total', v_user_total,
-    'is_showcase', v_showcase_user_id = p_sender_id,
-    'showcase', jsonb_build_object(
-      'user_id', v_showcase_user_id,
-      'amount_gbp', v_showcase_amount,
-      'name', v_showcase_name,
-      'avatar_url', v_showcase_avatar
-    )
-  );
-end;
-$function$;
-
-revoke all on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) from public;
-revoke all on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) from anon, authenticated;
-grant execute on function public.post_live_creator_payment(uuid, uuid, integer, text, text, text, text) to service_role;
- then (goal->>'amount')::numeric
-          else null
-        end)
-          into v_next_goal
-        from jsonb_array_elements(v_stream.tip_goals) as goal;
+        select max(
+          case
+            when (g.item->>'amount') ~ '^[0-9]+([.][0-9]+)?$'
+              then (g.item->>'amount')::numeric
+            else null
+          end
+        )
+        into v_next_goal
+        from jsonb_array_elements(v_stream.tip_goals) as g(item);
       end if;
 
       v_next_goal := coalesce(v_next_goal, coalesce(v_stream.tip_goal_gbp, 0));
