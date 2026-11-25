@@ -39,7 +39,7 @@ begin
   if v_clip.creator_id = p_buyer_id then
     raise exception 'You cannot purchase your own clip';
   end if;
-  if v_clip.price_gbp < 0 then
+  if v_clip.price_gbp < 0 or v_clip.price_gbp > 10000 then
     raise exception 'Invalid clip price';
   end if;
 
