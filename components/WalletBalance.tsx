@@ -52,7 +52,7 @@ export default function WalletBalance({
     );
   }
 
-  const low = showTopUpHint && accountType !== 'creator' && balance < 10;
+  const low = accountType === 'sub' && balance < 10;
 
   if (compact) {
     return (
