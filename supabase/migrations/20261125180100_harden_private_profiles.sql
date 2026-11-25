@@ -172,7 +172,6 @@ GRANT UPDATE (
   avatar_url,
   banner_url,
   x_username,
-  is_live,
   subscription_price,
   subscriptions_enabled,
   message_privacy,
