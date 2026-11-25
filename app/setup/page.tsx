@@ -14,10 +14,10 @@ function SetupForm() {
   const router = useRouter();
   const params = useSearchParams();
   const type = params.get('type') === 'creator' ? 'creator' : 'sub';
-  const confirmed = params.get('confirmed') === '1';
   const [username, setUsername] = useState('');
   const [age, setAge] = useState(false);
   const [terms, setTerms] = useState(false);
+  const [creatorConfirmed, setCreatorConfirmed] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -31,7 +31,7 @@ function SetupForm() {
       setMessage('Tick both boxes to continue.');
       return;
     }
-    if (type === 'creator' && !confirmed) {
+    if (type === 'creator' && !creatorConfirmed) {
       setMessage('Creator confirmation is required.');
       return;
     }
@@ -46,7 +46,7 @@ function SetupForm() {
     }
 
     const { data: taken } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id')
       .eq('username', name)
       .neq('id', user.id)
@@ -57,17 +57,12 @@ function SetupForm() {
       return;
     }
 
-    const now = new Date().toISOString();
-    const { error } = await supabase.from('profiles').upsert({
-      id: user.id,
-      username: name,
-      display_name: name,
-      account_type: type,
-      age_confirmed_at: now,
-      terms_accepted_at: now,
-      ...(type === 'creator' && confirmed
-        ? { creator_confirmed_at: now }
-        : {}),
+    const { error } = await supabase.rpc('complete_profile_setup', {
+      p_username: name,
+      p_account_type: type,
+      p_age_confirmed: age,
+      p_terms_accepted: terms,
+      p_creator_confirmed: type === 'creator' && creatorConfirmed,
     });
     if (error) {
       setMessage(error.message);
@@ -97,6 +92,12 @@ function SetupForm() {
             />
           </div>
           <AgeTermsTicks age={age} setAge={setAge} terms={terms} setTerms={setTerms} />
+          {type === 'creator' && (
+            <label className="flex items-start gap-3 cursor-pointer text-sm text-zinc-300">
+              <input type="checkbox" checked={creatorConfirmed} onChange={(e) => setCreatorConfirmed(e.target.checked)} className="mt-1 h-4 w-4 accent-pink-500" />
+              <span>I confirm that I intend to use World of Dommes as a content creator, and understand that creator accounts are subject to identity verification and platform approval before I can publish content or earn money.</span>
+            </label>
+          )}
           <button
             onClick={() => void save()}
             disabled={loading}
