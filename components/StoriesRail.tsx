@@ -330,7 +330,7 @@ export default function StoriesRail({
       const people: Record<string, StoryCreator> = {};
       if (creatorIds.length) {
         const { data: profiles } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', creatorIds);
         (profiles || []).forEach((p: any) => {
@@ -2863,7 +2863,7 @@ function StoryViewer({
     let people: Record<string, any> = {};
     if (ids.length) {
       const { data: profiles } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('id, username, display_name, avatar_url')
         .in('id', ids);
       (profiles || []).forEach((p: any) => {

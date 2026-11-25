@@ -439,7 +439,7 @@ export default function ClipsPage() {
     const profileMap: Record<string, any> = {};
     if (creatorIds.length) {
       const { data: people } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('id, username, display_name, avatar_url')
         .in('id', creatorIds);
       (people || []).forEach((p: any) => {

@@ -171,10 +171,22 @@ export default function FeedPosts({
     if (!comments[postId]) {
       const { data } = await supabase
         .from('post_comments')
-        .select(`*, profiles:user_id (username, display_name, avatar_url)`)
+        .select('*')
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
-      setComments((prev) => ({ ...prev, [postId]: data || [] }));
+      const authorIds = [...new Set((data || []).map((comment: any) => comment.user_id).filter(Boolean))];
+      const { data: authors } = authorIds.length
+        ? await supabase
+            .from('public_profiles')
+            .select('id, username, display_name, avatar_url')
+            .in('id', authorIds)
+        : { data: [] };
+      const authorMap = new Map((authors || []).map((author: any) => [author.id, author]));
+      const enrichedComments = (data || []).map((comment: any) => ({
+        ...comment,
+        profiles: authorMap.get(comment.user_id) || null,
+      }));
+      setComments((prev) => ({ ...prev, [postId]: enrichedComments }));
       const real = (data || []).length;
       setPosts((prev: any[]) =>
         prev.map((p) => (p.id === postId ? { ...p, comments_count: real } : p))
@@ -192,10 +204,16 @@ export default function FeedPosts({
       const { data, error } = await supabase
         .from('post_comments')
         .insert({ post_id: postId, user_id: userId, content: commentText })
-        .select(`*, profiles:user_id (username, display_name, avatar_url)`)
+        .select('*')
         .single();
       if (error) throw error;
-      setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] || []), data] }));
+      const { data: authorProfile } = await supabase
+        .from('public_profiles')
+        .select('username, display_name, avatar_url')
+        .eq('id', userId)
+        .maybeSingle();
+      const enrichedComment = { ...data, profiles: authorProfile };
+      setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] || []), enrichedComment] }));
       const { count } = await supabase
         .from('post_comments')
         .select('*', { count: 'exact', head: true })

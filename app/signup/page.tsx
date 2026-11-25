@@ -15,20 +15,20 @@ function cleanUsername(value: string) {
 function SignupForm() {
   const params = useSearchParams();
   const type = params.get('type') === 'creator' ? 'creator' : 'sub';
-  const confirmed = params.get('confirmed') === '1';
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [age, setAge] = useState(false);
   const [terms, setTerms] = useState(false);
+  const [creatorConfirmed, setCreatorConfirmed] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
     const name = cleanUsername(username);
-    if (name.length < 3) {
-      setMessage('Username must be at least 3 characters.');
+    if (name.length < 3 || name.length > 24) {
+      setMessage('Username must be between 3 and 24 characters.');
       return;
     }
     if (password.length < 6) {
@@ -43,7 +43,7 @@ function SignupForm() {
       setMessage('Tick both boxes to continue.');
       return;
     }
-    if (type === 'creator' && !confirmed) {
+    if (type === 'creator' && !creatorConfirmed) {
       setMessage('Creator confirmation is required.');
       return;
     }
@@ -53,7 +53,7 @@ function SignupForm() {
     const supabase = createClient();
 
     const { data: taken } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id')
       .eq('username', name)
       .maybeSingle();
@@ -63,16 +63,13 @@ function SignupForm() {
       return;
     }
 
-    const now = new Date().toISOString();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           username: name,
-          account_type: type,
-          age_confirmed_at: now,
-          terms_accepted_at: now,
+          display_name: name,
         },
       },
     });
@@ -84,22 +81,23 @@ function SignupForm() {
     }
 
     if (data.user && data.session) {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        username: name,
-        display_name: name,
-        account_type: type,
-        age_confirmed_at: now,
-        terms_accepted_at: now,
-        ...(type === 'creator' && confirmed
-          ? { creator_confirmed_at: now }
-          : {}),
+      const { error: setupError } = await supabase.rpc('complete_profile_setup', {
+        p_username: name,
+        p_account_type: type,
+        p_age_confirmed: age,
+        p_terms_accepted: terms,
+        p_creator_confirmed: type === 'creator' && creatorConfirmed,
       });
+      if (setupError) {
+        setMessage(setupError.message || 'Account created, but profile setup could not be completed. Please sign in and finish setup.');
+        setLoading(false);
+        return;
+      }
       window.location.href = '/';
       return;
     }
 
-    setMessage('Success! Check your email to confirm your account.');
+    setMessage('Account created. Check your email to confirm it. After confirming, you will choose your account type and complete the age, terms and Creator confirmations.');
     setLoading(false);
   };
 
@@ -158,6 +156,12 @@ function SignupForm() {
             />
           </div>
           <AgeTermsTicks age={age} setAge={setAge} terms={terms} setTerms={setTerms} />
+          {type === 'creator' && (
+            <label className="flex items-start gap-3 cursor-pointer text-sm text-zinc-300">
+              <input type="checkbox" checked={creatorConfirmed} onChange={(e) => setCreatorConfirmed(e.target.checked)} className="mt-1 h-4 w-4 accent-pink-500" />
+              <span>I confirm that I intend to use World of Dommes as a content creator, and understand that creator accounts are subject to identity verification and platform approval before I can publish content or earn money.</span>
+            </label>
+          )}
           <button
             onClick={() => void handleSignup()}
             disabled={loading}

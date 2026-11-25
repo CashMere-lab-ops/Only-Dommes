@@ -134,7 +134,7 @@ export default function IncomingCallListener() {
 
   const loadCaller = async (subscriberId: string) => {
     const { data } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('username, display_name, avatar_url')
       .eq('id', subscriberId)
       .single();

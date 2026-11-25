@@ -146,7 +146,7 @@ export default function MyAccountPage() {
       return;
     }
     const { data: profiles } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id, username, display_name, avatar_url')
       .in('id', ids);
     setPeople(profiles || []);

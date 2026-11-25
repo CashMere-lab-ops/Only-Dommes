@@ -254,7 +254,6 @@ export default function ChatPage() {
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [unlockingChat, setUnlockingChat] = useState(false);
   const [messagePrice, setMessagePrice] = useState(0);
-  const [autoReplySent, setAutoReplySent] = useState(false);
 
   // Voice calls
   const [showCallSheet, setShowCallSheet] = useState(false);
@@ -476,7 +475,6 @@ export default function ChatPage() {
         return;
       }
 
-      setAutoReplySent(!!convo.auto_reply_sent);
 
       const otherId =
         convo.participant_1 === user.id ? convo.participant_2 : convo.participant_1;
@@ -497,9 +495,9 @@ export default function ChatPage() {
           .eq('blocked_id', otherId)
           .maybeSingle(),
         supabase
-          .from('profiles')
+          .from('public_profiles')
           .select(
-            'username, display_name, avatar_url, last_seen_at, account_type, message_price, auto_reply_enabled, auto_reply_message, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away, video_calls_enabled, video_rate_per_minute, video_min_minutes'
+            'username, display_name, avatar_url, last_seen_at, account_type, message_price, voice_calls_enabled, voice_rate_per_minute, voice_min_minutes, voice_dnd_enabled, voice_dnd_start, voice_dnd_end, voice_max_minutes, voice_away, video_calls_enabled, video_rate_per_minute, video_min_minutes'
           )
           .eq('id', otherId)
           .single(),
@@ -582,8 +580,8 @@ export default function ChatPage() {
     if (!otherUserId) return;
     const interval = setInterval(async () => {
       const { data } = await supabase
-        .from('profiles')
-        .select('last_seen_at, auto_reply_enabled, auto_reply_message')
+        .from('public_profiles')
+        .select('last_seen_at')
         .eq('id', otherUserId)
         .single();
       if (data) {
@@ -772,45 +770,6 @@ export default function ChatPage() {
       alert(err.message || 'Could not unlock messaging');
     } finally {
       setUnlockingChat(false);
-    }
-  };
-
-  const maybeSendAutoReply = async () => {
-    if (!otherUserId || !userId) return;
-    if (autoReplySent) return;
-    if (!otherUser?.auto_reply_enabled) return;
-    if (!otherUser?.auto_reply_message?.trim()) return;
-
-    const lastSeen = otherUser.last_seen_at
-      ? new Date(otherUser.last_seen_at).getTime()
-      : 0;
-    if (Date.now() - lastSeen <= 5 * 60 * 1000) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: otherUserId,
-          content: otherUser.auto_reply_message.trim(),
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      if (data) {
-        setMessages((prev) => {
-          if (prev.find((m) => m.id === data.id)) return prev;
-          return [...prev, data];
-        });
-      }
-      await supabase
-        .from('conversations')
-        .update({ auto_reply_sent: true, last_message_at: new Date().toISOString() })
-        .eq('id', conversationId);
-      setAutoReplySent(true);
-      setTimeout(scrollBottom, 80);
-    } catch (err) {
-      console.error('Auto-reply failed', err);
     }
   };
 
@@ -1404,10 +1363,6 @@ function readSession(key: string) {
           body: previewText,
           link: `/messages/${conversationId}`,
         });
-      }
-
-      if (myProfile?.account_type !== 'creator') {
-        await maybeSendAutoReply();
       }
 
       setTimeout(scrollBottom, 80);

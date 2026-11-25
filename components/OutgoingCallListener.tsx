@@ -85,7 +85,7 @@ export default function OutgoingCallListener() {
 
   const loadCreator = async (creatorId: string) => {
     const { data } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('username, display_name, avatar_url')
       .eq('id', creatorId)
       .single();

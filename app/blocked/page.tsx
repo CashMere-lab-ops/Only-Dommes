@@ -36,7 +36,7 @@ export default function BlockedPage() {
       return;
     }
     const { data: profiles } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id, username, display_name, avatar_url')
       .in('id', ids);
     const map = new Map((profiles || []).map((p: any) => [p.id, p]));

@@ -114,7 +114,7 @@ export default function Sidebar() {
       setSearching(true);
       const safe = q.replace(/[%_,]/g, '');
       const { data } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('id, username, display_name, avatar_url')
         .eq('account_type', 'creator')
         .or(`username.ilike.%${safe}%,display_name.ilike.%${safe}%`)

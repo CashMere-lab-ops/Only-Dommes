@@ -75,7 +75,7 @@ export default function MessagesPage() {
             ? !!convo.participant_1_archived
             : !!convo.participant_2_archived;
           const { data: profile } = await supabase
-            .from('profiles')
+            .from('public_profiles')
             .select('username, display_name, avatar_url, account_type')
             .eq('id', otherId)
             .single();

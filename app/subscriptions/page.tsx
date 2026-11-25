@@ -134,7 +134,7 @@ export default function SubscriptionsPage() {
       let map: Record<string, any> = {};
       if (ids.length) {
         const { data: people } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', ids);
         (people || []).forEach((p: any) => {

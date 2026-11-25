@@ -11,21 +11,18 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
   const [selected, setSelected] = useState<'sub' | 'creator' | null>(null);
-  const [creatorConfirmed, setCreatorConfirmed] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
   }, []);
 
-  const canContinue =
-    selected === 'sub' || (selected === 'creator' && creatorConfirmed);
+  const canContinue = selected !== null;
 
   const continueTo = () => {
     if (!selected || !canContinue) return;
     const base = signedIn ? '/setup' : '/signup';
     const params = new URLSearchParams({ type: selected });
-    if (selected === 'creator') params.set('confirmed', '1');
     router.push(`${base}?${params.toString()}`);
   };
 
@@ -50,7 +47,6 @@ export default function OnboardingPage() {
               type="button"
               onClick={() => {
                 setSelected('sub');
-                setCreatorConfirmed(false);
               }}
               className={`group w-full text-left rounded-3xl p-6 transition-all duration-200 flex flex-col ${
                 selected === 'sub'
@@ -114,19 +110,7 @@ export default function OnboardingPage() {
             </button>
           </div>
 
-          {selected === 'creator' && (
-            <label className="mt-6 flex items-start gap-3.5 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5 cursor-pointer max-w-2xl mx-auto">
-              <input
-                type="checkbox"
-                checked={creatorConfirmed}
-                onChange={(e) => setCreatorConfirmed(e.target.checked)}
-                className="mt-0.5 accent-pink-500 w-4 h-4 flex-shrink-0"
-              />
-              <span className="text-[13px] text-zinc-300 leading-relaxed">
-                I confirm that I intend to use World of Dommes as a content creator, and understand that creator accounts are subject to identity verification and platform approval before I can publish content or earn money.
-              </span>
-            </label>
-          )}
+
 
           <div className="mt-8 max-w-xs mx-auto">
             <button

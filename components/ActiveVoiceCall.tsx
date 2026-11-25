@@ -541,7 +541,7 @@ export default function ActiveVoiceCall() {
 
     const otherId = c.creator_id === uid ? c.subscriber_id : c.creator_id;
     const { data: profile } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('display_name, username, avatar_url')
       .eq('id', otherId)
       .single();

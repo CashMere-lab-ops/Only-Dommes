@@ -519,7 +519,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
     if (!rows.length) return [];
     const ids = [...new Set(rows.map((r) => r.user_id))];
     const { data: profiles } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id, username, display_name, avatar_url')
       .in('id', ids);
     const map = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -593,7 +593,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
     }
     try {
       const { data: cProf } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('min_tip_gbp')
         .eq('id', data.creator_id)
         .maybeSingle();
@@ -624,7 +624,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
     }
 
     const { data: profile } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('username, display_name, avatar_url')
       .eq('id', data.creator_id)
       .single();
@@ -699,7 +699,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
 
     // Private rate from creator live-private settings (fallback voice)
     const { data: creatorRates } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select(
         'live_private_enabled, live_private_rate_per_minute, live_private_min_minutes, voice_rate_per_minute, voice_min_minutes'
       )
@@ -762,7 +762,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
       if (list.length) {
         const ids = list.map((r: any) => r.requester_id);
         const { data: people } = await supabase
-          .from('profiles')
+          .from('public_profiles')
           .select('id, username, display_name, avatar_url')
           .in('id', ids);
         const pmap = new Map((people || []).map((p: any) => [p.id, p]));
@@ -1575,7 +1575,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
             void (async () => {
               try {
                 const { data: fp } = await supabase
-                  .from('profiles')
+                  .from('public_profiles')
                   .select('display_name, username, avatar_url')
                   .eq('id', row.last_raid_from_creator_id)
                   .maybeSingle();
@@ -1679,7 +1679,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
 
           // Enrich profile in background
           const { data: profile } = await supabase
-            .from('profiles')
+            .from('public_profiles')
             .select('username, display_name, avatar_url')
             .eq('id', row.user_id)
             .single();
@@ -1735,7 +1735,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
           if (!row) return;
           if (row.status === 'pending' && isOwner) {
             const { data: profile } = await supabase
-              .from('profiles')
+              .from('public_profiles')
               .select('username, display_name, avatar_url')
               .eq('id', row.requester_id)
               .single();

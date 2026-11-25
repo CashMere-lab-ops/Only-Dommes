@@ -24,7 +24,7 @@ async function getPreview(id: string) {
   if (!stream) return null;
 
   const { data: creator } = await sb
-    .from('profiles')
+    .from('public_profiles')
     .select('username, display_name, avatar_url')
     .eq('id', stream.creator_id)
     .maybeSingle();
