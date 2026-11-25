@@ -171,7 +171,7 @@ export default function FeedPosts({
     if (!comments[postId]) {
       const { data } = await supabase
         .from('post_comments')
-        .select(`*, profiles:public_profiles!post_comments_user_public_profile_fkey (username, display_name, avatar_url)`)
+        .select('*')
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
       setComments((prev) => ({ ...prev, [postId]: data || [] }));
@@ -195,7 +195,13 @@ export default function FeedPosts({
         .select(`*, profiles:user_id (username, display_name, avatar_url)`)
         .single();
       if (error) throw error;
-      setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] || []), data] }));
+      const { data: authorProfile } = await supabase
+        .from('public_profiles')
+        .select('username, display_name, avatar_url')
+        .eq('id', userId)
+        .maybeSingle();
+      const enrichedComment = { ...data, profiles: authorProfile };
+      setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] || []), enrichedComment] }));
       const { count } = await supabase
         .from('post_comments')
         .select('*', { count: 'exact', head: true })
