@@ -51,7 +51,14 @@ export async function GET(request: Request) {
       : null;
     const metaName = typeof meta.username === 'string' ? meta.username : null;
 
-    if (!profile?.account_type && metaType && metaName) {
+    // A signup trigger often creates the profile as 'sub' before we can write.
+    // Prefer the type the user actually chose in metadata.
+    const shouldSetType =
+      metaType &&
+      metaName &&
+      (!profile?.account_type || (metaType === 'creator' && profile.account_type !== 'creator'));
+
+    if (shouldSetType) {
       await supabase.from('profiles').upsert({
         id: user.id,
         username: metaName,
@@ -59,6 +66,7 @@ export async function GET(request: Request) {
         account_type: metaType,
         age_confirmed_at: meta.age_confirmed_at || new Date().toISOString(),
         terms_accepted_at: meta.terms_accepted_at || new Date().toISOString(),
+        ...(metaType === 'creator' ? { creator_confirmed_at: new Date().toISOString() } : {}),
       });
     } else if (!profile?.account_type) {
       return NextResponse.redirect(`${origin}/onboarding`);
