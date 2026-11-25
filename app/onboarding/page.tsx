@@ -23,7 +23,6 @@ export default function OnboardingPage() {
     if (!selected || !canContinue) return;
     const base = signedIn ? '/setup' : '/signup';
     const params = new URLSearchParams({ type: selected });
-    if (selected === 'creator') params.set('confirmed', '1');
     router.push(`${base}?${params.toString()}`);
   };
 
