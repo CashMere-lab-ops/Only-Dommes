@@ -71,7 +71,7 @@ export default function PublicProfilePage() {
       }
 
       const { data: profileData, error } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('*')
         .eq('username', username.toLowerCase())
         .single();
