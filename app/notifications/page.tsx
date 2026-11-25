@@ -131,7 +131,7 @@ export default function NotificationsPage() {
     let actors: Record<string, any> = {};
     if (actorIds.length) {
       const { data: profiles } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('id, username, display_name, avatar_url')
         .in('id', actorIds);
       for (const p of profiles || []) {
