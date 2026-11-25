@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     if (/https?:|www[.]|[.][a-z]{2,}/i.test(tipNote)) {
       tipNote = '';
     }
-    tipNote = tipNote.replace(/[\\u0000-\\u001F\\u007F]/g, '');
+    tipNote = [...tipNote].filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127).join('');
 
     if (!streamId) {
       return NextResponse.json({ error: 'stream_id required' }, { status: 400 });
