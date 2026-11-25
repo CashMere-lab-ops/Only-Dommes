@@ -15,13 +15,13 @@ function cleanUsername(value: string) {
 function SignupForm() {
   const params = useSearchParams();
   const type = params.get('type') === 'creator' ? 'creator' : 'sub';
-  const confirmed = params.get('confirmed') === '1';
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [age, setAge] = useState(false);
   const [terms, setTerms] = useState(false);
+  const [creatorConfirmed, setCreatorConfirmed] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -43,7 +43,7 @@ function SignupForm() {
       setMessage('Tick both boxes to continue.');
       return;
     }
-    if (type === 'creator' && !confirmed) {
+    if (type === 'creator' && !creatorConfirmed) {
       setMessage('Creator confirmation is required.');
       return;
     }
@@ -53,7 +53,7 @@ function SignupForm() {
     const supabase = createClient();
 
     const { data: taken } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id')
       .eq('username', name)
       .maybeSingle();
@@ -63,7 +63,6 @@ function SignupForm() {
       return;
     }
 
-    const now = new Date().toISOString();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -71,8 +70,9 @@ function SignupForm() {
         data: {
           username: name,
           account_type: type,
-          age_confirmed_at: now,
-          terms_accepted_at: now,
+          age_confirmed: age,
+          terms_accepted: terms,
+          creator_confirmed: type === 'creator' && creatorConfirmed,
         },
       },
     });
@@ -84,17 +84,6 @@ function SignupForm() {
     }
 
     if (data.user && data.session) {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        username: name,
-        display_name: name,
-        account_type: type,
-        age_confirmed_at: now,
-        terms_accepted_at: now,
-        ...(type === 'creator' && confirmed
-          ? { creator_confirmed_at: now }
-          : {}),
-      });
       window.location.href = '/';
       return;
     }
@@ -158,6 +147,12 @@ function SignupForm() {
             />
           </div>
           <AgeTermsTicks age={age} setAge={setAge} terms={terms} setTerms={setTerms} />
+          {type === 'creator' && (
+            <label className="flex items-start gap-3 cursor-pointer text-sm text-zinc-300">
+              <input type="checkbox" checked={creatorConfirmed} onChange={(e) => setCreatorConfirmed(e.target.checked)} className="mt-1 h-4 w-4 accent-pink-500" />
+              <span>I confirm that I intend to use World of Dommes as a content creator, and understand that creator accounts are subject to identity verification and platform approval before I can publish content or earn money.</span>
+            </label>
+          )}
           <button
             onClick={() => void handleSignup()}
             disabled={loading}
