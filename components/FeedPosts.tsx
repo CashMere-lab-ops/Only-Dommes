@@ -171,7 +171,7 @@ export default function FeedPosts({
     if (!comments[postId]) {
       const { data } = await supabase
         .from('post_comments')
-        .select(`*, profiles:user_id (username, display_name, avatar_url)`)
+        .select(`*, profiles:public_profiles!post_comments_user_public_profile_fkey (username, display_name, avatar_url)`)
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
       setComments((prev) => ({ ...prev, [postId]: data || [] }));
