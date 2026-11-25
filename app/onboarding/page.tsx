@@ -60,7 +60,7 @@ export default function OnboardingPage() {
             >
               <div className="flex items-center gap-4 mb-5">
                 <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 border border-pink-500/30">
-                  <img src="/fan-icon.jpg" alt="" className="w-full h-full object-cover" />
+                  <img src="/fan-icon.jpg" alt="" className="w-full h-full object-cover scale-125" />
                 </div>
                 <div>
                   <h3 className="text-xl font-semibold text-pink-400 leading-tight">Fan account</h3>
@@ -90,8 +90,8 @@ export default function OnboardingPage() {
               }`}
             >
               <div className="flex items-center gap-4 mb-5">
-                <div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 border border-pink-500/30">
-                  <img src="/creator-icon.jpg" alt="" className="w-full h-full object-cover" />
+                <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-black ring-1 ring-pink-500/20">
+                  <img src="/creator-icon.jpg" alt="" className="w-full h-full object-cover scale-125" />
                 </div>
                 <div>
                   <h3 className="text-xl font-semibold text-pink-400 leading-tight">Creator account</h3>
