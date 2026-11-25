@@ -103,6 +103,14 @@ $function$;
 
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 
+-- These SECURITY DEFINER functions are invoked by database triggers only.
+-- They are not application RPC endpoints, so remove direct API execution
+-- while retaining their existing trigger-driven behaviour.
+REVOKE ALL ON FUNCTION public.handle_auto_reply() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.handle_tip_auto_reply() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.handle_unlock_auto_reply() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.shop_on_order_accepted() FROM PUBLIC, anon, authenticated;
+
 -- Batch 1B: close direct access to protected profile records.
 -- Apply only after the application has moved public lookups to public_profiles
 -- and signup/setup no longer performs direct profile upserts.
