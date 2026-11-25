@@ -277,7 +277,11 @@ BEGIN
       THEN v_now ELSE NULL
     END,
     CASE
-      WHEN v_meta ->> 'account_type' IN ('sub', 'creator') THEN v_now
+      WHEN v_meta ->> 'account_type' = 'sub' THEN v_now
+      WHEN v_account_type = 'creator'
+        AND (v_meta ->> 'creator_confirmed' = 'true'
+          OR NULLIF(v_meta ->> 'creator_confirmed_at', '') IS NOT NULL)
+      THEN v_now
       ELSE NULL
     END
   );
@@ -313,7 +317,7 @@ BEGIN
     RAISE EXCEPTION 'Age and terms confirmation are required' USING ERRCODE = '22023';
   END IF;
 
-  IF p_account_type NOT IN ('sub', 'creator') THEN
+  IF p_account_type IS NULL OR p_account_type NOT IN ('sub', 'creator') THEN
     RAISE EXCEPTION 'Invalid account type' USING ERRCODE = '22023';
   END IF;
 
