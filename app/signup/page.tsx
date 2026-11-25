@@ -69,10 +69,7 @@ function SignupForm() {
       options: {
         data: {
           username: name,
-          account_type: type,
-          age_confirmed: age,
-          terms_accepted: terms,
-          creator_confirmed: type === 'creator' && creatorConfirmed,
+          display_name: name,
         },
       },
     });
@@ -84,11 +81,23 @@ function SignupForm() {
     }
 
     if (data.user && data.session) {
+      const { error: setupError } = await supabase.rpc('complete_profile_setup', {
+        p_username: name,
+        p_account_type: type,
+        p_age_confirmed: age,
+        p_terms_accepted: terms,
+        p_creator_confirmed: type === 'creator' && creatorConfirmed,
+      });
+      if (setupError) {
+        setMessage(setupError.message || 'Account created, but profile setup could not be completed. Please sign in and finish setup.');
+        setLoading(false);
+        return;
+      }
       window.location.href = '/';
       return;
     }
 
-    setMessage('Success! Check your email to confirm your account.');
+    setMessage('Account created. Check your email to confirm it. After confirming, you will choose your account type and complete the age, terms and Creator confirmations.');
     setLoading(false);
   };
 
