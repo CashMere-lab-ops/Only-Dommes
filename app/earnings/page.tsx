@@ -317,7 +317,7 @@ export default function EarningsPage() {
 
     if (allIds.length) {
       const { data: people } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('id, username, display_name, avatar_url')
         .in('id', allIds);
       const map: Record<string, any> = {};
