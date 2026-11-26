@@ -19,11 +19,11 @@ export function verifyAgegoSignature(params: URLSearchParams, siteSecret: string
   if (algorithm !== 'sha256' || !/^[a-f0-9]{64}$/i.test(signature)) return false;
 
   const data = [
-    params.get('ag_error') ?? '',
-    params.get('ag_expires') ?? '',
-    params.get('ag_nonce') ?? '',
-    params.get('ag_verified') ?? '',
-    params.get('ag_verified_site') ?? '',
+    params.get('ag_error') ?? 'none',
+    params.get('ag_expires') ?? 'none',
+    params.get('ag_nonce') ?? 'none',
+    params.get('ag_verified') ?? 'none',
+    params.get('ag_verified_site') ?? 'none',
   ].join('|');
 
   const expected = createHmac('sha256', siteSecret).update(data, 'utf8').digest();
