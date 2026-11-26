@@ -43,7 +43,10 @@ export async function GET(request: Request) {
   const responseValid = Number.isFinite(expires) && expires > now;
   const attemptValid = Number.isFinite(attemptExpiry) && attemptExpiry > now;
   const signatureValid = verifyAgegoSignature(params, siteSecret);
-  const siteValid = verifiedSite === AGEGO_ASI && attempt.agego_site === AGEGO_ASI;
+  // AgeGO returns the numeric Site ID in ag_verified_site (e.g. "1821").
+  // The ASI UUID is a separate identifier used in the S2S start request.
+  const expectedSiteId = process.env.AGEGO_SITE_ID || '1821';
+  const siteValid = verifiedSite === expectedSiteId && attempt.agego_site === AGEGO_ASI;
   const nonceValid = /^[a-f0-9]{64}$/i.test(nonce);
   const successFlag = (params.get('ag_verified') || '').toLowerCase() === 'yes';
 
@@ -70,12 +73,12 @@ export async function GET(request: Request) {
       responseExpiryIsNumeric: Number.isFinite(expires),
       responseExpiryInFuture: responseValid,
       attemptExpiryInFuture: attemptValid,
-      // ASI is a provider site identifier, not a credential; log it to diagnose
-      // an unexpected AgeGO site mismatch. Never log tokens, signatures or secrets.
-      returnedVerifiedSite: verifiedSite,
+      // Site ID and ASI are distinct identifiers; neither is a credential.
+      returnedVerifiedSiteId: verifiedSite,
+      configuredSiteId: expectedSiteId,
       configuredAsi: AGEGO_ASI,
       attemptSite: attempt.agego_site,
-      verifiedSiteMatchesConfiguredAsi: verifiedSite === AGEGO_ASI,
+      verifiedSiteMatchesConfiguredSiteId: verifiedSite === expectedSiteId,
       attemptSiteMatchesConfiguredAsi: attempt.agego_site === AGEGO_ASI,
       nonceHasExpectedFormat: nonceValid,
     });
