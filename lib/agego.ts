@@ -16,16 +16,15 @@ export function hashAgegoNonce(nonce: string): string {
 export function verifyAgegoSignature(params: URLSearchParams, siteSecret: string): boolean {
   const algorithm = params.get('ag_signature_algo');
   const signature = params.get('ag_signature') || '';
-  if (algorithm !== 'sha256' || !/^[a-f0-9]{64}$/i.test(signature)) return false;
+  const required = ['ag_error', 'ag_expires', 'ag_nonce', 'ag_verified', 'ag_verified_site'];
+  if (
+    algorithm !== 'sha256' ||
+    !/^[a-f0-9]{64}$/i.test(signature) ||
+    required.some((key) => !params.has(key))
+  ) return false;
 
-  const data = [
-    params.get('ag_error') ?? 'none',
-    params.get('ag_expires') ?? 'none',
-    params.get('ag_nonce') ?? 'none',
-    params.get('ag_verified') ?? 'none',
-    params.get('ag_verified_site') ?? 'none',
-  ].join('|');
-
+  // Preserve the exact signed parameter values; do not substitute defaults.
+  const data = required.map((key) => params.get(key) ?? '').join('|');
   const expected = createHmac('sha256', siteSecret).update(data, 'utf8').digest();
   const received = Buffer.from(signature, 'hex');
   return received.length === expected.length && timingSafeEqual(received, expected);
