@@ -70,6 +70,11 @@ export async function GET(request: Request) {
       responseExpiryIsNumeric: Number.isFinite(expires),
       responseExpiryInFuture: responseValid,
       attemptExpiryInFuture: attemptValid,
+      // ASI is a provider site identifier, not a credential; log it to diagnose
+      // an unexpected AgeGO site mismatch. Never log tokens, signatures or secrets.
+      returnedVerifiedSite: verifiedSite,
+      configuredAsi: AGEGO_ASI,
+      attemptSite: attempt.agego_site,
       verifiedSiteMatchesConfiguredAsi: verifiedSite === AGEGO_ASI,
       attemptSiteMatchesConfiguredAsi: attempt.agego_site === AGEGO_ASI,
       nonceHasExpectedFormat: nonceValid,
