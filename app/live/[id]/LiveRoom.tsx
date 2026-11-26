@@ -325,6 +325,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
   const [creatorMinTip, setCreatorMinTip] = useState(2);
   const [customTip, setCustomTip] = useState('');
   const [tipping, setTipping] = useState(false);
+  const tipIdempotencyKeyRef = useRef<string | null>(null);
   const [tipError, setTipError] = useState('');
   const [tipFlash, setTipFlash] = useState<string | null>(null);
 
@@ -2421,6 +2422,9 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status < 500 && data.code !== 'RECONCILIATION_REQUIRED') {
+          tipIdempotencyKeyRef.current = null;
+        }
         if (data.code === 'INSUFFICIENT_BALANCE') {
           const go = confirm(
             `Need £${Number(data.needed).toFixed(2)} in wallet. Top up?`
@@ -2622,7 +2626,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
   };
 
   const sendTip = async (amount: number) => {
-    if (!stream || isOwner) return;
+    if (!stream || isOwner || tipping) return;
     const minT = creatorMinTip > 2 ? creatorMinTip : 2;
     if (!Number.isFinite(amount) || amount < minT) {
       setTipError(`Minimum tip is £${minT.toFixed(2)}`);
@@ -2635,6 +2639,9 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
       return;
     }
     note = note.replace(/[\u0000-\u001F\u007F]/g, '');
+    if (!tipIdempotencyKeyRef.current) {
+      tipIdempotencyKeyRef.current = crypto.randomUUID();
+    }
     setTipping(true);
     setTipError('');
     try {
@@ -2653,6 +2660,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
           stream_id: stream.id,
           amount,
           message: note || undefined,
+          idempotency_key: tipIdempotencyKeyRef.current,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -2666,6 +2674,7 @@ export default function LiveRoom({ streamId }: { streamId: string }) {
         }
         throw new Error(data.error || 'Tip failed');
       }
+      tipIdempotencyKeyRef.current = null;
       if (typeof data.balance === 'number') {
         setMyBalance(data.balance);
         notifyBalanceUpdated(data.balance);

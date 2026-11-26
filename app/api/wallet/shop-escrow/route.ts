@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { splitCreatorEarn } from '../../../../lib/platform-fee';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,418 +12,153 @@ function adminClient() {
   );
 }
 
-async function authUser(request: Request) {
-  const auth = request.headers.get('authorization') || '';
-  const token = auth.replace(/^Bearer\s+/i, '');
+async function authUser(request: Request, admin: ReturnType<typeof adminClient>) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
   if (!token) return null;
-  const admin = adminClient();
   const {
     data: { user },
+    error,
   } = await admin.auth.getUser(token);
-  return user || null;
+  return error ? null : user || null;
 }
 
 /**
- * Shop escrow
- * hold    — buyer: debit balance, funds held on order (on request)
- * accept  — seller: move hold → creator pending_gbp
- * release — buyer confirms received: pending_gbp → creator balance_gbp
- * refund  — seller declines / cancel while held: return money to buyer
+ * Shop escrow state machine.
+ * All wallet, pending-balance, ledger and order-state changes are committed
+ * together by the database function.
  */
 export async function POST(request: Request) {
+  const admin = adminClient();
+
   try {
-    const user = await authUser(request);
+    const user = await authUser(request, admin);
     if (!user) {
       return NextResponse.json({ error: 'Login required' }, { status: 401 });
     }
 
     const body = await request.json().catch(() => ({}));
-    const action = String(body.action || '') as Action;
-    const orderId = String(body.order_id || '');
+    const action = String(body?.action || '') as Action;
+    const orderId = String(body?.order_id || '');
 
     if (!orderId || !['hold', 'accept', 'release', 'refund'].includes(action)) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
 
-    const admin = adminClient();
-    const { data: order, error: oErr } = await admin
-      .from('shop_orders')
-      .select('*')
-      .eq('id', orderId)
-      .single();
-
-    if (oErr || !order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
-    }
-
-    const amount = Math.round(Number(order.item_price || order.amount_held || 0) * 100) / 100;
-    if (amount <= 0) {
-      return NextResponse.json({ error: 'Invalid order amount' }, { status: 400 });
-    }
-
-    // ── HOLD (buyer on request) ──
+    // Keep the existing buyer/seller block policy, but fail closed on lookup errors.
     if (action === 'hold') {
+      const { data: order, error: orderErr } = await admin
+        .from('shop_orders')
+        .select('id,buyer_id,creator_id')
+        .eq('id', orderId)
+        .single();
+
+      if (orderErr || !order) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      }
       if (order.buyer_id !== user.id) {
         return NextResponse.json({ error: 'Not your order' }, { status: 403 });
       }
-      {
-        const { data: blk } = await admin
-          .from('blocks')
-          .select('blocker_id')
-          .or(
-            `and(blocker_id.eq.${user.id},blocked_id.eq.${order.creator_id}),and(blocker_id.eq.${order.creator_id},blocked_id.eq.${user.id})`
-          )
-          .limit(1);
-        if (blk && blk.length) {
-          return NextResponse.json(
-            { error: 'You can’t buy from this creator', code: 'BLOCKED' },
-            { status: 403 }
-          );
-        }
-      }
-      if (order.funds_status === 'held' || order.funds_status === 'pending_creator' || order.funds_status === 'released') {
-        return NextResponse.json({ ok: true, already: true, funds_status: order.funds_status });
-      }
 
-      const { data: buyer } = await admin
-        .from('profiles')
-        .select('balance_gbp')
-        .eq('id', user.id)
-        .single();
+      const { data: blocked, error: blockErr } = await admin
+        .from('blocks')
+        .select('blocker_id')
+        .or(
+          `and(blocker_id.eq.${user.id},blocked_id.eq.${order.creator_id}),and(blocker_id.eq.${order.creator_id},blocked_id.eq.${user.id})`
+        )
+        .limit(1);
 
-      const bal = Number(buyer?.balance_gbp || 0);
-      if (bal < amount) {
-        // Remove the draft order so creator never sees unpaid requests
-        await admin.from('shop_orders').delete().eq('id', orderId);
+      if (blockErr) {
+        console.error('shop escrow block check', blockErr);
+        return NextResponse.json({ error: 'Could not validate this purchase' }, { status: 500 });
+      }
+      if (blocked?.length) {
         return NextResponse.json(
-          {
-            error: 'Insufficient balance',
-            code: 'INSUFFICIENT_BALANCE',
-            balance: bal,
-            needed: amount,
-          },
+          { error: 'You can’t buy from this creator', code: 'BLOCKED' },
+          { status: 403 }
+        );
+      }
+    }
+
+    const { data, error: actionErr } = await admin.rpc('process_shop_escrow_action', {
+      p_actor_id: user.id,
+      p_order_id: orderId,
+      p_action: action,
+    });
+
+    if (actionErr) {
+      const message = actionErr.message || 'Escrow action failed';
+      if (message.includes('Insufficient wallet balance')) {
+        // Preserve existing behavior: an unpaid draft request is removed.
+        if (action === 'hold') {
+          await admin
+            .from('shop_orders')
+            .delete()
+            .eq('id', orderId)
+            .eq('buyer_id', user.id)
+            .eq('funds_status', 'none');
+        }
+        return NextResponse.json(
+          { error: 'Insufficient balance', code: 'INSUFFICIENT_BALANCE' },
           { status: 402 }
         );
       }
-
-      const next = Math.round((bal - amount) * 100) / 100;
-      const { error: debitErr } = await admin
-        .from('profiles')
-        .update({ balance_gbp: next })
-        .eq('id', user.id)
-        .gte('balance_gbp', amount);
-
-      if (debitErr) {
-        return NextResponse.json({ error: debitErr.message }, { status: 500 });
-      }
-
-      await admin.from('wallet_transactions').insert({
-        user_id: user.id,
-        type: 'shop_hold',
-        amount_gbp: -amount,
-        balance_after: next,
-        counterparty_id: order.creator_id,
-        reference_type: 'shop_order',
-        reference_id: orderId,
-        description: `Hold for shop order: ${order.item_title || 'item'}`,
-      });
-
-      await admin
-        .from('shop_orders')
-        .update({
-          funds_status: 'held',
-          amount_held: amount,
-          status: order.status === 'requested' ? 'requested' : order.status,
-        })
-        .eq('id', orderId);
-
-      return NextResponse.json({
-        ok: true,
-        funds_status: 'held',
-        balance: next,
-        amount,
-      });
-    }
-
-    // ── ACCEPT (seller) → creator pending ──
-    if (action === 'accept') {
-      if (order.creator_id !== user.id) {
-        return NextResponse.json({ error: 'Not your sale' }, { status: 403 });
-      }
-      if (order.funds_status === 'pending_creator' || order.funds_status === 'released') {
-        return NextResponse.json({ ok: true, already: true, funds_status: order.funds_status });
-      }
-      if (order.funds_status !== 'held') {
+      if (message.includes('Pending creator balance requires reconciliation')) {
         return NextResponse.json(
-          { error: 'No funds on hold for this order' },
-          { status: 400 }
+          { error: 'Order funds require reconciliation', code: 'RECONCILIATION_REQUIRED' },
+          { status: 409 }
         );
       }
-
-      const { data: creator } = await admin
-        .from('profiles')
-        .select('pending_gbp, balance_gbp')
-        .eq('id', user.id)
-        .single();
-
-      const pending = Number(creator?.pending_gbp || 0);
-      const pendingNext = Math.round((pending + amount) * 100) / 100;
-
-      await admin
-        .from('profiles')
-        .update({ pending_gbp: pendingNext })
-        .eq('id', user.id);
-
-      await admin.from('wallet_transactions').insert({
-        user_id: user.id,
-        type: 'shop_pending',
-        amount_gbp: amount,
-        balance_after: Number(creator?.balance_gbp || 0),
-        counterparty_id: order.buyer_id,
-        reference_type: 'shop_order',
-        reference_id: orderId,
-        description: `Pending shop sale: ${order.item_title || 'item'} (awaiting delivery)`,
-      });
-
-      await admin
-        .from('shop_orders')
-        .update({
-          funds_status: 'pending_creator',
-          status: 'paid',
-          paid_at: new Date().toISOString(),
-        })
-        .eq('id', orderId);
-
-      if (order.item_id) {
-        await admin
-          .from('shop_items')
-          .update({
-            status: 'sold',
-            reserved_for_id: null,
-            reserved_for_username: null,
-          })
-          .eq('id', order.item_id);
-      }
-
-      return NextResponse.json({
-        ok: true,
-        funds_status: 'pending_creator',
-        pending: pendingNext,
-        amount,
-      });
-    }
-
-    // ── RELEASE (buyer confirms received) → creator available balance ──
-    if (action === 'release') {
-      if (order.buyer_id !== user.id) {
-        return NextResponse.json({ error: 'Not your order' }, { status: 403 });
-      }
-      if (order.funds_status === 'released') {
-        return NextResponse.json({ ok: true, already: true });
-      }
-      if (order.funds_status !== 'pending_creator') {
-        return NextResponse.json(
-          { error: 'Funds are not in pending state' },
-          { status: 400 }
-        );
-      }
-
-      const { data: creator } = await admin
-        .from('profiles')
-        .select('pending_gbp, balance_gbp')
-        .eq('id', order.creator_id)
-        .single();
-
-      const pending = Number(creator?.pending_gbp || 0);
-      const bal = Number(creator?.balance_gbp || 0);
-      const { net_gbp, fee_gbp, gross_gbp } = splitCreatorEarn(amount);
-      const pendingNext = Math.max(0, Math.round((pending - amount) * 100) / 100);
-      const balNext = Math.round((bal + net_gbp) * 100) / 100;
-
-      await admin
-        .from('profiles')
-        .update({ pending_gbp: pendingNext, balance_gbp: balNext })
-        .eq('id', order.creator_id);
-
-      await admin.from('wallet_transactions').insert({
-        user_id: order.creator_id,
-        type: 'shop_received',
-        amount_gbp: net_gbp,
-        balance_after: balNext,
-        counterparty_id: order.buyer_id,
-        reference_type: 'shop_order',
-        reference_id: orderId,
-        description: `Released shop sale: ${order.item_title || 'item'} · kept £${net_gbp.toFixed(2)} after 20% fee`,
-        gross_gbp,
-        fee_gbp,
-        net_gbp,
-      });
-
-      await admin
-        .from('shop_orders')
-        .update({
-          funds_status: 'released',
-          status: 'completed',
-        })
-        .eq('id', orderId);
-
-      return NextResponse.json({
-        ok: true,
-        funds_status: 'released',
-        creator_balance: balNext,
-        amount,
-      });
-    }
-
-    // ── REFUND (decline / cancel while held) ──
-    if (action === 'refund') {
-      const isSeller = order.creator_id === user.id;
-      const isBuyer = order.buyer_id === user.id;
-      if (!isSeller && !isBuyer) {
+      if (
+        message.includes('Not your order') ||
+        message.includes('Not your sale') ||
+        message.includes('Not allowed')
+      ) {
         return NextResponse.json({ error: 'Not allowed' }, { status: 403 });
       }
-
-      if (order.funds_status === 'refunded' || order.funds_status === 'none') {
-        return NextResponse.json({ ok: true, already: true });
+      if (message.includes('Order not found')) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 });
       }
-
-      // Only refund from held (before accept). After accept, handle separately if needed.
-      if (order.funds_status === 'held') {
-        const { data: buyer } = await admin
-          .from('profiles')
-          .select('balance_gbp')
-          .eq('id', order.buyer_id)
-          .single();
-
-        const bal = Number(buyer?.balance_gbp || 0);
-        const next = Math.round((bal + amount) * 100) / 100;
-
-        await admin
-          .from('profiles')
-          .update({ balance_gbp: next })
-          .eq('id', order.buyer_id);
-
-        await admin.from('wallet_transactions').insert({
-          user_id: order.buyer_id,
-          type: 'shop_refund',
-          amount_gbp: amount,
-          balance_after: next,
-          counterparty_id: order.creator_id,
-          reference_type: 'shop_order',
-          reference_id: orderId,
-          description: `Refund shop hold: ${order.item_title || 'item'}`,
-        });
-
-        await admin
-          .from('shop_orders')
-          .update({
-            funds_status: 'refunded',
-            status: 'cancelled',
-          })
-          .eq('id', orderId);
-
-        if (order.item_id) {
-          await admin
-            .from('shop_items')
-            .update({
-              status: 'available',
-              reserved_for_id: null,
-              reserved_for_username: null,
-            })
-            .eq('id', order.item_id);
-        }
-
-        return NextResponse.json({
-          ok: true,
-          funds_status: 'refunded',
-          buyer_balance: next,
-          amount,
-        });
+      if (
+        message.includes('current state') ||
+        message.includes('No funds on hold') ||
+        message.includes('Funds are not in pending state')
+      ) {
+        return NextResponse.json({ error: message }, { status: 400 });
       }
-
-      // Decline after accept: money was in creator pending → refund buyer, clear pending
-      if (order.funds_status === 'pending_creator' && isSeller) {
-        const { data: creator } = await admin
-          .from('profiles')
-          .select('pending_gbp')
-          .eq('id', order.creator_id)
-          .single();
-        const { data: buyer } = await admin
-          .from('profiles')
-          .select('balance_gbp')
-          .eq('id', order.buyer_id)
-          .single();
-
-        const pending = Number(creator?.pending_gbp || 0);
-        const buyerBal = Number(buyer?.balance_gbp || 0);
-        const pendingNext = Math.max(0, Math.round((pending - amount) * 100) / 100);
-        const buyerNext = Math.round((buyerBal + amount) * 100) / 100;
-
-        await admin
-          .from('profiles')
-          .update({ pending_gbp: pendingNext })
-          .eq('id', order.creator_id);
-        await admin
-          .from('profiles')
-          .update({ balance_gbp: buyerNext })
-          .eq('id', order.buyer_id);
-
-        await admin.from('wallet_transactions').insert([
-          {
-            user_id: order.creator_id,
-            type: 'shop_pending_reverse',
-            amount_gbp: -amount,
-            reference_type: 'shop_order',
-            reference_id: orderId,
-            description: `Pending reversed: ${order.item_title || 'item'}`,
-          },
-          {
-            user_id: order.buyer_id,
-            type: 'shop_refund',
-            amount_gbp: amount,
-            balance_after: buyerNext,
-            reference_type: 'shop_order',
-            reference_id: orderId,
-            description: `Refund after cancel: ${order.item_title || 'item'}`,
-          },
-        ]);
-
-        await admin
-          .from('shop_orders')
-          .update({ funds_status: 'refunded', status: 'cancelled' })
-          .eq('id', orderId);
-
-        if (order.item_id) {
-          await admin
-            .from('shop_items')
-            .update({
-              status: 'available',
-              reserved_for_id: null,
-              reserved_for_username: null,
-            })
-            .eq('id', order.item_id);
-        }
-
-        return NextResponse.json({
-          ok: true,
-          funds_status: 'refunded',
-          buyer_balance: buyerNext,
-          amount,
-        });
-      }
-
-      return NextResponse.json(
-        { error: 'Cannot refund in current state' },
-        { status: 400 }
-      );
+      console.error('process_shop_escrow_action RPC', actionErr);
+      return NextResponse.json({ error: 'Escrow action failed' }, { status: 500 });
     }
 
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (e: any) {
-    console.error('shop-escrow', e);
-    return NextResponse.json(
-      { error: e?.message || 'Escrow failed' },
-      { status: 500 }
-    );
+    const result = (data || {}) as {
+      ok?: boolean;
+      already?: boolean;
+      funds_status?: string;
+      balance?: number;
+      pending?: number;
+      creator_balance?: number;
+      buyer_balance?: number;
+      amount?: number;
+      fee_gbp?: number;
+      net_gbp?: number;
+    };
+
+    return NextResponse.json({
+      ok: true,
+      already: Boolean(result.already),
+      funds_status: result.funds_status,
+      balance: result.balance == null ? undefined : Number(result.balance),
+      pending: result.pending == null ? undefined : Number(result.pending),
+      creator_balance: result.creator_balance == null ? undefined : Number(result.creator_balance),
+      buyer_balance: result.buyer_balance == null ? undefined : Number(result.buyer_balance),
+      amount: result.amount == null ? undefined : Number(result.amount),
+      fee_gbp: result.fee_gbp == null ? undefined : Number(result.fee_gbp),
+      net_gbp: result.net_gbp == null ? undefined : Number(result.net_gbp),
+    });
+  } catch (error: unknown) {
+    console.error('shop-escrow', error);
+    return NextResponse.json({ error: 'Escrow action failed' }, { status: 500 });
   }
 }

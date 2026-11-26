@@ -1,18 +1,34 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { randomUUID } from 'crypto';
-import { splitCreatorEarn } from '../../../../lib/platform-fee';
+import { randomUUID } from 'node:crypto';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * Tip a creator during a live stream.
- * Debits tipper, credits creator, updates tip goal + highest tipper showcase.
- */
+type LivePaymentResult = {
+  ok?: boolean;
+  already?: boolean;
+  gross_gbp?: number;
+  fee_gbp?: number;
+  net_gbp?: number;
+  sender_balance?: number;
+  tip_raised_gbp?: number;
+  tip_goal_gbp?: number;
+  tip_goals?: Array<{ label?: string; amount?: number }>;
+  from_name?: string;
+  user_total?: number;
+  is_showcase?: boolean;
+  showcase?: {
+    user_id?: string | null;
+    amount_gbp?: number;
+    name?: string | null;
+    avatar_url?: string | null;
+  };
+};
+
 export async function POST(request: Request) {
   try {
-    const auth = request.headers.get('authorization') || '';
-    const token = auth.replace(/^Bearer\s+/i, '');
+    const authHeader = request.headers.get('authorization') || '';
+    const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
     if (!token) {
       return NextResponse.json({ error: 'Login required' }, { status: 401 });
     }
@@ -26,6 +42,7 @@ export async function POST(request: Request) {
       data: { user },
       error: userErr,
     } = await admin.auth.getUser(token);
+
     if (userErr || !user) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
@@ -33,108 +50,76 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const streamId = String(body?.stream_id || '');
     const amount = Number(body?.amount);
-    // Optional short note on tip (shown in chat) — moderated
+
     let tipNote = String(body?.message || body?.note || '')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 50);
-    if (/https?:\/\/|www\.|\.[a-z]{2,}\//i.test(tipNote)) {
+    if (/https?:|www[.]|[.][a-z]{2,}/i.test(tipNote)) {
       tipNote = '';
     }
-    // Strip control chars
-    tipNote = tipNote.replace(/[\u0000-\u001F\u007F]/g, '');
+    tipNote = [...tipNote].filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127).join('');
 
     if (!streamId) {
       return NextResponse.json({ error: 'stream_id required' }, { status: 400 });
     }
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 5000) {
       return NextResponse.json({ error: 'Invalid tip amount' }, { status: 400 });
     }
-    if (amount > 5000) {
-      return NextResponse.json({ error: 'Tip too large' }, { status: 400 });
+
+    const grossPence = Math.round(amount * 100);
+    if (grossPence <= 0) {
+      return NextResponse.json({ error: 'Invalid tip amount' }, { status: 400 });
     }
+    const rounded = grossPence / 100;
 
-    const rounded = Math.round(amount * 100) / 100;
-
-    const { data: stream, error: stErr } = await admin
+    const { data: stream, error: streamErr } = await admin
       .from('live_streams')
-      .select('*, tip_goals')
+      .select('id, creator_id, title, status')
       .eq('id', streamId)
       .single();
 
-    if (stErr || !stream) {
+    if (streamErr || !stream) {
       return NextResponse.json({ error: 'Stream not found' }, { status: 404 });
     }
-
     if (!['active', 'idle_ready', 'disconnected'].includes(stream.status)) {
-      return NextResponse.json(
-        { error: 'This live has ended' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'This live has ended' }, { status: 400 });
     }
-
     if (stream.creator_id === user.id) {
+      return NextResponse.json({ error: 'You cannot tip yourself' }, { status: 400 });
+    }
+
+    const { data: blocked, error: blockErr } = await admin
+      .from('blocks')
+      .select('blocker_id')
+      .or(
+        `and(blocker_id.eq.${user.id},blocked_id.eq.${stream.creator_id}),and(blocker_id.eq.${stream.creator_id},blocked_id.eq.${user.id})`
+      )
+      .limit(1);
+
+    if (blockErr) {
+      console.error('live tip block check', blockErr);
+      return NextResponse.json({ error: 'Could not validate this tip' }, { status: 500 });
+    }
+    if (blocked?.length) {
       return NextResponse.json(
-        { error: 'You cannot tip yourself' },
-        { status: 400 }
+        { error: 'You can’t tip this creator', code: 'BLOCKED' },
+        { status: 403 }
       );
     }
 
-    {
-      const { data: blk } = await admin
-        .from('blocks')
-        .select('blocker_id')
-        .or(
-          `and(blocker_id.eq.${user.id},blocked_id.eq.${stream.creator_id}),and(blocker_id.eq.${stream.creator_id},blocked_id.eq.${user.id})`
-        )
-        .limit(1);
-      if (blk && blk.length) {
-        return NextResponse.json(
-          { error: 'You can’t tip this creator', code: 'BLOCKED' },
-          { status: 403 }
-        );
-      }
-    }
-
-    const { data: sender } = await admin
+    const { data: creator, error: creatorErr } = await admin
       .from('profiles')
-      .select('balance_gbp, display_name, username, avatar_url')
-      .eq('id', user.id)
-      .single();
-
-    if (!sender) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
-    }
-
-    const senderBal = Number(sender.balance_gbp || 0);
-    if (senderBal < rounded) {
-      return NextResponse.json(
-        {
-          error: 'Insufficient balance',
-          code: 'INSUFFICIENT_BALANCE',
-          balance: senderBal,
-          needed: rounded,
-        },
-        { status: 402 }
-      );
-    }
-
-    const { data: creator } = await admin
-      .from('profiles')
-      .select('balance_gbp, display_name, username, min_tip_gbp')
+      .select('min_tip_gbp')
       .eq('id', stream.creator_id)
       .single();
 
-    if (!creator) {
+    if (creatorErr || !creator) {
       return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
     }
 
-    const platformMin = 2;
-    const creatorMin = Number(creator.min_tip_gbp);
-    const minTip =
-      Number.isFinite(creatorMin) && creatorMin > platformMin
-        ? creatorMin
-        : platformMin;
+    const configuredMin = Number(creator.min_tip_gbp);
+    const minTip = Number.isFinite(configuredMin) && configuredMin > 2 ? configuredMin : 2;
     if (rounded < minTip) {
       return NextResponse.json(
         {
@@ -146,115 +131,54 @@ export async function POST(request: Request) {
       );
     }
 
-    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(rounded);
-    const newSenderBal = Math.round((senderBal - gross_gbp) * 100) / 100;
-    const newCreatorBal =
-      Math.round((Number(creator.balance_gbp || 0) + net_gbp) * 100) / 100;
-    const newRaised =
-      Math.round((Number(stream.tip_raised_gbp || 0) + gross_gbp) * 100) / 100;
+    const suppliedKey = String(
+      body?.idempotency_key || request.headers.get('idempotency-key') || ''
+    ).trim();
+    if (suppliedKey.length > 128) {
+      return NextResponse.json({ error: 'Invalid idempotency key' }, { status: 400 });
+    }
+    const idempotencyKey = `live-tip:${user.id}:${streamId}:${suppliedKey || randomUUID()}`;
 
-    const tipRef = randomUUID();
-    const fromName =
-      sender.display_name || sender.username || 'A fan';
+    const description = tipNote
+      ? `Live tip · ${stream.title || 'Live'} · “${tipNote}”`
+      : `Live tip · ${stream.title || 'Live'}`;
 
-    await admin
-      .from('profiles')
-      .update({ balance_gbp: newSenderBal })
-      .eq('id', user.id);
+    const { data, error: transferErr } = await admin.rpc('post_live_creator_payment', {
+      p_sender_id: user.id,
+      p_stream_id: streamId,
+      p_gross_pence: grossPence,
+      p_sent_type: 'tip_sent',
+      p_received_type: 'tip_received',
+      p_idempotency_key: idempotencyKey,
+      p_description: description,
+    });
 
-    await admin
-      .from('profiles')
-      .update({ balance_gbp: newCreatorBal })
-      .eq('id', stream.creator_id);
-
-    await admin.from('wallet_transactions').insert([
-      {
-        user_id: user.id,
-        type: 'tip_sent',
-        amount_gbp: -gross_gbp,
-        balance_after: newSenderBal,
-        counterparty_id: stream.creator_id,
-        reference_type: 'live_stream',
-        reference_id: streamId,
-        description: tipNote
-          ? `Live tip · ${stream.title || 'Live'} · “${tipNote}”`
-          : `Live tip · ${stream.title || 'Live'}`,
-      },
-      {
-        user_id: stream.creator_id,
-        type: 'tip_received',
-        amount_gbp: net_gbp,
-        balance_after: newCreatorBal,
-        counterparty_id: user.id,
-        reference_type: 'live_stream',
-        reference_id: streamId,
-        gross_gbp,
-        fee_gbp,
-        net_gbp,
-        description: tipNote
-          ? `Live tip from ${fromName} · “${tipNote}”`
-          : `Live tip from ${fromName}`,
-      },
-    ]);
-
-    // Upsert this fan's total tips on this stream
-    const { data: existingTip } = await admin
-      .from('live_stream_tips')
-      .select('total_gbp')
-      .eq('stream_id', streamId)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const userTotal =
-      Math.round(
-        (Number(existingTip?.total_gbp || 0) + rounded) * 100
-      ) / 100;
-
-    await admin.from('live_stream_tips').upsert(
-      {
-        stream_id: streamId,
-        user_id: user.id,
-        total_gbp: userTotal,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'stream_id,user_id' }
-    );
-
-    // Showcase = highest total tipper on this live
-    const currentShowcase = Number(stream.showcase_amount_gbp || 0);
-    // Advance active tip_goal_gbp from multi-level tip_goals
-    let nextGoal = Number(stream.tip_goal_gbp || 0);
-    const levels = Array.isArray((stream as any).tip_goals)
-      ? ([...(stream as any).tip_goals] as { label: string; amount: number }[])
-      : [];
-    if (levels.length) {
-      levels.sort((a, b) => Number(a.amount) - Number(b.amount));
-      const active = levels.find((l) => newRaised < Number(l.amount));
-      nextGoal = active
-        ? Number(active.amount)
-        : Number(levels[levels.length - 1].amount);
+    if (transferErr) {
+      const message = transferErr.message || 'Tip failed';
+      if (message.includes('Insufficient wallet balance')) {
+        return NextResponse.json(
+          { error: 'Insufficient balance', code: 'INSUFFICIENT_BALANCE', needed: rounded },
+          { status: 402 }
+        );
+      }
+      if (message.includes('This live has ended')) {
+        return NextResponse.json({ error: 'This live has ended' }, { status: 400 });
+      }
+      if (message.includes('Incomplete prior transfer')) {
+        return NextResponse.json(
+          { error: 'Tip requires reconciliation', code: 'RECONCILIATION_REQUIRED' },
+          { status: 409 }
+        );
+      }
+      console.error('post_live_creator_payment (tip)', transferErr);
+      return NextResponse.json({ error: 'Tip failed' }, { status: 500 });
     }
 
-    let showcasePayload: Record<string, any> = {
-      tip_raised_gbp: newRaised,
-      tip_goal_gbp: nextGoal,
-      updated_at: new Date().toISOString(),
-    };
+    const result = (data || {}) as LivePaymentResult;
+    const fromName = result.from_name || 'A fan';
 
-    if (userTotal >= currentShowcase) {
-      showcasePayload = {
-        ...showcasePayload,
-        showcase_user_id: user.id,
-        showcase_amount_gbp: userTotal,
-        showcase_name: fromName,
-        showcase_avatar_url: sender.avatar_url || null,
-      };
-    }
-
-    await admin.from('live_streams').update(showcasePayload).eq('id', streamId);
-
-    try {
-      await admin.from('notifications').insert({
+    if (!result.already) {
+      const { error: notificationErr } = await admin.from('notifications').insert({
         user_id: stream.creator_id,
         type: 'tip',
         title: 'Live tip',
@@ -269,41 +193,27 @@ export async function POST(request: Request) {
           message: tipNote || null,
         },
       });
-    } catch {
-      /* non-blocking */
+      if (notificationErr) console.error('live tip notification', notificationErr);
     }
-
-    const isShowcase =
-      userTotal >= currentShowcase ||
-      (showcasePayload.showcase_user_id === user.id);
 
     return NextResponse.json({
       ok: true,
-      amount: rounded,
+      already: Boolean(result.already),
+      amount: Number(result.gross_gbp ?? rounded),
+      fee_gbp: Number(result.fee_gbp ?? 0),
+      net_gbp: Number(result.net_gbp ?? 0),
       message: tipNote || null,
-      balance: newSenderBal,
-      tip_raised_gbp: newRaised,
-      tip_goal_gbp: nextGoal,
-      tip_goals: levels.length ? levels : (stream as any).tip_goals || [],
+      balance: result.sender_balance == null ? undefined : Number(result.sender_balance),
+      tip_raised_gbp: Number(result.tip_raised_gbp ?? 0),
+      tip_goal_gbp: Number(result.tip_goal_gbp ?? 0),
+      tip_goals: Array.isArray(result.tip_goals) ? result.tip_goals : [],
       from_name: fromName,
-      user_total: userTotal,
-      is_showcase: isShowcase,
-      showcase: {
-        user_id: showcasePayload.showcase_user_id ?? stream.showcase_user_id,
-        amount_gbp:
-          showcasePayload.showcase_amount_gbp ??
-          stream.showcase_amount_gbp ??
-          0,
-        name: showcasePayload.showcase_name ?? stream.showcase_name,
-        avatar_url:
-          showcasePayload.showcase_avatar_url ?? stream.showcase_avatar_url,
-      },
+      user_total: Number(result.user_total ?? 0),
+      is_showcase: Boolean(result.is_showcase),
+      showcase: result.showcase || null,
     });
-  } catch (e: any) {
-    console.error('live tip', e);
-    return NextResponse.json(
-      { error: e?.message || 'Tip failed' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    console.error('live tip', error);
+    return NextResponse.json({ error: 'Tip failed' }, { status: 500 });
   }
 }

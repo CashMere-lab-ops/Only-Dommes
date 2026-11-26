@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { splitCreatorEarn } from '../../../../lib/platform-fee';
+import { randomUUID } from 'node:crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,10 +51,35 @@ export function normalizeGifts(raw: unknown): LiveGift[] {
  * Send a fixed-price gift during a live stream.
  * Uses creator's custom list when set; otherwise platform defaults.
  */
+type LivePaymentResult = {
+  ok?: boolean;
+  already?: boolean;
+  gross_gbp?: number;
+  fee_gbp?: number;
+  net_gbp?: number;
+  sender_balance?: number;
+  tip_raised_gbp?: number;
+  tip_goal_gbp?: number;
+  tip_goals?: Array<{ label?: string; amount?: number }>;
+  from_name?: string;
+  user_total?: number;
+  is_showcase?: boolean;
+  showcase?: {
+    user_id?: string | null;
+    amount_gbp?: number;
+    name?: string | null;
+    avatar_url?: string | null;
+  };
+};
+
+/**
+ * Send a fixed-price gift during a live stream.
+ * Wallet transfer and live leaderboard totals are committed atomically.
+ */
 export async function POST(request: Request) {
   try {
-    const auth = request.headers.get('authorization') || '';
-    const token = auth.replace(/^Bearer\s+/i, '');
+    const authHeader = request.headers.get('authorization') || '';
+    const token = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
     if (!token) {
       return NextResponse.json({ error: 'Login required' }, { status: 401 });
     }
@@ -80,195 +105,112 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'stream_id required' }, { status: 400 });
     }
 
-    const { data: stream, error: stErr } = await admin
+    const { data: stream, error: streamErr } = await admin
       .from('live_streams')
-      .select('*, tip_goals')
+      .select('id, creator_id, title, status')
       .eq('id', streamId)
       .single();
 
-    if (stErr || !stream) {
+    if (streamErr || !stream) {
       return NextResponse.json({ error: 'Stream not found' }, { status: 404 });
     }
-
     if (!['active', 'idle_ready', 'disconnected'].includes(stream.status)) {
-      return NextResponse.json(
-        { error: 'This live has ended' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'This live has ended' }, { status: 400 });
     }
-
     if (stream.creator_id === user.id) {
+      return NextResponse.json({ error: 'You cannot gift yourself' }, { status: 400 });
+    }
+
+    const { data: blocked, error: blockErr } = await admin
+      .from('blocks')
+      .select('blocker_id')
+      .or(
+        `and(blocker_id.eq.${user.id},blocked_id.eq.${stream.creator_id}),and(blocker_id.eq.${stream.creator_id},blocked_id.eq.${user.id})`
+      )
+      .limit(1);
+
+    if (blockErr) {
+      console.error('live gift block check', blockErr);
+      return NextResponse.json({ error: 'Could not validate this gift' }, { status: 500 });
+    }
+    if (blocked?.length) {
       return NextResponse.json(
-        { error: 'You cannot gift yourself' },
-        { status: 400 }
+        { error: 'You can’t gift this creator', code: 'BLOCKED' },
+        { status: 403 }
       );
     }
 
-    {
-      const { data: blk } = await admin
-        .from('blocks')
-        .select('blocker_id')
-        .or(
-          `and(blocker_id.eq.${user.id},blocked_id.eq.${stream.creator_id}),and(blocker_id.eq.${stream.creator_id},blocked_id.eq.${user.id})`
-        )
-        .limit(1);
-      if (blk && blk.length) {
-        return NextResponse.json(
-          { error: 'You can’t gift this creator', code: 'BLOCKED' },
-          { status: 403 }
-        );
-      }
-    }
-
-    const { data: creator } = await admin
+    const { data: creator, error: creatorErr } = await admin
       .from('profiles')
-      .select(
-        'balance_gbp, display_name, username, live_gifts, live_gifts_enabled'
-      )
+      .select('live_gifts, live_gifts_enabled')
       .eq('id', stream.creator_id)
       .single();
 
-    if (!creator) {
+    if (creatorErr || !creator) {
       return NextResponse.json({ error: 'Creator not found' }, { status: 404 });
     }
-
     if (creator.live_gifts_enabled === false) {
-      return NextResponse.json(
-        { error: 'This creator has gifts turned off' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'This creator has gifts turned off' }, { status: 400 });
     }
 
-    const catalog = normalizeGifts(creator.live_gifts);
-    const gift = catalog.find((g) => g.id === giftId);
+    const gift = normalizeGifts(creator.live_gifts).find((item) => item.id === giftId);
     if (!gift) {
       return NextResponse.json({ error: 'Invalid gift' }, { status: 400 });
     }
 
-    const rounded = Math.round(gift.amount_gbp * 100) / 100;
-
-    const { data: sender } = await admin
-      .from('profiles')
-      .select('balance_gbp, display_name, username, avatar_url')
-      .eq('id', user.id)
-      .single();
-
-    if (!sender) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    const grossPence = Math.round(gift.amount_gbp * 100);
+    if (grossPence <= 0 || grossPence > 500000) {
+      return NextResponse.json({ error: 'Invalid gift amount' }, { status: 400 });
     }
-
-    const senderBal = Number(sender.balance_gbp || 0);
-    if (senderBal < rounded) {
-      return NextResponse.json(
-        {
-          error: 'Insufficient balance',
-          code: 'INSUFFICIENT_BALANCE',
-          balance: senderBal,
-          needed: rounded,
-        },
-        { status: 402 }
-      );
-    }
-
-    const { gross_gbp, fee_gbp, net_gbp } = splitCreatorEarn(rounded);
-    const newSenderBal = Math.round((senderBal - gross_gbp) * 100) / 100;
-    const newCreatorBal =
-      Math.round((Number(creator.balance_gbp || 0) + net_gbp) * 100) / 100;
-    const newRaised =
-      Math.round((Number(stream.tip_raised_gbp || 0) + gross_gbp) * 100) / 100;
-
-    const fromName = sender.display_name || sender.username || 'A fan';
+    const rounded = grossPence / 100;
     const giftLabel = `${gift.emoji} ${gift.label}`;
 
-    await admin
-      .from('profiles')
-      .update({ balance_gbp: newSenderBal })
-      .eq('id', user.id);
+    const suppliedKey = String(
+      body?.idempotency_key || request.headers.get('idempotency-key') || ''
+    ).trim();
+    if (suppliedKey.length > 128) {
+      return NextResponse.json({ error: 'Invalid idempotency key' }, { status: 400 });
+    }
+    const idempotencyKey = `live-gift:${user.id}:${streamId}:${suppliedKey || randomUUID()}`;
 
-    await admin
-      .from('profiles')
-      .update({ balance_gbp: newCreatorBal })
-      .eq('id', stream.creator_id);
+    const description = `Live gift · ${giftLabel} · ${stream.title || 'Live'}`;
 
-    await admin.from('wallet_transactions').insert([
-      {
-        user_id: user.id,
-        type: 'gift_sent',
-        amount_gbp: -gross_gbp,
-        balance_after: newSenderBal,
-        counterparty_id: stream.creator_id,
-        reference_type: 'live_stream',
-        reference_id: streamId,
-        description: `Live gift · ${giftLabel} · ${stream.title || 'Live'}`,
-      },
-      {
-        user_id: stream.creator_id,
-        type: 'gift_received',
-        amount_gbp: net_gbp,
-        balance_after: newCreatorBal,
-        gross_gbp,
-        fee_gbp,
-        net_gbp,
-        counterparty_id: user.id,
-        reference_type: 'live_stream',
-        reference_id: streamId,
-        description: `Live gift from ${fromName} · ${giftLabel}`,
-      },
-    ]);
+    const { data, error: transferErr } = await admin.rpc('post_live_creator_payment', {
+      p_sender_id: user.id,
+      p_stream_id: streamId,
+      p_gross_pence: grossPence,
+      p_sent_type: 'gift_sent',
+      p_received_type: 'gift_received',
+      p_idempotency_key: idempotencyKey,
+      p_description: description,
+    });
 
-    const { data: existingTip } = await admin
-      .from('live_stream_tips')
-      .select('total_gbp')
-      .eq('stream_id', streamId)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const userTotal =
-      Math.round((Number(existingTip?.total_gbp || 0) + rounded) * 100) / 100;
-
-    await admin.from('live_stream_tips').upsert(
-      {
-        stream_id: streamId,
-        user_id: user.id,
-        total_gbp: userTotal,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'stream_id,user_id' }
-    );
-
-    const currentShowcase = Number(stream.showcase_amount_gbp || 0);
-    let nextGoal = Number(stream.tip_goal_gbp || 0);
-    const levels = Array.isArray((stream as any).tip_goals)
-      ? ([...(stream as any).tip_goals] as { label: string; amount: number }[])
-      : [];
-    if (levels.length) {
-      levels.sort((a, b) => Number(a.amount) - Number(b.amount));
-      const active = levels.find((l) => newRaised < Number(l.amount));
-      nextGoal = active
-        ? Number(active.amount)
-        : Number(levels[levels.length - 1].amount);
+    if (transferErr) {
+      const message = transferErr.message || 'Gift failed';
+      if (message.includes('Insufficient wallet balance')) {
+        return NextResponse.json(
+          { error: 'Insufficient balance', code: 'INSUFFICIENT_BALANCE', needed: rounded },
+          { status: 402 }
+        );
+      }
+      if (message.includes('This live has ended')) {
+        return NextResponse.json({ error: 'This live has ended' }, { status: 400 });
+      }
+      if (message.includes('Incomplete prior transfer')) {
+        return NextResponse.json(
+          { error: 'Gift requires reconciliation', code: 'RECONCILIATION_REQUIRED' },
+          { status: 409 }
+        );
+      }
+      console.error('post_live_creator_payment (gift)', transferErr);
+      return NextResponse.json({ error: 'Gift failed' }, { status: 500 });
     }
 
-    let showcasePayload: Record<string, any> = {
-      tip_raised_gbp: newRaised,
-      tip_goal_gbp: nextGoal,
-      updated_at: new Date().toISOString(),
-    };
+    const result = (data || {}) as LivePaymentResult;
+    const fromName = result.from_name || 'A fan';
 
-    if (userTotal >= currentShowcase) {
-      showcasePayload = {
-        ...showcasePayload,
-        showcase_user_id: user.id,
-        showcase_amount_gbp: userTotal,
-        showcase_name: fromName,
-        showcase_avatar_url: sender.avatar_url || null,
-      };
-    }
-
-    await admin.from('live_streams').update(showcasePayload).eq('id', streamId);
-
-    try {
-      await admin.from('notifications').insert({
+    if (!result.already) {
+      const { error: notificationErr } = await admin.from('notifications').insert({
         user_id: stream.creator_id,
         type: 'tip',
         title: 'Live gift',
@@ -282,43 +224,29 @@ export async function POST(request: Request) {
           gift_label: giftLabel,
         },
       });
-    } catch {
-      /* non-blocking */
+      if (notificationErr) console.error('live gift notification', notificationErr);
     }
-
-    const isShowcase =
-      userTotal >= currentShowcase ||
-      showcasePayload.showcase_user_id === user.id;
 
     return NextResponse.json({
       ok: true,
-      amount: rounded,
+      already: Boolean(result.already),
+      amount: Number(result.gross_gbp ?? rounded),
+      fee_gbp: Number(result.fee_gbp ?? 0),
+      net_gbp: Number(result.net_gbp ?? 0),
       gift_id: gift.id,
       gift_label: gift.label,
       gift_emoji: gift.emoji,
-      balance: newSenderBal,
-      tip_raised_gbp: newRaised,
-      tip_goal_gbp: nextGoal,
-      tip_goals: levels.length ? levels : (stream as any).tip_goals || [],
+      balance: result.sender_balance == null ? undefined : Number(result.sender_balance),
+      tip_raised_gbp: Number(result.tip_raised_gbp ?? 0),
+      tip_goal_gbp: Number(result.tip_goal_gbp ?? 0),
+      tip_goals: Array.isArray(result.tip_goals) ? result.tip_goals : [],
       from_name: fromName,
-      user_total: userTotal,
-      is_showcase: isShowcase,
-      showcase: {
-        user_id: showcasePayload.showcase_user_id ?? stream.showcase_user_id,
-        amount_gbp:
-          showcasePayload.showcase_amount_gbp ??
-          stream.showcase_amount_gbp ??
-          0,
-        name: showcasePayload.showcase_name ?? stream.showcase_name,
-        avatar_url:
-          showcasePayload.showcase_avatar_url ?? stream.showcase_avatar_url,
-      },
+      user_total: Number(result.user_total ?? 0),
+      is_showcase: Boolean(result.is_showcase),
+      showcase: result.showcase || null,
     });
-  } catch (e: any) {
-    console.error('live gift', e);
-    return NextResponse.json(
-      { error: e?.message || 'Gift failed' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    console.error('live gift', error);
+    return NextResponse.json({ error: 'Gift failed' }, { status: 500 });
   }
 }

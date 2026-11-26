@@ -4,17 +4,15 @@ import { createClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 
 const MIN_PAYOUT = 100;
-/** Fee already taken on each earn. Payout sends the full available amount. */
 const FEE_PERCENT = 0;
 
 function nextMondayDate(from = new Date()): string {
-  const d = new Date(from);
-  d.setHours(12, 0, 0, 0);
-  const day = d.getDay(); // 0 Sun … 6 Sat
+  const date = new Date(from);
+  date.setHours(12, 0, 0, 0);
+  const day = date.getDay();
   const add = day === 1 ? 7 : (8 - day) % 7 || 7;
-  // If today is Monday before payout window, still schedule next Monday for simplicity
-  d.setDate(d.getDate() + add);
-  return d.toISOString().slice(0, 10);
+  date.setDate(date.getDate() + add);
+  return date.toISOString().slice(0, 10);
 }
 
 function adminClient() {
@@ -24,27 +22,28 @@ function adminClient() {
   );
 }
 
-/**
- * POST — request a payout (creator only)
- * Body: { amount?: number }  // defaults to full available balance
- *
- * GET — list own payout requests
- */
+async function getUser(request: Request, admin: ReturnType<typeof adminClient>) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
+  if (!token) return null;
+
+  const {
+    data: { user },
+    error,
+  } = await admin.auth.getUser(token);
+
+  return error ? null : user || null;
+}
+
+/** GET: list own payout requests. POST: reserve funds and request next Monday payout. */
 export async function GET(request: Request) {
   try {
-    const auth = request.headers.get('authorization') || '';
-    const token = auth.replace(/^Bearer\s+/i, '');
-    if (!token) {
-      return NextResponse.json({ error: 'Login required' }, { status: 401 });
-    }
-
     const admin = adminClient();
-    const {
-      data: { user },
-      error: userErr,
-    } = await admin.auth.getUser(token);
-    if (userErr || !user) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    const user = await getUser(request, admin);
+    if (!user) {
+      return NextResponse.json({ error: 'Login required' }, { status: 401 });
     }
 
     const { data, error } = await admin
@@ -55,7 +54,7 @@ export async function GET(request: Request) {
       .limit(50);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: 'Could not load payout history' }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -63,188 +62,92 @@ export async function GET(request: Request) {
       min_payout: MIN_PAYOUT,
       fee_percent: FEE_PERCENT,
     });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || 'Failed' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    console.error('payout history', error);
+    return NextResponse.json({ error: 'Could not load payout history' }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const auth = request.headers.get('authorization') || '';
-    const token = auth.replace(/^Bearer\s+/i, '');
-    if (!token) {
+    const admin = adminClient();
+    const user = await getUser(request, admin);
+    if (!user) {
       return NextResponse.json({ error: 'Login required' }, { status: 401 });
     }
 
-    const admin = adminClient();
-    const {
-      data: { user },
-      error: userErr,
-    } = await admin.auth.getUser(token);
-    if (userErr || !user) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
-    }
-
     const body = await request.json().catch(() => ({}));
-    const requestedRaw = body.amount;
+    let amountPence: number | null = null;
 
-    const { data: profile, error: profileErr } = await admin
-      .from('profiles')
-      .select('id, account_type, balance_gbp, display_name, username')
-      .eq('id', user.id)
-      .single();
-
-    if (profileErr || !profile) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    if (body?.amount != null && body.amount !== '') {
+      const amount = Number(body.amount);
+      if (!Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100) {
+        return NextResponse.json({ error: 'Enter a valid amount with up to 2 decimal places' }, { status: 400 });
+      }
+      amountPence = Math.round(amount * 100);
+      if (amountPence < MIN_PAYOUT * 100) {
+        return NextResponse.json(
+          { error: `Minimum payout is £${MIN_PAYOUT}`, code: 'BELOW_MINIMUM', min: MIN_PAYOUT },
+          { status: 400 }
+        );
+      }
     }
 
-    if (profile.account_type !== 'creator') {
-      return NextResponse.json(
-        { error: 'Only creators can request payouts' },
-        { status: 403 }
-      );
-    }
-
-    const balance = Math.round(Number(profile.balance_gbp || 0) * 100) / 100;
-
-    if (balance < MIN_PAYOUT) {
-      return NextResponse.json(
-        {
-          error: `Minimum payout is £${MIN_PAYOUT}. Your balance is £${balance.toFixed(2)}.`,
-          code: 'BELOW_MINIMUM',
-          balance,
-          min: MIN_PAYOUT,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Optional: block if there is already a pending request
-    const { data: pending } = await admin
-      .from('payout_requests')
-      .select('id')
-      .eq('creator_id', user.id)
-      .in('status', ['pending', 'processing'])
-      .limit(1);
-
-    if (pending && pending.length > 0) {
-      return NextResponse.json(
-        {
-          error:
-            'You already have a payout in progress. Wait until it completes.',
-          code: 'PENDING_EXISTS',
-        },
-        { status: 400 }
-      );
-    }
-
-    let amount =
-      requestedRaw != null && requestedRaw !== ''
-        ? Math.round(Number(requestedRaw) * 100) / 100
-        : balance;
-
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
-    }
-
-    if (amount < MIN_PAYOUT) {
-      return NextResponse.json(
-        {
-          error: `Minimum payout is £${MIN_PAYOUT}`,
-          code: 'BELOW_MINIMUM',
-          min: MIN_PAYOUT,
-        },
-        { status: 400 }
-      );
-    }
-
-    if (amount > balance) {
-      return NextResponse.json(
-        {
-          error: `Amount exceeds balance (£${balance.toFixed(2)})`,
-          code: 'INSUFFICIENT',
-          balance,
-        },
-        { status: 400 }
-      );
-    }
-
-    const fee =
-      Math.round(((amount * FEE_PERCENT) / 100) * 100) / 100;
-    const net = Math.round((amount - fee) * 100) / 100;
     const scheduledFor = nextMondayDate();
-
-    // Debit full gross amount from wallet
-    const { data: afterDebit, error: debitErr } = await admin
-      .from('profiles')
-      .update({ balance_gbp: Math.round((balance - amount) * 100) / 100 })
-      .eq('id', user.id)
-      .gte('balance_gbp', amount)
-      .select('balance_gbp')
-      .maybeSingle();
-
-    if (debitErr || !afterDebit) {
-      return NextResponse.json(
-        {
-          error: 'Could not reserve funds. Balance may have changed — try again.',
-          code: 'DEBIT_FAILED',
-        },
-        { status: 409 }
-      );
-    }
-
-    const newBalance = Number(afterDebit.balance_gbp);
-
-    const { data: payout, error: payoutErr } = await admin
-      .from('payout_requests')
-      .insert({
-        creator_id: user.id,
-        amount_gbp: amount,
-        fee_gbp: fee,
-        net_gbp: net,
-        status: 'pending',
-        scheduled_for: scheduledFor,
-        notes: 'Requested via dashboard',
-      })
-      .select('*')
-      .single();
-
-    if (payoutErr || !payout) {
-      // rollback balance
-      await admin
-        .from('profiles')
-        .update({ balance_gbp: balance })
-        .eq('id', user.id);
-      return NextResponse.json(
-        { error: payoutErr?.message || 'Could not create payout request' },
-        { status: 500 }
-      );
-    }
-
-    await admin.from('wallet_transactions').insert({
-      user_id: user.id,
-      amount_gbp: -amount,
-      type: 'payout_requested',
-      balance_after: newBalance,
-      reference_type: 'payout_request',
-      reference_id: payout.id,
-      description: `Payout request · £${amount.toFixed(2)} · scheduled ${scheduledFor}`,
+    const { data, error: payoutErr } = await admin.rpc('reserve_creator_payout', {
+      p_creator_id: user.id,
+      p_amount_pence: amountPence,
+      p_scheduled_for: scheduledFor,
     });
+
+    if (payoutErr) {
+      const message = payoutErr.message || 'Could not request payout';
+      if (message.includes('Minimum payout')) {
+        return NextResponse.json(
+          { error: `Minimum payout is £${MIN_PAYOUT}`, code: 'BELOW_MINIMUM', min: MIN_PAYOUT },
+          { status: 400 }
+        );
+      }
+      if (message.includes('Payout already in progress')) {
+        return NextResponse.json(
+          { error: 'You already have a payout in progress. Wait until it completes.', code: 'PENDING_EXISTS' },
+          { status: 409 }
+        );
+      }
+      if (message.includes('exceeds available balance')) {
+        return NextResponse.json(
+          { error: 'Amount exceeds available balance', code: 'INSUFFICIENT' },
+          { status: 400 }
+        );
+      }
+      if (message.includes('Creator profile not found')) {
+        return NextResponse.json({ error: 'Creator account required' }, { status: 403 });
+      }
+      console.error('reserve_creator_payout RPC', payoutErr);
+      return NextResponse.json({ error: 'Could not request payout' }, { status: 500 });
+    }
+
+    const result = (data || {}) as {
+      payout?: Record<string, unknown>;
+      balance?: number;
+      amount?: number;
+      fee_gbp?: number;
+      net_gbp?: number;
+      scheduled_for?: string;
+    };
+
+    const amount = Number(result.amount ?? result.payout?.amount_gbp ?? 0);
+    const net = Number(result.net_gbp ?? result.payout?.net_gbp ?? amount);
 
     return NextResponse.json({
       ok: true,
-      payout,
-      balance: newBalance,
+      payout: result.payout,
+      balance: Number(result.balance ?? 0),
       fee_percent: FEE_PERCENT,
-      message: `Payout of £${net.toFixed(2)} scheduled for ${scheduledFor} (after ${FEE_PERCENT}% fee).`,
+      message: `Payout of £${net.toFixed(2)} reserved for ${result.scheduled_for || scheduledFor}. No additional payout fee is charged.`,
     });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || 'Payout failed' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    console.error('payout request', error);
+    return NextResponse.json({ error: 'Payout request failed' }, { status: 500 });
   }
 }
