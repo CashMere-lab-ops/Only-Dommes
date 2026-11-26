@@ -11,8 +11,7 @@ function resultRedirect(request: Request, status: 'success' | 'failed') {
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const params = url.searchParams;
+  const params = new URL(request.url).searchParams;
   const nonce = params.get('ag_nonce') || '';
   const verifiedSite = params.get('ag_verified_site') || '';
   const token = params.get('ag_user_token') || '';
@@ -29,11 +28,10 @@ export async function GET(request: Request) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const nonceHash = hashAgegoNonce(nonce);
   const { data: attempt, error: attemptError } = await admin
     .from('agego_verification_attempts')
     .select('id, user_id, status, expires_at, agego_site')
-    .eq('nonce_hash', nonceHash)
+    .eq('nonce_hash', hashAgegoNonce(nonce))
     .maybeSingle();
 
   if (attemptError || !attempt || attempt.status !== 'pending') {
@@ -46,15 +44,16 @@ export async function GET(request: Request) {
   const attemptValid = Number.isFinite(attemptExpiry) && attemptExpiry > now;
   const signatureValid = verifyAgegoSignature(params, siteSecret);
   const siteValid = verifiedSite === AGEGO_ASI && attempt.agego_site === AGEGO_ASI;
-  const nonceValid = nonce.length <= 64;
+  const nonceValid = /^[a-f0-9]{64}$/i.test(nonce);
   const successFlag = (params.get('ag_verified') || '').toLowerCase() === 'yes';
-  const noError = params.get('ag_error') === 'none';
 
-  if (!signatureValid || !siteValid || !nonceValid || !responseValid || !attemptValid || !successFlag || !noError || !token) {
+  // The signed verified flag and AgeGO token validation are authoritative.
+  // ag_error is signature-bound, but its success representation is not assumed here.
+  if (!signatureValid || !siteValid || !nonceValid || !responseValid || !attemptValid || !successFlag || !token) {
     await admin.from('agego_verification_attempts').update({
       status: 'failed',
       completed_at: new Date().toISOString(),
-      failure_code: params.get('ag_error') || 'response_not_valid',
+      failure_code: 'response_not_valid',
     }).eq('id', attempt.id).eq('status', 'pending');
     return resultRedirect(request, 'failed');
   }
@@ -65,6 +64,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('AgeGO token validation request failed', error);
   }
+
   if (!tokenValid) {
     await admin.from('agego_verification_attempts').update({
       status: 'failed',
@@ -74,24 +74,14 @@ export async function GET(request: Request) {
     return resultRedirect(request, 'failed');
   }
 
-  // Consume the attempt once. Only the server-role client can update this private table.
-  const { data: consumed, error: consumeError } = await admin
-    .from('agego_verification_attempts')
-    .update({ status: 'verified', completed_at: new Date().toISOString() })
-    .eq('id', attempt.id)
-    .eq('status', 'pending')
-    .select('id')
-    .maybeSingle();
+  // The RPC updates the profile and consumes the attempt in one database transaction.
+  const { data: completed, error: completionError } = await admin.rpc('complete_agego_verification', {
+    p_attempt_id: attempt.id,
+    p_user_id: attempt.user_id,
+  });
 
-  if (consumeError || !consumed) return resultRedirect(request, 'failed');
-
-  const { error: profileUpdateError } = await admin
-    .from('profiles')
-    .update({ age_verified_at: new Date().toISOString() })
-    .eq('id', attempt.user_id);
-  if (profileUpdateError) {
-    console.error('AgeGO profile update failed', profileUpdateError);
-    // Fail closed: the attempt is consumed but the account remains unverified.
+  if (completionError || completed !== true) {
+    console.error('AgeGO atomic completion failed', completionError);
     return resultRedirect(request, 'failed');
   }
 
