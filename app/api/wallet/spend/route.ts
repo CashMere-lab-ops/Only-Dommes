@@ -79,9 +79,14 @@ export async function POST(request: Request) {
       }
     }
 
-    const suppliedKey = body?.idempotency_key ? String(body.idempotency_key) : null;
-    const idempotencyKey = suppliedKey ||
-      (referenceId && referenceType
+    const suppliedKey = body?.idempotency_key ? String(body.idempotency_key).trim() : '';
+    if (suppliedKey.length > 128) {
+      return NextResponse.json({ error: 'Invalid idempotency key' }, { status: 400 });
+    }
+    // Scope caller keys to this user and transaction type to prevent cross-flow collisions.
+    const idempotencyKey = suppliedKey
+      ? `wallet-spend:${user.id}:${spendType}:${suppliedKey}`
+      : (referenceId && referenceType
         ? `wallet-spend:${user.id}:${spendType}:${referenceType}:${referenceId}`
         : `wallet-spend:${user.id}:${spendType}:${randomUUID()}`);
 
@@ -107,6 +112,9 @@ export async function POST(request: Request) {
       }
       if (message.includes('Incomplete prior transfer')) {
         return NextResponse.json({ error: 'Transfer requires reconciliation', code: 'RECONCILIATION_REQUIRED' }, { status: 409 });
+      }
+      if (message.includes('Idempotency key reused for a different transfer')) {
+        return NextResponse.json({ error: 'This payment key has already been used for a different transaction', code: 'IDEMPOTENCY_CONFLICT' }, { status: 409 });
       }
       console.error('wallet transfer RPC', error);
       return NextResponse.json({ error: 'Wallet transfer failed' }, { status: 500 });
