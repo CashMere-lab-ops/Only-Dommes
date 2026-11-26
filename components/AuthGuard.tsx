@@ -27,6 +27,19 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         router.replace(`/login?next=${encodeURIComponent(next)}`);
         return;
       }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('age_verified_at')
+        .eq('id', session.user.id)
+        .maybeSingle();
+      if (
+        !profile?.age_verified_at &&
+        pathname !== '/setup' &&
+        !pathname.startsWith('/age-verification/')
+      ) {
+        router.replace('/age-verification/pending');
+        return;
+      }
       setOk(true);
       setReady(true);
     })();

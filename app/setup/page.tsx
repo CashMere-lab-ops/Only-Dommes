@@ -70,7 +70,23 @@ function SetupForm() {
       return;
     }
 
-    window.location.href = '/';
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setMessage('Please log in again to complete age verification.');
+      setLoading(false);
+      return;
+    }
+    const response = await fetch('/api/agego/start', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.redirect) {
+      setMessage(result.error || 'Could not start age verification. Please try again.');
+      setLoading(false);
+      return;
+    }
+    window.location.href = result.redirect;
   };
 
   return (
