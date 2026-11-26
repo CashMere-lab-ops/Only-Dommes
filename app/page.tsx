@@ -62,9 +62,13 @@ export default function Home() {
       if (user) {
         const { data: me } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url, account_type')
+          .select('id, username, display_name, avatar_url, account_type, age_verified_at')
           .eq('id', user.id)
           .single();
+        if (me && !me.age_verified_at) {
+          window.location.href = '/age-verification/pending';
+          return;
+        }
         setProfile(me);
         setIsCreator(me?.account_type === 'creator');
       }
