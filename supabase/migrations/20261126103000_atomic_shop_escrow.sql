@@ -38,7 +38,11 @@ begin
     raise exception 'Order not found';
   end if;
 
-  v_amount := round(coalesce(v_order.amount_held, v_order.item_price, 0), 2);
+  if p_action = 'hold' then
+    v_amount := round(coalesce(v_order.item_price, 0), 2);
+  else
+    v_amount := round(coalesce(nullif(v_order.amount_held, 0), v_order.item_price, 0), 2);
+  end if;
   if v_amount <= 0 or v_amount > 10000 then
     raise exception 'Invalid order amount';
   end if;
