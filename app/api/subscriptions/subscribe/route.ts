@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const token = (request.headers.get('authorization') || '').replace(/^Bearer\\s+/i, '');
+    const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
     if (!token) return NextResponse.json({ error: 'Login required' }, { status: 401 });
 
     const admin = createClient(
