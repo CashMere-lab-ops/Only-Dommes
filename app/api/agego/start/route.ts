@@ -49,9 +49,6 @@ export async function POST(request: Request) {
     redirect.searchParams.set('asi', AGEGO_ASI);
     redirect.searchParams.set('returnto', returnUrl);
     redirect.searchParams.set('nonce', nonce);
-    // AgeGO documents this placeholder on the site's callback URL for Modal integrations.
-    // Preserve it as supplied in the dashboard URL; it is not an S2S verification credential.
-    redirect.searchParams.set('callbacktoken', '{callbacktoken}');
 
     return NextResponse.json({ redirect: redirect.toString() });
   } catch (error) {
