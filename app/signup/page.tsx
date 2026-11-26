@@ -75,7 +75,6 @@ function SignupForm() {
         data: {
           username: name,
           account_type: type,
-          age_confirmed_at: now,
           terms_accepted_at: now,
         },
       },
@@ -93,13 +92,13 @@ function SignupForm() {
         username: name,
         display_name: name,
         account_type: type,
-        age_confirmed_at: now,
+        age_confirmed_at: null,
         terms_accepted_at: now,
         ...(type === 'creator' && confirmed
           ? { creator_confirmed_at: now }
           : {}),
       });
-      window.location.href = '/';
+      window.location.href = `/setup?type=${type}`;
       return;
     }
 
