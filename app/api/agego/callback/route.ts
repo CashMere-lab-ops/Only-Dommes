@@ -46,9 +46,9 @@ export async function GET(request: Request) {
   const attemptValid = Number.isFinite(attemptExpiry) && attemptExpiry > now;
   const signatureValid = verifyAgegoSignature(params, siteSecret);
   const siteValid = verifiedSite === AGEGO_ASI && attempt.agego_site === AGEGO_ASI;
-  const nonceValid = nonce.length <= 256;
-  const successFlag = params.get('ag_verified') === 'yes';
-  const noError = !params.get('ag_error') || params.get('ag_error') === 'none';
+  const nonceValid = nonce.length <= 64;
+  const successFlag = (params.get('ag_verified') || '').toLowerCase() === 'yes';
+  const noError = params.get('ag_error') === 'none';
 
   if (!signatureValid || !siteValid || !nonceValid || !responseValid || !attemptValid || !successFlag || !noError || !token) {
     await admin.from('agego_verification_attempts').update({
