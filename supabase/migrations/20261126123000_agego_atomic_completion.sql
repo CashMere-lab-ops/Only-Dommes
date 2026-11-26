@@ -14,7 +14,7 @@ as $function$
 declare
   v_attempt public.agego_verification_attempts%rowtype;
 begin
-  if coalesce(pg_catalog.current_setting('request.jwt.claim.role', true), '') <> 'service_role' then
+  if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'Service role required' using errcode = '42501';
   end if;
 
