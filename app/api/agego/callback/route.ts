@@ -47,13 +47,37 @@ export async function GET(request: Request) {
   const nonceValid = /^[a-f0-9]{64}$/i.test(nonce);
   const successFlag = (params.get('ag_verified') || '').toLowerCase() === 'yes';
 
-  // The signed verified flag and AgeGO token validation are authoritative.
-  // ag_error is signature-bound, but its success representation is not assumed here.
-  if (!signatureValid || !siteValid || !nonceValid || !responseValid || !attemptValid || !successFlag || !token) {
+  // Record only non-sensitive validation outcomes. Never log the signature, token,
+  // nonce, callback query string, or site secret.
+  const failedChecks = [
+    !signatureValid && 'signature_invalid',
+    !siteValid && 'site_mismatch',
+    !nonceValid && 'nonce_invalid',
+    !responseValid && 'response_expired_or_invalid',
+    !attemptValid && 'attempt_expired',
+    !successFlag && 'provider_not_verified',
+    !token && 'token_missing',
+  ].filter((value): value is string => Boolean(value));
+
+  if (failedChecks.length > 0) {
+    console.warn('AgeGO callback rejected', {
+      attemptId: attempt.id,
+      failedChecks,
+      signatureAlgorithm: params.get('ag_signature_algo') || 'missing',
+      hasSignature: Boolean(params.get('ag_signature')),
+      hasToken: Boolean(token),
+      verifiedFlag: params.get('ag_verified') || 'missing',
+      responseExpiryIsNumeric: Number.isFinite(expires),
+      responseExpiryInFuture: responseValid,
+      attemptExpiryInFuture: attemptValid,
+      verifiedSiteMatchesConfiguredAsi: verifiedSite === AGEGO_ASI,
+      attemptSiteMatchesConfiguredAsi: attempt.agego_site === AGEGO_ASI,
+      nonceHasExpectedFormat: nonceValid,
+    });
     await admin.from('agego_verification_attempts').update({
       status: 'failed',
       completed_at: new Date().toISOString(),
-      failure_code: 'response_not_valid',
+      failure_code: failedChecks.join(',').slice(0, 200),
     }).eq('id', attempt.id).eq('status', 'pending');
     return resultRedirect(request, 'failed');
   }
