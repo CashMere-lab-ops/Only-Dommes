@@ -43,6 +43,18 @@ export async function GET(request: Request) {
   const responseValid = Number.isFinite(expires) && expires > now;
   const attemptValid = Number.isFinite(attemptExpiry) && attemptExpiry > now;
   const signatureValid = verifyAgegoSignature(params, siteSecret);
+  if (!signatureValid) {
+    // An unauthenticated callback must never be able to consume or fail a valid
+    // verification attempt. In particular, do not mutate the attempt on a bad
+    // signature: otherwise anyone who learns a nonce could cause a denial of service.
+    console.warn('AgeGO callback rejected', {
+      reason: 'signature_invalid',
+      hasSignature: Boolean(params.get('ag_signature')),
+      signatureAlgorithm: params.get('ag_signature_algo') || 'missing',
+    });
+    return resultRedirect(request, 'failed');
+  }
+
   // AgeGO returns the numeric Site ID in ag_verified_site (e.g. "1821").
   // The ASI UUID is a separate identifier used in the S2S start request.
   const expectedSiteId = process.env.AGEGO_SITE_ID || '1821';
@@ -53,7 +65,6 @@ export async function GET(request: Request) {
   // Record only non-sensitive validation outcomes. Never log the signature, token,
   // nonce, callback query string, or site secret.
   const failedChecks = [
-    !signatureValid && 'signature_invalid',
     !siteValid && 'site_mismatch',
     !nonceValid && 'nonce_invalid',
     !responseValid && 'response_expired_or_invalid',
