@@ -60,17 +60,22 @@ export default function Home() {
       setUserId(user?.id || null);
 
       if (user) {
-        const { data: me } = await supabase
+        const { data: me, error: profileError } = await supabase
           .from('profiles')
           .select('id, username, display_name, avatar_url, account_type, age_verified_at')
           .eq('id', user.id)
           .single();
-        if (me && !me.age_verified_at) {
-          window.location.href = '/age-verification/pending';
+
+        // Fail closed: only a positively confirmed AgeGO timestamp grants access.
+        // A missing profile or query error must never allow the authenticated user
+        // to continue into the platform.
+        if (profileError || !me || !me.age_verified_at) {
+          window.location.replace('/age-verification/pending');
           return;
         }
+
         setProfile(me);
-        setIsCreator(me?.account_type === 'creator');
+        setIsCreator(me.account_type === 'creator');
       }
 
       if (!user) {
