@@ -70,7 +70,7 @@ function SignupForm() {
       password,
       options: {
         emailRedirectTo: origin
-          ? `${origin}/auth/callback?next=/onboarding`
+          ? `${origin}/auth/callback?next=/age-verification/pending`
           : undefined,
         data: {
           username: name,
