@@ -44,7 +44,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Could not start age verification' }, { status: 500 });
     }
 
-    const returnUrl = process.env.AGEGO_RETURN_URL || 'https://www.worldofdommes.com/api/agego/callback';
+    // Return to the exact host that started verification. This keeps Preview
+    // sessions on the Preview deployment and Production sessions on Production.
+    // A static AGEGO_RETURN_URL can accidentally send Preview users to Production.
+    const returnUrl = new URL('/api/agego/callback', request.url).toString();
     const redirect = new URL(AGEGO_START_URL);
     redirect.searchParams.set('asi', AGEGO_ASI);
     redirect.searchParams.set('returnto', returnUrl);
